@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
+import { useProject } from '../project';
 import { TypeBadge, PriorityIcon, RagDot } from '../components/Badges';
 
 const COLUMN_LABELS: Record<string, string> = {
@@ -11,13 +12,14 @@ const COLUMN_LABELS: Record<string, string> = {
 };
 
 export default function BoardPage() {
+  const { project } = useProject();
   const { data, isLoading } = useQuery({ queryKey: ['board'], queryFn: () => api.getBoard() });
 
   if (isLoading) return <div className="text-gray-500">Loading board...</div>;
 
   return (
     <div>
-      <h1 className="text-xl font-semibold mb-4">SPORTS Board</h1>
+      <h1 className="text-xl font-semibold mb-4">{project ? `${project.name} board` : 'Board'}</h1>
       <div className="grid grid-cols-4 gap-4">
         {data?.columns.map((col) => (
           <div key={col.status} className="bg-white rounded-lg border border-jira-border">
@@ -29,7 +31,7 @@ export default function BoardPage() {
               {col.issues.map((issue) => (
                 <Link
                   key={issue.id}
-                  to={`/issues/${issue.id}`}
+                  to={`/browse/${issue.key}`}
                   className="block bg-jira-gray hover:bg-gray-200 rounded p-3 transition-colors"
                 >
                   <div className="flex items-center gap-2 mb-1">

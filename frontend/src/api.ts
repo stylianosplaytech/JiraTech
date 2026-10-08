@@ -4,14 +4,22 @@ function getToken(): string | null {
   return localStorage.getItem('token');
 }
 
+export const PROJECT_STORAGE_KEY = 'projectKey';
+
+export function getCurrentProjectKey(): string | null {
+  return localStorage.getItem(PROJECT_STORAGE_KEY);
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
+  const projectKey = getCurrentProjectKey();
   const isFormData = options.body instanceof FormData;
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: {
       ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(projectKey ? { 'X-Project-Key': projectKey } : {}),
       ...options.headers,
     },
   });
@@ -67,11 +75,51 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ status, resolution }),
     }),
-  createLink: (id: string, targetId: string, type: string) =>
-    request(`/issues/${id}/links`, {
+  deleteIssue: (id: string) =>
+    request<{ deleted: boolean; key: string }>(`/issues/${id}`, { method: 'DELETE' }),
+  createLink: (id: string, target: { targetId?: string; targetKey?: string }, type: string) =>
+    request<Issue>(`/issues/${id}/links`, {
       method: 'POST',
-      body: JSON.stringify({ targetId, type }),
+      body: JSON.stringify({ ...target, type }),
     }),
+  deleteLink: (id: string, linkId: string) =>
+    request<Issue>(`/issues/${id}/links/${linkId}`, { method: 'DELETE' }),
+  getComments: (id: string) => request<Comment[]>(`/issues/${id}/comments`),
+  addComment: (id: string, body: string) =>
+    request<Comment>(`/issues/${id}/comments`, { method: 'POST', body: JSON.stringify({ body }) }),
+  updateComment: (id: string, commentId: string, body: string) =>
+    request<Comment>(`/issues/${id}/comments/${commentId}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
+  deleteComment: (id: string, commentId: string) =>
+    request(`/issues/${id}/comments/${commentId}`, { method: 'DELETE' }),
+  getHistory: (id: string) => request<HistoryEntry[]>(`/issues/${id}/history`),
+  deleteAttachment: (id: string, attachmentId: string) =>
+    request(`/issues/${id}/attachments/${attachmentId}`, { method: 'DELETE' }),
+
+  getProjects: () => request<Project[]>('/projects'),
+  getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
+  createProject: (data: { key: string; name: string; description?: string; leadId?: string; strictHierarchy?: boolean }) =>
+    request<Project>('/projects', { method: 'POST', body: JSON.stringify(data) }),
+  updateProject: (key: string, data: { name?: string; description?: string; leadId?: string }) =>
+    request<Project>(`/projects/${key}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  createVersion: (data: { name: string; description?: string; releaseDate?: string }) =>
+    request<Version>('/versions', { method: 'POST', body: JSON.stringify(data) }),
+  updateVersion: (id: string, data: { released?: boolean; releaseDate?: string; name?: string }) =>
+    request<Version>(`/versions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  createComponent: (data: { name: string; type: string; leadId?: string }) =>
+    request<Component>('/components', { method: 'POST', body: JSON.stringify(data) }),
+
+  search: (jql: string, startAt = 0, maxResults = 50) =>
+    request<SearchResult>('/search', { method: 'POST', body: JSON.stringify({ jql, startAt, maxResults }) }),
+  quickSearch: (q: string) =>
+    request<{ issues: Issue[]; projects: Pick<Project, 'id' | 'key' | 'name'>[] }>(
+      `/search/quick?q=${encodeURIComponent(q)}`,
+    ),
+  getFilters: () => request<SavedFilter[]>('/filters'),
+  createFilter: (data: { name: string; jql: string; description?: string; shared?: boolean }) =>
+    request<SavedFilter>('/filters', { method: 'POST', body: JSON.stringify(data) }),
+  updateFilter: (id: string, data: { name?: string; jql?: string; shared?: boolean }) =>
+    request<SavedFilter>(`/filters/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteFilter: (id: string) => request(`/filters/${id}`, { method: 'DELETE' }),
   addWatcher: (id: string, userId?: string) =>
     request<Issue>(`/issues/${id}/watchers`, {
       method: 'POST',
@@ -158,7 +206,10 @@ export interface Label {
 export interface Version {
   id: string;
   name: string;
+  description?: string | null;
   released?: boolean;
+  releaseDate?: string | null;
+  _count?: { issueVersions: number };
 }
 
 export interface CustomFieldDefinition {
@@ -215,9 +266,66 @@ export interface WorkLog {
   user: { id: string; name: string };
 }
 
+export interface Project {
+  id: string;
+  key: string;
+  name: string;
+  description?: string | null;
+  strictHierarchy: boolean;
+  leadId?: string | null;
+  lead?: { id: string; name: string; email: string } | null;
+  createdAt: string;
+  _count?: { issues: number };
+}
+
+export interface ProjectDetail extends Project {
+  components: Component[];
+  versions: Version[];
+  issueCountsByStatus: Record<string, number>;
+}
+
+export interface Comment {
+  id: string;
+  issueId: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  author: { id: string; name: string; email: string };
+}
+
+export interface HistoryEntry {
+  id: string;
+  field: string;
+  fromValue: string | null;
+  toValue: string | null;
+  createdAt: string;
+  user: { id: string; name: string } | null;
+}
+
+export interface SearchResult {
+  jql: string;
+  startAt: number;
+  maxResults: number;
+  total: number;
+  issues: Issue[];
+}
+
+export interface SavedFilter {
+  id: string;
+  name: string;
+  jql: string;
+  description?: string;
+  shared: boolean;
+  ownerId: string;
+  owner: { id: string; name: string };
+}
+
 export interface Issue {
   id: string;
   key: string;
+  project?: { id: string; key: string; name: string; strictHierarchy?: boolean; leadId?: string | null };
+  reporterId?: string;
+  _count?: { comments: number; children: number };
   type: string;
   summary: string;
   description?: string;
@@ -252,6 +360,7 @@ export interface Issue {
 }
 
 export interface CreateIssuePayload {
+  projectKey?: string;
   type: string;
   summary: string;
   description?: string;

@@ -1,0 +1,79 @@
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api, type Issue } from '../api';
+import { TypeBadge } from './Badges';
+
+/** Type-ahead issue search across all projects (by key or summary). */
+export default function IssuePicker({
+  value,
+  onChange,
+  excludeIds = [],
+  placeholder = 'Search by key or summary…',
+  autoFocus,
+}: {
+  value: Issue | null;
+  onChange: (issue: Issue | null) => void;
+  excludeIds?: string[];
+  placeholder?: string;
+  autoFocus?: boolean;
+}) {
+  const [q, setQ] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(q.trim()), 200);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['quick-search', debounced],
+    queryFn: () => api.quickSearch(debounced),
+    enabled: debounced.length >= 1,
+  });
+  const results = data?.issues.filter((i) => !excludeIds.includes(i.id)) ?? [];
+
+  if (value) {
+    return (
+      <div className="flex items-center gap-2 border border-jira-border rounded px-2 py-1.5 text-sm">
+        <TypeBadge type={value.type} />
+        <span className="text-gray-500">{value.key}</span>
+        <span className="truncate flex-1">{value.summary}</span>
+        <button type="button" onClick={() => onChange(null)} className="text-gray-400 hover:text-gray-700" title="Clear">×</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <input
+        autoFocus={autoFocus}
+        value={q}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder={placeholder}
+        className="w-full border border-jira-border rounded px-2 py-1.5 text-sm"
+      />
+      {open && debounced && (
+        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-jira-border rounded shadow-lg z-50 max-h-64 overflow-y-auto">
+          {results.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-gray-500">{isFetching ? 'Searching…' : 'No matching issues'}</div>
+          ) : results.map((i) => (
+            <button
+              key={i.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onChange(i); setQ(''); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-jira-gray"
+            >
+              <TypeBadge type={i.type} />
+              <span className="text-gray-500 shrink-0">{i.key}</span>
+              <span className="truncate">{i.summary}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -31,7 +31,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-jira-navy">
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
         <h1 className="text-2xl font-bold text-jira-navy mb-1">JiraTech</h1>
-        <p className="text-gray-500 text-sm mb-6">Sign in to SPORTS project</p>
+        <p className="text-gray-500 text-sm mb-6">Sign in to JiraTech</p>
 
         {error && (
           <div className="bg-red-50 text-red-700 px-3 py-2 rounded mb-4 text-sm">{error}</div>

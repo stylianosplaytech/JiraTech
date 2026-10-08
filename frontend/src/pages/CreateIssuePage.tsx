@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { api } from '../api';
+import { api, type Issue } from '../api';
+import { useProject } from '../project';
 import UserPicker from '../components/UserPicker';
+import IssuePicker from '../components/IssuePicker';
 
 const ISSUE_TYPES = [
   'FEATURE_EPIC', 'BAU_EPIC', 'RELEASE_EPIC', 'EPIC',
@@ -12,13 +14,18 @@ const ISSUE_TYPES = [
   'DEPLOYMENT', 'CONFIGURATION', 'SUB_TASK',
 ];
 
+// The everyday Jira types first; SPORTS-specific ones follow.
+const COMMON_TYPES = ['TASK', 'STORY', 'DEFECT', 'EPIC', 'SUB_TASK'];
+
 const PRIORITIES = ['HIGHEST', 'HIGH', 'MEDIUM', 'LOW', 'LOWEST'];
 
 export default function CreateIssuePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const parentIdParam = searchParams.get('parentId') ?? '';
-  const typeParam = searchParams.get('type') ?? 'STORY';
+  const { project, projects, setProjectKey } = useProject();
+  const typeParam = searchParams.get('type') ?? (project?.strictHierarchy === false ? 'TASK' : 'STORY');
+  const [parent, setParent] = useState<Issue | null>(null);
 
   const [form, setForm] = useState({
     type: typeParam,
@@ -40,10 +47,15 @@ export default function CreateIssuePage() {
     if (typeParam) setForm((f) => ({ ...f, type: typeParam }));
   }, [parentIdParam, typeParam]);
 
-  const { data: issues } = useQuery({
-    queryKey: ['issues', { epic: true }],
-    queryFn: () => api.getIssues(),
+  // "Create sub-task" passes the parent's id: show it in the picker.
+  const { data: paramParent } = useQuery({
+    queryKey: ['issue', parentIdParam],
+    queryFn: () => api.getIssue(parentIdParam),
+    enabled: !!parentIdParam,
   });
+  useEffect(() => {
+    if (paramParent) setParent(paramParent);
+  }, [paramParent]);
 
   const { data: labels } = useQuery({
     queryKey: ['labels'],
@@ -63,11 +75,12 @@ export default function CreateIssuePage() {
   const create = useMutation({
     mutationFn: () =>
       api.createIssue({
+        projectKey: parent?.project?.key ?? project?.key,
         type: form.type,
         summary: form.summary,
         description: form.description || undefined,
         priority: form.priority,
-        parentId: form.parentId || undefined,
+        parentId: parent?.id,
         epicName: form.epicName || undefined,
         estimate: form.estimate ? Number(form.estimate) : undefined,
         assigneeId: form.assigneeId || undefined,
@@ -76,7 +89,7 @@ export default function CreateIssuePage() {
         fixVersionIds: form.fixVersionIds.length ? form.fixVersionIds : undefined,
         affectsVersionIds: form.affectsVersionIds.length ? form.affectsVersionIds : undefined,
       }),
-    onSuccess: (issue) => navigate(`/issues/${issue.id}`),
+    onSuccess: (issue) => navigate(`/browse/${issue.key}`),
   });
 
   const toggleMulti = (field: 'labelIds' | 'componentIds' | 'fixVersionIds' | 'affectsVersionIds', id: string) => {
@@ -97,15 +110,38 @@ export default function CreateIssuePage() {
         className="bg-white rounded-lg border border-jira-border p-6 space-y-4"
       >
         <label className="block">
+          <span className="text-sm font-medium">Project</span>
+          <select
+            value={project?.key ?? ''}
+            onChange={(e) => {
+              setProjectKey(e.target.value);
+              setParent(null);
+              // Labels, components and versions belong to the old project.
+              setForm((f) => ({ ...f, labelIds: [], componentIds: [], fixVersionIds: [], affectsVersionIds: [] }));
+            }}
+            disabled={!!parent}
+            className="mt-1 block w-full border border-jira-border rounded px-3 py-2 text-sm disabled:bg-jira-gray"
+          >
+            {projects.map((p) => <option key={p.id} value={p.key}>{p.name} ({p.key})</option>)}
+          </select>
+          {parent && <span className="text-xs text-gray-500">Child issues are created in their parent's project.</span>}
+        </label>
+
+        <label className="block">
           <span className="text-sm font-medium">Issue Type</span>
           <select
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
             className="mt-1 block w-full border border-jira-border rounded px-3 py-2 text-sm"
           >
-            {ISSUE_TYPES.map((t) => (
-              <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
-            ))}
+            <optgroup label="Standard">
+              {COMMON_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+            </optgroup>
+            <optgroup label="SPORTS">
+              {ISSUE_TYPES.filter((t) => !COMMON_TYPES.includes(t)).map((t) => (
+                <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
+              ))}
+            </optgroup>
           </select>
         </label>
 
@@ -165,16 +201,12 @@ export default function CreateIssuePage() {
 
         <label className="block">
           <span className="text-sm font-medium">Parent Issue</span>
-          <select
-            value={form.parentId}
-            onChange={(e) => setForm({ ...form, parentId: e.target.value })}
-            className="mt-1 block w-full border border-jira-border rounded px-3 py-2 text-sm"
-          >
-            <option value="">None</option>
-            {issues?.map((i) => (
-              <option key={i.id} value={i.id}>{i.key} — {i.summary}</option>
-            ))}
-          </select>
+          <div className="mt-1">
+            <IssuePicker value={parent} onChange={setParent} placeholder="None — search to pick a parent epic or story" />
+          </div>
+          {project?.strictHierarchy && !form.type.includes('EPIC') && !parent && (
+            <span className="text-xs text-amber-700">{project.key} requires a parent for this issue type.</span>
+          )}
         </label>
 
         {form.type.includes('EPIC') && (

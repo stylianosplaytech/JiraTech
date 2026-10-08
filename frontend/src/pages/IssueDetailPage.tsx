@@ -1,12 +1,16 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, formatMinutes, isEpicType } from '../api';
+import { useProject } from '../project';
 import { TypeBadge, StatusBadge, PriorityIcon } from '../components/Badges';
 import PeopleSection from '../components/PeopleSection';
 import CustomFieldsPanel from '../components/CustomFieldsPanel';
+import IssueLinks from '../components/IssueLinks';
+import ActivitySection from '../components/ActivitySection';
 
 const TRANSITIONS: Record<string, { status: string; label: string; resolution?: string }[]> = {
+  CLOSED: [{ status: 'TO_DO', label: 'Re-open' }],
   BACKLOG: [{ status: 'TO_DO', label: 'Move to To Do' }],
   TO_DO: [
     { status: 'DOING', label: 'Start Progress' },
@@ -19,8 +23,6 @@ const TRANSITIONS: Record<string, { status: string; label: string; resolution?: 
   ],
 };
 
-const LINK_TYPES = ['RELATES_TO', 'BLOCKS', 'DEPENDS_ON', 'PARENT_LINK'];
-
 export default function IssueDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -31,28 +33,34 @@ export default function IssueDetailPage() {
   const [editForm, setEditForm] = useState({ summary: '', description: '' });
   const [showMore, setShowMore] = useState(false);
   const [showLogTime, setShowLogTime] = useState(false);
-  const [showLinkIssue, setShowLinkIssue] = useState(false);
+  const [addingLink, setAddingLink] = useState(false);
   const [showManageLabels, setShowManageLabels] = useState(false);
   const [logTimeForm, setLogTimeForm] = useState({ hours: '', minutes: '30', comment: '' });
-  const [linkForm, setLinkForm] = useState({ targetId: '', type: 'RELATES_TO' });
   const [newLabelName, setNewLabelName] = useState('');
+  const { projectKey, setProjectKey } = useProject();
 
   const { data: currentUser } = useQuery({ queryKey: ['me'], queryFn: api.me });
 
-  const { data: issue, isLoading } = useQuery({
+  const { data: issue, isLoading, error } = useQuery({
     queryKey: ['issue', id],
     queryFn: () => api.getIssue(id!),
     enabled: !!id,
+    retry: false,
   });
+
+  // Labels, components and versions are per project: follow the issue's project.
+  useEffect(() => {
+    if (issue?.project && issue.project.key !== projectKey) setProjectKey(issue.project.key);
+  }, [issue?.project, projectKey, setProjectKey]);
+
+  const invalidateIssue = () => {
+    queryClient.invalidateQueries({ queryKey: ['issue', id] });
+    queryClient.invalidateQueries({ queryKey: ['history'] });
+  };
 
   const { data: teams } = useQuery({
     queryKey: ['components', 'TEAM'],
     queryFn: () => api.getComponents('TEAM'),
-  });
-
-  const { data: allIssues } = useQuery({
-    queryKey: ['issues'],
-    queryFn: () => api.getIssues(),
   });
 
   const { data: labels } = useQuery({
@@ -68,24 +76,24 @@ export default function IssueDetailPage() {
   const transition = useMutation({
     mutationFn: ({ status, resolution }: { status: string; resolution?: string }) =>
       api.transitionIssue(id!, status, resolution),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['issue', id] }),
+    onSuccess: invalidateIssue,
   });
 
   const escalate = useMutation({
     mutationFn: ({ action, toTeam }: { action: string; toTeam?: string }) =>
       api.escalate(id!, action, toTeam),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['issue', id] }),
+    onSuccess: invalidateIssue,
   });
 
   const updateRag = useMutation({
     mutationFn: (ragStatus: string) => api.updateRag(id!, ragStatus),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['issue', id] }),
+    onSuccess: invalidateIssue,
   });
 
   const updateIssue = useMutation({
     mutationFn: (data: Parameters<typeof api.updateIssue>[1]) => api.updateIssue(id!, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['issue', id] });
+      invalidateIssue();
       setEditing(false);
     },
   });
@@ -96,24 +104,30 @@ export default function IssueDetailPage() {
       return api.createWorkLog(id!, mins, logTimeForm.comment || undefined);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['issue', id] });
+      invalidateIssue();
       setShowLogTime(false);
       setLogTimeForm({ hours: '', minutes: '30', comment: '' });
     },
   });
 
-  const createLink = useMutation({
-    mutationFn: () => api.createLink(id!, linkForm.targetId, linkForm.type),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['issue', id] });
-      setShowLinkIssue(false);
-      setLinkForm({ targetId: '', type: 'RELATES_TO' });
-    },
-  });
-
   const uploadAttachment = useMutation({
     mutationFn: (file: File) => api.uploadAttachment(id!, file),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['issue', id] }),
+    onSuccess: invalidateIssue,
+  });
+
+  const deleteAttachment = useMutation({
+    mutationFn: (attachmentId: string) => api.deleteAttachment(id!, attachmentId),
+    onSuccess: invalidateIssue,
+  });
+
+  const deleteIssue = useMutation({
+    mutationFn: () => api.deleteIssue(id!),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ['issue', id] });
+      queryClient.invalidateQueries({ queryKey: ['search'] });
+      navigate('/search');
+    },
+    onError: (e) => alert((e as Error).message),
   });
 
   const createLabel = useMutation({
@@ -122,10 +136,23 @@ export default function IssueDetailPage() {
   });
 
   if (isLoading) return <div className="text-gray-500">Loading...</div>;
-  if (!issue) return <div>Issue not found</div>;
+  if (!issue) {
+    return (
+      <div className="bg-white border border-jira-border rounded-lg p-8 text-center">
+        <h1 className="text-lg font-semibold mb-1">Issue not found</h1>
+        <p className="text-sm text-gray-500 mb-4">{(error as Error)?.message ?? `${id} does not exist or was deleted.`}</p>
+        <Link to="/search" className="text-jira-blue hover:underline text-sm">Back to issues</Link>
+      </div>
+    );
+  }
+
+  const canDelete = !!currentUser && (
+    currentUser.role === 'ADMIN' || currentUser.id === issue.reporter?.id || currentUser.id === issue.project?.leadId
+  );
 
   const transitions = TRANSITIONS[issue.status] ?? [];
-  const isIncident = issue.type === 'DEFECT' || issue.type === 'TASK';
+  // Escalation between @teams is a SPORTS process.
+  const isIncident = issue.project?.strictHierarchy !== false && (issue.type === 'DEFECT' || issue.type === 'TASK');
   const epicParent = issue.parent && isEpicType(issue.parent.type) ? issue.parent : null;
 
   const fixVersions = issue.versions?.filter((v) => v.isFix).map((v) => v.version.name) ?? [];
@@ -151,6 +178,21 @@ export default function IssueDetailPage() {
 
   return (
     <div className="space-y-4">
+      {issue.project && (
+        <div className="text-sm text-gray-500">
+          <Link to="/projects" className="hover:underline">Projects</Link>
+          {' / '}
+          <Link to={`/projects/${issue.project.key}`} className="hover:underline">{issue.project.name}</Link>
+          {issue.parent && (
+            <>
+              {' / '}
+              <Link to={`/browse/${issue.parent.key}`} className="hover:underline">{issue.parent.key}</Link>
+            </>
+          )}
+          {' / '}
+          <span className="text-jira-navy">{issue.key}</span>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -171,8 +213,29 @@ export default function IssueDetailPage() {
             <div className="absolute top-full left-0 mt-1 bg-white border border-jira-border rounded shadow-lg z-10 min-w-[180px]">
               <button type="button" onClick={() => { setShowLogTime(true); setShowMore(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-jira-gray">Log time</button>
               <button type="button" onClick={() => { navigate(`/issues/new?parentId=${issue.id}&type=SUB_TASK`); setShowMore(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-jira-gray">Create sub-task</button>
-              <button type="button" onClick={() => { setShowLinkIssue(true); setShowMore(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-jira-gray">Link issue</button>
+              <button type="button" onClick={() => { setAddingLink(true); setShowMore(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-jira-gray">Link issue</button>
               <button type="button" onClick={() => { setShowManageLabels(true); setShowMore(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-jira-gray">Labels</button>
+              <button
+                type="button"
+                onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/browse/${issue.key}`); setShowMore(false); }}
+                className="block w-full text-left px-4 py-2 text-sm hover:bg-jira-gray"
+              >
+                Copy link
+              </button>
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMore(false);
+                    if (confirm(`Delete ${issue.key}? Its comments, history, links and attachments are deleted too. This cannot be undone.`)) {
+                      deleteIssue.mutate();
+                    }
+                  }}
+                  className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 border-t border-jira-border"
+                >
+                  Delete
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -290,22 +353,35 @@ export default function IssueDetailPage() {
             {issue.attachments?.length ? (
               <div className="grid grid-cols-4 gap-2">
                 {issue.attachments.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={async () => {
-                      const token = localStorage.getItem('token');
-                      const res = await fetch(api.getAttachmentUrl(issue.id, a.id), {
-                        headers: token ? { Authorization: `Bearer ${token}` } : {},
-                      });
-                      const blob = await res.blob();
-                      const url = URL.createObjectURL(blob);
-                      window.open(url, '_blank');
-                    }}
-                    className="border border-jira-border rounded p-2 text-xs hover:bg-jira-gray truncate text-left"
-                  >
-                    {a.filename}
-                  </button>
+                  <div key={a.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const token = localStorage.getItem('token');
+                        const res = await fetch(api.getAttachmentUrl(issue.id, a.id), {
+                          headers: token ? { Authorization: `Bearer ${token}` } : {},
+                        });
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                      }}
+                      className="w-full border border-jira-border rounded p-2 text-xs hover:bg-jira-gray text-left"
+                      title={`${a.filename} — ${a.uploadedBy.name}, ${new Date(a.createdAt).toLocaleString()}`}
+                    >
+                      <span className="block truncate pr-4">{a.filename}</span>
+                      <span className="block text-gray-400">{Math.max(1, Math.round(a.size / 1024))} KB</span>
+                    </button>
+                    {(a.uploadedBy.id === currentUser?.id || currentUser?.role === 'ADMIN') && (
+                      <button
+                        type="button"
+                        onClick={() => { if (confirm(`Delete attachment ${a.filename}?`)) deleteAttachment.mutate(a.id); }}
+                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 text-sm leading-none px-1"
+                        title="Delete attachment"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             ) : (
@@ -318,7 +394,7 @@ export default function IssueDetailPage() {
               <h3 className="text-sm font-medium text-gray-500 mb-3">Sub-tasks / Children</h3>
               <div className="space-y-2">
                 {issue.children.map((child) => (
-                  <Link key={child.id} to={`/issues/${child.id}`} className="flex items-center gap-3 p-2 hover:bg-jira-gray rounded">
+                  <Link key={child.id} to={`/browse/${child.key}`} className="flex items-center gap-3 p-2 hover:bg-jira-gray rounded">
                     <TypeBadge type={child.type} />
                     <span className="text-jira-blue text-sm">{child.key}</span>
                     <span className="text-sm flex-1 truncate">{child.summary}</span>
@@ -328,6 +404,8 @@ export default function IssueDetailPage() {
               </div>
             </div>
           )}
+
+          <IssueLinks issue={issue} adding={addingLink} onAddingChange={setAddingLink} />
 
           {isIncident && (
             <div className="bg-white rounded-lg border border-jira-border p-4">
@@ -343,6 +421,8 @@ export default function IssueDetailPage() {
               </div>
             </div>
           )}
+
+          <ActivitySection issue={issue} currentUser={currentUser} />
         </div>
 
         <div className="space-y-4">
@@ -359,24 +439,19 @@ export default function IssueDetailPage() {
             {issue.parent && !epicParent && (
               <div className="text-sm">
                 <span className="text-gray-500">Parent: </span>
-                <Link to={`/issues/${issue.parent.id}`} className="text-jira-blue hover:underline">{issue.parent.key}</Link>
+                <Link to={`/browse/${issue.parent.key}`} className="text-jira-blue hover:underline">{issue.parent.key}</Link>
               </div>
             )}
-            {issue.linksFrom?.map((link) => (
-              <div key={link.id} className="text-sm">
-                <span className="text-gray-500">{link.type.replace(/_/g, ' ')}: </span>
-                <Link to={`/issues/${link.target!.id}`} className="text-jira-blue hover:underline">{link.target!.key}</Link>
+            {epicParent && (
+              <div className="text-sm">
+                <span className="text-gray-500">Epic: </span>
+                <Link to={`/browse/${epicParent.key}`} className="text-jira-blue hover:underline">{epicParent.key}</Link>
               </div>
-            ))}
-            {issue.linksTo?.map((link) => (
-              <div key={link.id} className="text-sm">
-                <span className="text-gray-500">{link.type.replace(/_/g, ' ')} from: </span>
-                <Link to={`/issues/${link.source!.id}`} className="text-jira-blue hover:underline">{link.source!.key}</Link>
-              </div>
-            ))}
-            {!issue.parent && !issue.linksFrom?.length && !issue.linksTo?.length && (
-              <p className="text-sm text-gray-400">No linked issues</p>
             )}
+            <div className="text-sm">
+              <span className="text-gray-500">Children: </span>
+              {issue.children?.length ?? 0}
+            </div>
           </div>
 
           <div className="bg-white rounded-lg border border-jira-border p-4 space-y-2">
@@ -458,27 +533,6 @@ export default function IssueDetailPage() {
             <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => setShowLogTime(false)} className="px-4 py-1.5 border rounded text-sm">Cancel</button>
               <button type="button" onClick={() => logTime.mutate()} className="px-4 py-1.5 bg-jira-blue text-white rounded text-sm">Log</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showLinkIssue && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 space-y-4">
-            <h3 className="font-medium">Link Issue</h3>
-            <select value={linkForm.type} onChange={(e) => setLinkForm({ ...linkForm, type: e.target.value })} className="w-full border rounded px-2 py-1 text-sm">
-              {LINK_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
-            </select>
-            <select value={linkForm.targetId} onChange={(e) => setLinkForm({ ...linkForm, targetId: e.target.value })} className="w-full border rounded px-2 py-1 text-sm">
-              <option value="">Select issue...</option>
-              {allIssues?.filter((i) => i.id !== issue.id).map((i) => (
-                <option key={i.id} value={i.id}>{i.key} — {i.summary}</option>
-              ))}
-            </select>
-            <div className="flex gap-2 justify-end">
-              <button type="button" onClick={() => setShowLinkIssue(false)} className="px-4 py-1.5 border rounded text-sm">Cancel</button>
-              <button type="button" onClick={() => createLink.mutate()} disabled={!linkForm.targetId} className="px-4 py-1.5 bg-jira-blue text-white rounded text-sm">Link</button>
             </div>
           </div>
         </div>
