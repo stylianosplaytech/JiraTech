@@ -58,6 +58,7 @@ It is safe to run more than once. Every demo user logs in with the same password
 | 7 | Monitoring, RAG, Dashboards | Done |
 | 8 | Projects, comments, history, links, JQL search, saved filters | Done |
 | 9 | Notifications (in-app and email), @mention picker | Done |
+| 10 | Project permissions, rich text, configurable workflows, bulk edit | Done |
 
 ## Jira-style features
 
@@ -67,6 +68,38 @@ It is safe to run more than once. Every demo user logs in with the same password
 - **Activity history** — every field change, transition, link and attachment is recorded on the History tab.
 - **Links** — blocks / is blocked by / depends on / relates to, across projects, with type-ahead issue search; remove from the issue page.
 - **Search** — basic filters or JQL, sortable columns, paging, CSV export, saved and shared filters; global quick search in the header (press `/`).
+
+### Project permissions
+
+Each project has members with a role, plus **general access** for everyone else:
+
+| Role | Can |
+|---|---|
+| **Administrator** | everything below, plus project settings, people, versions, components, custom fields, workflow, and deleting any issue |
+| **Member** | create, edit, assign, link and transition issues; log work; delete issues they reported |
+| **Viewer** | browse, comment and watch |
+
+General access is **Open** (everyone is a member), **Limited** (everyone is a viewer) or **Private** (members only — the project is invisible to others).
+Global admins and the project lead always administer a project. Search, quick search, boards, links and notifications only include
+what you can see. Manage people on the project page under *People and access*.
+
+### Workflows
+
+Each project has its own workflow: statuses (e.g. *In Review*, *QA*) and the allowed moves between them. Every status belongs to a
+category — Backlog, To Do, In Progress or Done — which the dashboard, reports and `statusCategory` search use. Moving to a Done status
+asks for a resolution. Project administrators edit the workflow on the project page (add, rename, recategorise, reorder and delete
+statuses; tick allowed transitions in the matrix). New projects start with Backlog → To Do → In Progress → Closed.
+
+### Rich text
+
+Descriptions and comments use a rich-text editor (bold, italic, lists, quotes, code, links). Type `@` and a name to mention someone —
+they're notified and start watching. Content is sanitised on the server and again in the browser.
+
+### Bulk changes
+
+On the Issues page, tick issues (or the header box for the whole page) to edit assignee, priority, labels, components and fix
+versions, change status, watch or delete them in one go. Every issue is checked individually; anything that can't be changed is listed
+afterwards with the reason. Untick *Send notifications* for quiet clean-ups.
 
 ### Notifications
 
@@ -107,7 +140,7 @@ text ~ "login" AND updated >= -7d
 labels IS EMPTY AND (priority = Highest OR priority = High)
 ```
 
-Fields: project, key, type, status, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, summary, description, comment, text, created, updated, blocked.
+Fields: project, key, type, status (workflow status name), statusCategory, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, summary, description, comment, text, created, updated, blocked.
 Operators: `= != ~ !~ > >= < <= IN, NOT IN, IS [NOT] EMPTY`, combined with `AND / OR / NOT` and parentheses.
 Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMonth()`. Dates: `2026-01-31`, `"2026-01-31 14:00"` or relative `-7d`, `-2w`, `-4h`.
 
@@ -126,6 +159,10 @@ Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMo
 - `GET|POST /api/filters`, `PATCH|DELETE /api/filters/:id`
 - `GET /api/notifications?scope=all|direct&unread=true`, `GET /api/notifications/unread-count`, `POST /api/notifications/:id/read|unread`, `POST /api/notifications/read-all`, `GET|PATCH /api/notifications/preferences`
 - `POST /api/versions`, `PATCH /api/versions/:id`
+- `GET /api/projects/:key/members`, `PUT|DELETE /api/projects/:key/members/:userId`
+- `GET /api/projects/:key/workflow`, `POST|PATCH|DELETE /api/projects/:key/workflow/statuses[/:id]`, `PUT /api/projects/:key/workflow/order`, `PUT /api/projects/:key/workflow/transitions`
+- `GET /api/issues/:id/transitions`, `POST /api/issues/:id/transition` (`{ statusId, resolution }`)
+- `POST /api/issues/bulk` (`{ issueIds, action: edit|transition|watch|delete, … }`)
 
 Project-scoped endpoints (issues list, board, labels, versions, components, custom fields, dashboard, planning) use the `X-Project-Key` header or `?project=KEY`, defaulting to SPORTS.
 - `GET /api/board` — kanban board data

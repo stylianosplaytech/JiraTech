@@ -1,5 +1,5 @@
 import {
-  IsString, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, MinLength, MaxLength, IsObject,
+  IsString, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, MinLength, MaxLength, IsObject, IsIn,
 } from 'class-validator';
 import { IssueType, Priority } from '@prisma/client';
 
@@ -200,6 +200,56 @@ export class UpdateCustomFieldsDto {
   customFields!: Record<string, string>;
 }
 
+
+export class BulkDto {
+  @IsArray()
+  @IsString({ each: true })
+  issueIds!: string[];
+
+  @IsIn(['edit', 'transition', 'watch', 'delete'])
+  action!: 'edit' | 'transition' | 'watch' | 'delete';
+
+  @IsOptional()
+  @IsBoolean()
+  notify?: boolean;
+
+  /** null or '' unassigns; omit to keep */
+  @IsOptional()
+  @IsString()
+  assigneeId?: string | null;
+
+  @IsOptional()
+  @IsEnum(Priority)
+  priority?: Priority;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  addLabelIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  removeLabelIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  addComponentIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  addFixVersionIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  statusName?: string;
+
+  @IsOptional()
+  @IsString()
+  resolution?: string;
+}
 
 export class CommentDto {
   @IsString()

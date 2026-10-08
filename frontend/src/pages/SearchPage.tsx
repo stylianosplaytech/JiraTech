@@ -7,6 +7,7 @@ import { jqlValue } from '../utils';
 import { PriorityIcon, StatusBadge, TypeBadge, typeLabel } from '../components/Badges';
 import { ChevronDownIcon, DownloadIcon, IssueTypeIcon, SearchIcon, StarIcon, TrashIcon } from '../components/Icons';
 import Avatar from '../components/Avatar';
+import BulkActions from '../components/BulkActions';
 import { Dropdown, EmptyState, errorMessage, useDialogs, useToast } from '../components/ui';
 
 const PAGE_SIZE = 50;
@@ -136,11 +137,14 @@ export default function SearchPage() {
 
   const [mode, setMode] = useState<'basic' | 'jql'>(urlJql && !urlJql.startsWith('project = ') ? 'jql' : 'basic');
   const [draft, setDraft] = useState(jql);
+  const [selected, setSelected] = useState<Map<string, Issue>>(new Map());
   const [basic, setBasic] = useState<Basic>({
     project: projectKey ?? '', types: [], statuses: [], priorities: [], assignee: '', text: '',
   });
 
   useEffect(() => setDraft(jql), [jql]);
+  // A new search starts with nothing selected.
+  useEffect(() => setSelected(new Map()), [jql]);
 
   const run = (nextJql: string, extra: Record<string, string> = {}) => {
     const next: Record<string, string> = { jql: nextJql, ...extra };
@@ -411,6 +415,8 @@ export default function SearchPage() {
           )}
         </div>
 
+        {selected.size > 0 && <BulkActions selected={[...selected.values()]} onClear={() => setSelected(new Map())} />}
+
         {error ? (
           <div className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-4 py-3">{errorMessage(error)}</div>
         ) : (
@@ -419,6 +425,23 @@ export default function SearchPage() {
               <table className="data-table">
                 <thead>
                   <tr>
+                    <th className="w-8">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all issues on this page"
+                        checked={!!data?.issues.length && data.issues.every((i) => selected.has(i.id))}
+                        ref={(el) => {
+                          if (el) el.indeterminate = !!data?.issues.some((i) => selected.has(i.id)) && !data?.issues.every((i) => selected.has(i.id));
+                        }}
+                        onChange={(e) => {
+                          const next = new Map(selected);
+                          for (const i of data?.issues ?? []) {
+                            if (e.target.checked) next.set(i.id, i); else next.delete(i.id);
+                          }
+                          setSelected(next);
+                        }}
+                      />
+                    </th>
                     {COLUMNS.map((c) => (
                       <th key={c.label} className={c.className}>
                         {c.sort ? (
@@ -433,7 +456,19 @@ export default function SearchPage() {
                 </thead>
                 <tbody className={isFetching && data ? 'opacity-60' : ''}>
                   {data?.issues.map((issue) => (
-                    <tr key={issue.id}>
+                    <tr key={issue.id} className={selected.has(issue.id) ? 'bg-jira-blue-light/40' : ''}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${issue.key}`}
+                          checked={selected.has(issue.id)}
+                          onChange={(e) => {
+                            const next = new Map(selected);
+                            if (e.target.checked) next.set(issue.id, issue); else next.delete(issue.id);
+                            setSelected(next);
+                          }}
+                        />
+                      </td>
                       <td><TypeBadge type={issue.type} /></td>
                       <td className="whitespace-nowrap">
                         <Link to={`/browse/${issue.key}`} className={`link ${issue.status === 'CLOSED' ? 'line-through' : ''}`}>{issue.key}</Link>

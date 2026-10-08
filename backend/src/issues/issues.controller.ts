@@ -9,13 +9,14 @@ import * as fs from 'fs';
 import { IssuesService } from './issues.service';
 import {
   CreateIssueDto, UpdateIssueDto, TransitionDto, CreateLinkDto,
-  AddWatcherDto, CreateWorkLogDto, UpdateCustomFieldsDto, CommentDto,
+  AddWatcherDto, CreateWorkLogDto, UpdateCustomFieldsDto, CommentDto, BulkDto,
 } from './dto/issue.dto';
 import { JwtAuthGuard } from '../auth/guards';
 import { ProjectKey } from '../common/project-key.decorator';
 import { AuthRequest } from '../common/auth-user';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { AccessService } from '../access/access.service';
+import { BulkService } from './bulk.service';
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const ISSUE = { from: 'issueParam', param: 'id' } as const;
@@ -23,7 +24,13 @@ const ISSUE = { from: 'issueParam', param: 'id' } as const;
 @Controller('issues')
 @UseGuards(JwtAuthGuard, AccessGuard)
 export class IssuesController {
-  constructor(private issuesService: IssuesService, private access: AccessService) {}
+  constructor(private issuesService: IssuesService, private access: AccessService, private bulk: BulkService) {}
+
+  /** Apply one change to many issues; checked per issue. Declared before ":id" routes. */
+  @Post('bulk')
+  bulkChange(@Body() dto: BulkDto, @Request() req: AuthRequest) {
+    return this.bulk.run(dto, req.user);
+  }
 
   @Get()
   @RequireAccess('browse')

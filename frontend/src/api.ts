@@ -175,19 +175,25 @@ export const api = {
   },
   getAttachmentUrl: (issueId: string, attachmentId: string) =>
     `${API}/issues/${issueId}/attachments/${attachmentId}`,
-  getLabels: () => request<Label[]>('/labels'),
+  /** Pass a project key to read another project's list than the current one. */
+  getLabels: (projectKey?: string) => request<Label[]>(`/labels${projectKey ? `?project=${projectKey}` : ''}`),
   createLabel: (name: string) =>
     request<Label>('/labels', { method: 'POST', body: JSON.stringify({ name }) }),
-  getVersions: () => request<Version[]>('/versions'),
+  getVersions: (projectKey?: string) => request<Version[]>(`/versions${projectKey ? `?project=${projectKey}` : ''}`),
   getCustomFieldDefinitions: () => request<CustomFieldDefinition[]>('/custom-fields'),
   getBoard: (sprintId?: string) => {
     const qs = sprintId ? `?sprintId=${sprintId}` : '';
     return request<BoardData>(`/board${qs}`);
   },
-  getComponents: (type?: string) => {
-    const qs = type ? `?type=${type}` : '';
-    return request<Component[]>(`/components${qs}`);
+  getComponents: (type?: string, projectKey?: string) => {
+    const params = new URLSearchParams();
+    if (type) params.set('type', type);
+    if (projectKey) params.set('project', projectKey);
+    const qs = params.toString();
+    return request<Component[]>(`/components${qs ? `?${qs}` : ''}`);
   },
+  bulkChange: (data: BulkRequest) =>
+    request<BulkResult>('/issues/bulk', { method: 'POST', body: JSON.stringify(data) }),
   getPis: () => request<ProgramIncrement[]>('/planning/pis'),
   getDashboard: (piId?: string) => {
     const qs = piId ? `?piId=${piId}` : '';
@@ -450,6 +456,25 @@ export interface CreateIssuePayload {
 
 export interface UpdateIssuePayload extends Partial<CreateIssuePayload> {
   blocked?: boolean;
+}
+
+export interface BulkRequest {
+  issueIds: string[];
+  action: 'edit' | 'transition' | 'watch' | 'delete';
+  notify?: boolean;
+  assigneeId?: string | null;
+  priority?: string;
+  addLabelIds?: string[];
+  removeLabelIds?: string[];
+  addComponentIds?: string[];
+  addFixVersionIds?: string[];
+  statusName?: string;
+  resolution?: string;
+}
+
+export interface BulkResult {
+  succeeded: { id: string; key: string }[];
+  failed: { id: string; key: string; error: string }[];
 }
 
 export interface BoardData {

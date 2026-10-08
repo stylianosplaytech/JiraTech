@@ -171,7 +171,7 @@ export class IssuesService {
     return this.findOne(issueId);
   }
 
-  async update(idOrKey: string, dto: UpdateIssueDto, userId: string) {
+  async update(idOrKey: string, dto: UpdateIssueDto, userId: string, opts: { notify?: boolean } = {}) {
     const before = await this.findOne(idOrKey);
     const id = before.id;
 
@@ -249,7 +249,7 @@ export class IssuesService {
     if (dto.customFields) {
       await this.customFieldsService.setIssueValues(id, dto.customFields);
     }
-    await this.notifications.issueUpdated(id, userId, {
+    if (opts.notify !== false) await this.notifications.issueUpdated(id, userId, {
       fields: changed,
       previousAssigneeId: before.assigneeId,
       previousDescription: before.description,
@@ -257,7 +257,7 @@ export class IssuesService {
     return this.findOne(id);
   }
 
-  async remove(idOrKey: string, user: AuthUser) {
+  async remove(idOrKey: string, user: AuthUser, opts: { notify?: boolean } = {}) {
     const issue = await this.prisma.issue.findFirst({
       where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
       include: { project: true, attachments: true, _count: { select: { children: true } } },
@@ -270,7 +270,7 @@ export class IssuesService {
       throw new BadRequestException(`${issue.key} has ${issue._count.children} child issue(s); delete or move them first`);
     }
 
-    await this.notifications.issueDeleted(issue.id, user.id);
+    if (opts.notify !== false) await this.notifications.issueDeleted(issue.id, user.id);
     await this.prisma.$transaction(async (tx) => {
       await tx.issueComponent.deleteMany({ where: { issueId: issue.id } });
       await tx.issueVersion.deleteMany({ where: { issueId: issue.id } });
@@ -288,7 +288,7 @@ export class IssuesService {
     return this.workflow.availableTransitions(id);
   }
 
-  async transition(idOrKey: string, dto: TransitionDto, userId: string) {
+  async transition(idOrKey: string, dto: TransitionDto, userId: string, opts: { notify?: boolean } = {}) {
     const issue = await this.findOne(idOrKey);
     const to = await this.workflow.resolveTarget(issue, dto);
     const closing = to.category === IssueStatus.CLOSED;
@@ -313,7 +313,7 @@ export class IssuesService {
       }
       await this.recordHistory(tx, issue.id, userId, changes);
     });
-    await this.notifications.statusChanged(issue.id, userId, fromName, to.name);
+    if (opts.notify !== false) await this.notifications.statusChanged(issue.id, userId, fromName, to.name);
     return this.findOne(issue.id);
   }
 
