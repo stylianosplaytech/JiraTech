@@ -1,100 +1,90 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { User } from '../api';
 import { useProject } from '../project';
+import { humanize } from '../utils';
 import QuickSearch from './QuickSearch';
 import Avatar from './Avatar';
+import { Dropdown, Modal, useToast } from './ui';
+import { ChevronDownIcon, LogoutIcon, PlusIcon } from './Icons';
+import CreateIssueForm from './CreateIssueForm';
 
 const NAV = [
-  { path: '/', label: 'Board' },
+  { path: '/', label: 'Board', end: true },
   { path: '/search', label: 'Issues' },
   { path: '/projects', label: 'Projects' },
   { path: '/planning', label: 'Planning' },
-  { path: '/dashboard', label: 'Dashboard' },
-  { path: '/users', label: 'Users' },
+  { path: '/dashboard', label: 'Dashboards' },
+  { path: '/users', label: 'People' },
 ];
+
+function Logo() {
+  return (
+    <Link to="/" className="flex items-center gap-2 pr-2 shrink-0" aria-label="JiraTech home">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+        <defs>
+          <linearGradient id="jt-g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#2684FF" />
+            <stop offset="1" stopColor="#0052CC" />
+          </linearGradient>
+        </defs>
+        <path d="M12 2 22 12 12 22 2 12Z" fill="url(#jt-g)" />
+        <path d="M12 7.5 16.5 12 12 16.5 7.5 12Z" fill="white" />
+      </svg>
+      <span className="font-semibold text-[17px] text-jira-navy tracking-tight">JiraTech</span>
+    </Link>
+  );
+}
 
 function ProjectSwitcher() {
   const { project, projects, setProjectKey } = useProject();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, []);
-
   return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-2 py-1.5 rounded text-sm font-medium hover:bg-white/10"
-        title="Switch project"
-      >
-        <span className="font-mono text-xs bg-white/20 rounded px-1.5 py-0.5">{project?.key ?? '—'}</span>
-        <span className="max-w-[140px] truncate">{project?.name ?? 'Select project'}</span>
-        <span className="text-xs opacity-70">▾</span>
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-1 w-72 bg-white text-jira-navy border border-jira-border rounded shadow-lg z-50 py-1">
-          <div className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase text-gray-500">Projects</div>
+    <Dropdown
+      width="w-72"
+      trigger={({ toggle, open }) => (
+        <button type="button" onClick={toggle} className={`btn ${open ? 'bg-jira-blue-light text-jira-blue' : 'btn-subtle text-jira-navy'}`} title="Switch project">
+          <span className="font-mono text-[11px] bg-jira-gray-hover text-jira-subtle rounded-[3px] px-1.5 py-0.5">{project?.key ?? '—'}</span>
+          <span className="max-w-[150px] truncate">{project?.name ?? 'Select project'}</span>
+          <ChevronDownIcon size={14} />
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <div className="menu-heading">Switch project</div>
           <div className="max-h-72 overflow-y-auto">
             {projects.map((p) => (
               <button
                 key={p.id}
                 type="button"
-                onClick={() => { setProjectKey(p.key); setOpen(false); }}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-jira-gray ${p.key === project?.key ? 'bg-blue-50' : ''}`}
+                onClick={() => { setProjectKey(p.key); close(); }}
+                className={`menu-item ${p.key === project?.key ? 'bg-jira-blue-light/60' : ''}`}
               >
-                <span className="font-mono text-xs bg-jira-gray rounded px-1.5 py-0.5">{p.key}</span>
+                <span className="font-mono text-[11px] bg-jira-gray-hover rounded-[3px] px-1.5 py-0.5">{p.key}</span>
                 <span className="truncate flex-1">{p.name}</span>
-                {p.key === project?.key && <span className="text-jira-blue text-xs">current</span>}
               </button>
             ))}
           </div>
           <div className="border-t border-jira-border mt-1 pt-1">
-            <button
-              type="button"
-              onClick={() => { navigate('/projects'); setOpen(false); }}
-              className="w-full px-3 py-1.5 text-left text-sm hover:bg-jira-gray"
-            >
-              View all projects
-            </button>
-            <button
-              type="button"
-              onClick={() => { navigate('/projects?create=1'); setOpen(false); }}
-              className="w-full px-3 py-1.5 text-left text-sm text-jira-blue hover:bg-jira-gray"
-            >
-              + Create project
+            <button type="button" className="menu-item" onClick={() => { navigate('/projects'); close(); }}>View all projects</button>
+            <button type="button" className="menu-item" onClick={() => { navigate('/projects?create=1'); close(); }}>
+              <PlusIcon size={14} /> Create project
             </button>
           </div>
-        </div>
+        </>
       )}
-    </div>
+    </Dropdown>
   );
 }
 
-export default function Layout({
-  children,
-  user,
-  loading,
-}: {
-  children: React.ReactNode;
-  user?: User;
-  loading: boolean;
-}) {
-  const location = useLocation();
+export default function Layout({ children, user, loading }: { children: React.ReactNode; user?: User; loading: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-
-  const isActive = (path: string) =>
-    path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
+  const toast = useToast();
+  const [creating, setCreating] = useState(false);
+  const [createPending, setCreatePending] = useState(false);
 
   const logout = () => {
     localStorage.removeItem('token');
@@ -104,47 +94,81 @@ export default function Layout({
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="bg-jira-blue text-white shadow">
-        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 min-w-0">
-            <Link to="/" className="font-bold text-lg tracking-tight shrink-0">
-              JiraTech
-            </Link>
-            <ProjectSwitcher />
-            <nav className="flex gap-1">
-              {NAV.map((item) => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                    isActive(item.path) ? 'bg-white/20' : 'hover:bg-white/10'
+      <header className="sticky top-0 z-40 bg-white border-b border-jira-border">
+        <div className="h-14 px-4 flex items-center gap-2">
+          <Logo />
+          <ProjectSwitcher />
+          <nav className="flex items-stretch h-14 ml-1" aria-label="Main">
+            {NAV.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.end}
+                className={({ isActive }) =>
+                  `relative flex items-center px-3 text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'text-jira-blue after:absolute after:left-2 after:right-2 after:bottom-0 after:h-[3px] after:rounded-t after:bg-jira-blue'
+                      : 'text-jira-subtle hover:text-jira-navy'
                   }`}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+          <button type="button" onClick={() => setCreating(true)} className="btn btn-primary ml-2">
+            <PlusIcon size={14} /> Create
+          </button>
+          <div className="ml-auto flex items-center gap-2">
             <QuickSearch />
-            <Link
-              to="/issues/new"
-              className="bg-white text-jira-blue hover:bg-blue-50 px-3 py-1.5 rounded text-sm font-semibold"
-            >
-              + Create
-            </Link>
             {!loading && user && (
-              <div className="flex items-center gap-2">
-                <Avatar name={user.name} />
-                <button type="button" onClick={logout} className="text-xs opacity-80 hover:opacity-100 hover:underline">
-                  Log out
-                </button>
-              </div>
+              <Dropdown
+                align="right"
+                width="w-64"
+                trigger={({ toggle }) => (
+                  <button type="button" onClick={toggle} className="rounded-full p-0.5 hover:ring-2 hover:ring-jira-border" aria-label="Your profile and settings">
+                    <Avatar name={user.name} size="md" />
+                  </button>
+                )}
+              >
+                {() => (
+                  <>
+                    <div className="flex items-center gap-3 px-3 py-2">
+                      <Avatar name={user.name} size="md" />
+                      <div className="min-w-0">
+                        <div className="font-semibold truncate">{user.name}</div>
+                        <div className="text-xs text-jira-muted truncate">{user.email}</div>
+                        <div className="text-xs text-jira-muted">{humanize(user.role)}</div>
+                      </div>
+                    </div>
+                    <div className="border-t border-jira-border mt-1 pt-1">
+                      <button type="button" className="menu-item" onClick={logout}><LogoutIcon size={14} /> Log out</button>
+                    </div>
+                  </>
+                )}
+              </Dropdown>
             )}
           </div>
         </div>
       </header>
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">{children}</main>
+
+      <main className="flex-1 w-full max-w-[1400px] mx-auto px-8 py-6">{children}</main>
+
+      {creating && (
+        <Modal title="Create issue" onClose={() => !createPending && setCreating(false)} width="max-w-2xl">
+          <CreateIssueForm
+            formId="create-issue-modal"
+            onPendingChange={setCreatePending}
+            onCancel={() => setCreating(false)}
+            onCreated={(issue, another) => {
+              toast(`${issue.key} created`);
+              if (!another) {
+                setCreating(false);
+                navigate(`/browse/${issue.key}`);
+              }
+            }}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

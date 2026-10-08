@@ -1,7 +1,8 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import { ProjectProvider } from './project';
+import { EmptyState } from './components/ui';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import BoardPage from './pages/BoardPage';
@@ -49,7 +50,7 @@ export default function App() {
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/planning" element={<PlanningPage />} />
                   <Route path="/users" element={<UsersPage />} />
-                  <Route path="*" element={<div className="text-gray-500">Page not found.</div>} />
+                  <Route path="*" element={<EmptyState title="Page not found" action={<Link to="/" className="btn btn-default">Go to the board</Link>}>The page you're looking for doesn't exist.</EmptyState>} />
                 </Routes>
               </Layout>
             </ProjectProvider>

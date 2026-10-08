@@ -15,6 +15,6 @@ export const ISSUE_INCLUDE = {
   sprint: true,
   pi: true,
   children: { select: { id: true, key: true, type: true, summary: true, status: true } },
-  linksFrom: { include: { target: { select: { id: true, key: true, summary: true, type: true } } } },
-  linksTo: { include: { source: { select: { id: true, key: true, summary: true, type: true } } } },
+  linksFrom: { include: { target: { select: { id: true, key: true, summary: true, type: true, status: true } } } },
+  linksTo: { include: { source: { select: { id: true, key: true, summary: true, type: true, status: true } } } },
 } satisfies Prisma.IssueInclude;

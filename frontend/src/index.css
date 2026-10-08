@@ -3,5 +3,62 @@
 @tailwind utilities;
 
 body {
-  @apply bg-jira-gray text-jira-navy antialiased;
+  @apply bg-white text-jira-navy antialiased text-sm;
+}
+
+@layer components {
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-[3px] text-sm font-medium whitespace-nowrap
+      transition-colors select-none disabled:opacity-50 disabled:cursor-not-allowed
+      focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#4C9AFF];
+  }
+  .btn-primary { @apply bg-jira-blue text-white hover:bg-jira-blue-hover; }
+  .btn-default { @apply bg-[#091E420F] text-jira-navy hover:bg-[#091E4224]; }
+  .btn-subtle { @apply bg-transparent text-jira-subtle hover:bg-[#091E420F] hover:text-jira-navy; }
+  .btn-danger { @apply bg-[#DE350B] text-white hover:bg-[#BF2600]; }
+  .btn-link { @apply bg-transparent text-jira-blue hover:underline px-1; }
+  .btn-sm { @apply h-7 px-2 text-xs; }
+  .btn-icon { @apply w-8 px-0; }
+  .btn-sm.btn-icon { @apply w-7; }
+
+  /* Form controls */
+  .input {
+    @apply block w-full h-9 rounded-[3px] border-2 border-jira-border bg-jira-input px-2 text-sm text-jira-navy
+      placeholder:text-jira-muted transition-colors outline-none
+      hover:bg-jira-gray-hover focus:bg-white focus:border-jira-focus disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  textarea.input { @apply h-auto py-1.5 leading-5; }
+  select.input { @apply pr-7; }
+  .field-label { @apply block text-xs font-semibold text-jira-muted mb-1; }
+  .field-help { @apply block text-xs text-jira-muted mt-1; }
+  .field-error { @apply block text-xs text-[#DE350B] mt-1; }
+
+  /* Surfaces */
+  .card { @apply bg-white rounded-[3px] border border-jira-border; }
+  .card-header { @apply flex items-center justify-between px-4 py-3 border-b border-jira-border; }
+  .card-title { @apply text-sm font-semibold text-jira-navy; }
+  .section-title { @apply text-xs font-semibold uppercase tracking-wide text-jira-muted; }
+  .page-title { @apply text-2xl font-medium text-jira-navy; }
+  .popover { @apply bg-white rounded-[3px] shadow-popover py-1 z-50; }
+  .menu-item {
+    @apply flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-jira-navy hover:bg-jira-gray
+      disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .menu-heading { @apply px-3 pt-2 pb-1 text-[11px] font-semibold uppercase text-jira-muted; }
+
+  /* Lozenges (Atlassian status style) */
+  .lozenge {
+    @apply inline-flex items-center rounded-[3px] px-1 text-[11px] font-bold uppercase leading-4 whitespace-nowrap;
+  }
+
+  /* Tables */
+  .data-table { @apply w-full text-sm; }
+  .data-table th {
+    @apply text-left text-xs font-semibold text-jira-subtle px-3 py-2 border-b-2 border-jira-border whitespace-nowrap;
+  }
+  .data-table td { @apply px-3 py-2 border-b border-jira-border align-middle; }
+  .data-table tbody tr { @apply hover:bg-jira-gray; }
+
+  .link { @apply text-jira-blue hover:underline; }
 }

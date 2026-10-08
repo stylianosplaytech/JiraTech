@@ -3,24 +3,25 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type Issue, type SavedFilter } from '../api';
 import { useProject } from '../project';
-import { jqlValue, humanize } from '../utils';
-import { TypeBadge, StatusBadge, PriorityIcon } from '../components/Badges';
+import { jqlValue } from '../utils';
+import { PriorityIcon, StatusBadge, TypeBadge, typeLabel } from '../components/Badges';
+import { ChevronDownIcon, DownloadIcon, IssueTypeIcon, SearchIcon, StarIcon, TrashIcon } from '../components/Icons';
 import Avatar from '../components/Avatar';
+import { Dropdown, EmptyState, errorMessage, useDialogs, useToast } from '../components/ui';
 
 const PAGE_SIZE = 50;
-const TYPES = ['EPIC', 'FEATURE_EPIC', 'STORY', 'TASK', 'DEFECT', 'SUB_TASK', 'RELEASE_EPIC', 'RELEASE_CANDIDATE'];
+const TYPES = ['EPIC', 'STORY', 'TASK', 'DEFECT', 'SUB_TASK', 'FEATURE_EPIC', 'RELEASE_EPIC', 'RELEASE_CANDIDATE'];
 const STATUSES = ['BACKLOG', 'TO_DO', 'DOING', 'CLOSED'];
 const PRIORITIES = ['HIGHEST', 'HIGH', 'MEDIUM', 'LOW', 'LOWEST'];
 
 const COLUMNS: { label: string; sort?: string; className?: string }[] = [
-  { label: 'T', sort: 'type', className: 'w-8' },
-  { label: 'Key', sort: 'key' },
-  { label: 'Summary', sort: 'summary', className: 'min-w-[280px]' },
+  { label: 'Type', sort: 'type', className: 'w-12' },
+  { label: 'Key', sort: 'key', className: 'w-28' },
+  { label: 'Summary', sort: 'summary', className: 'min-w-[220px]' },
   { label: 'Assignee', sort: 'assignee' },
   { label: 'Reporter' },
-  { label: 'P', sort: 'priority', className: 'w-8' },
+  { label: 'Priority', sort: 'priority', className: 'w-16' },
   { label: 'Status', sort: 'status' },
-  { label: 'Resolution' },
   { label: 'Created', sort: 'created' },
   { label: 'Updated', sort: 'updated' },
 ];
@@ -61,39 +62,50 @@ function currentSort(jql: string): { field: string; dir: string } | null {
   return m ? { field: m[1].toLowerCase(), dir: (m[2] ?? 'ASC').toUpperCase() } : null;
 }
 
-function MultiSelect({ label, options, value, onChange }: {
-  label: string; options: string[]; value: string[]; onChange: (v: string[]) => void;
+/** Jira-style filter button: "Status: 2 ▾" with a checklist popover. */
+function FilterButton({ label, options, value, onChange, render }: {
+  label: string;
+  options: string[];
+  value: string[];
+  onChange: (v: string[]) => void;
+  render?: (o: string) => React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const summary = value.length === 0 ? '' : value.length === 1 ? `: ${render ? '' : typeLabel(value[0])}` : `: ${value.length}`;
   return (
-    <div className="relative" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false); }}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className={`border rounded px-3 py-1.5 text-sm bg-white ${value.length ? 'border-jira-blue text-jira-blue' : 'border-jira-border'}`}
-      >
-        {label}{value.length ? `: ${value.length === 1 ? humanize(value[0]) : value.length}` : ''} ▾
-      </button>
-      {open && (
-        <div tabIndex={-1} className="absolute left-0 top-full mt-1 bg-white border border-jira-border rounded shadow-lg z-20 py-1 min-w-[180px]">
+    <Dropdown
+      width="w-60"
+      trigger={({ toggle, open }) => (
+        <button
+          type="button"
+          onClick={toggle}
+          className={`btn ${value.length || open ? 'bg-jira-blue-light text-jira-blue hover:bg-[#B3D4FF]' : 'btn-default'}`}
+        >
+          {label}{summary}
+          {value.length === 1 && render && <span className="ml-1">{render(value[0])}</span>}
+          <ChevronDownIcon size={14} />
+        </button>
+      )}
+    >
+      {() => (
+        <>
           {options.map((o) => (
-            <label key={o} className="flex items-center gap-2 px-3 py-1 text-sm hover:bg-jira-gray cursor-pointer">
+            <label key={o} className="menu-item cursor-pointer">
               <input
                 type="checkbox"
                 checked={value.includes(o)}
                 onChange={() => onChange(value.includes(o) ? value.filter((x) => x !== o) : [...value, o])}
               />
-              {humanize(o)}
+              {render ? render(o) : typeLabel(o)}
             </label>
           ))}
           {value.length > 0 && (
-            <button type="button" onClick={() => onChange([])} className="w-full text-left px-3 py-1 text-xs text-jira-blue border-t border-jira-border mt-1">
-              Clear
+            <button type="button" onClick={() => onChange([])} className="menu-item text-jira-blue border-t border-jira-border mt-1">
+              Clear selection
             </button>
           )}
-        </div>
+        </>
       )}
-    </div>
+    </Dropdown>
   );
 }
 
@@ -108,6 +120,8 @@ function toCsv(issues: Issue[]): string {
 export default function SearchPage() {
   const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const { confirm, prompt } = useDialogs();
   const { projectKey, projects } = useProject();
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const { data: filters } = useQuery({ queryKey: ['filters'], queryFn: api.getFilters });
@@ -147,20 +161,25 @@ export default function SearchPage() {
     retry: false,
   });
 
+  const onError = (e: unknown) => toast(errorMessage(e), 'error');
   const saveNew = useMutation({
     mutationFn: (name: string) => api.createFilter({ name, jql }),
     onSuccess: (f) => {
       queryClient.invalidateQueries({ queryKey: ['filters'] });
       setParams({ filter: f.id });
+      toast(`Filter “${f.name}” saved`);
     },
+    onError,
   });
   const saveChanges = useMutation({
     mutationFn: (f: SavedFilter) => api.updateFilter(f.id, { jql }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['filters'] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['filters'] }); toast('Filter updated'); },
+    onError,
   });
   const toggleShare = useMutation({
     mutationFn: (f: SavedFilter) => api.updateFilter(f.id, { shared: !f.shared }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['filters'] }),
+    onSuccess: (f) => { queryClient.invalidateQueries({ queryKey: ['filters'] }); toast(f.shared ? 'Filter shared with everyone' : 'Filter is now private'); },
+    onError,
   });
   const removeFilter = useMutation({
     mutationFn: (id: string) => api.deleteFilter(id),
@@ -168,6 +187,7 @@ export default function SearchPage() {
       queryClient.invalidateQueries({ queryKey: ['filters'] });
       if (id === filterId) setParams({});
     },
+    onError,
   });
 
   const myFilters = filters?.filter((f) => f.ownerId === me?.id) ?? [];
@@ -199,150 +219,180 @@ export default function SearchPage() {
     URL.revokeObjectURL(a.href);
   };
 
+  const saveAs = async () => {
+    const name = await prompt({
+      title: 'Save filter',
+      label: 'Name',
+      initial: activeFilter ? `${activeFilter.name} (copy)` : '',
+      confirmLabel: 'Save',
+    });
+    if (name) saveNew.mutate(name);
+  };
+
+  const navItem = (active: boolean) =>
+    `flex w-full items-center gap-2 text-left px-3 py-1.5 rounded-[3px] transition-colors ${
+      active ? 'bg-jira-blue-light text-jira-blue font-medium' : 'text-jira-navy hover:bg-jira-gray-hover'
+    }`;
+
   return (
-    <div className="flex gap-6">
-      <aside className="w-56 shrink-0 space-y-5 text-sm">
+    <div className="flex gap-8">
+      <aside className="w-56 shrink-0 space-y-6 pt-1">
         <div>
-          <h3 className="text-[11px] font-semibold uppercase text-gray-500 mb-1">Filters</h3>
+          <h3 className="section-title px-3 mb-2">Filters</h3>
           {builtIns.map((f) => (
-            <button
-              key={f.name}
-              type="button"
-              onClick={() => setParams({ jql: f.jql })}
-              className={`block w-full text-left px-2 py-1 rounded hover:bg-white ${!filterId && jql === f.jql ? 'bg-white font-medium' : ''}`}
-            >
+            <button key={f.name} type="button" onClick={() => setParams({ jql: f.jql })} className={navItem(!filterId && jql === f.jql)}>
               {f.name}
             </button>
           ))}
         </div>
         <div>
-          <h3 className="text-[11px] font-semibold uppercase text-gray-500 mb-1">My saved filters</h3>
-          {myFilters.length === 0 && <p className="px-2 text-gray-400 text-xs">Run a search, then “Save as”.</p>}
+          <h3 className="section-title px-3 mb-2">Saved filters</h3>
+          {myFilters.length === 0 && <p className="px-3 text-xs text-jira-muted">Run a search, then choose “Save as”.</p>}
           {myFilters.map((f) => (
-            <div key={f.id} className={`group flex items-center rounded hover:bg-white ${f.id === filterId ? 'bg-white font-medium' : ''}`}>
-              <button type="button" onClick={() => setParams({ filter: f.id })} className="flex-1 text-left px-2 py-1 truncate" title={f.jql}>
-                {f.name}{f.shared && <span className="ml-1 text-[10px] text-gray-500">(shared)</span>}
+            <div key={f.id} className="group relative">
+              <button type="button" onClick={() => setParams({ filter: f.id })} className={`${navItem(f.id === filterId)} pr-8`} title={f.jql}>
+                <StarIcon size={14} className="shrink-0 text-[#FFAB00]" fill="#FFAB00" />
+                <span className="truncate">{f.name}</span>
               </button>
               <button
                 type="button"
-                onClick={() => { if (confirm(`Delete filter “${f.name}”?`)) removeFilter.mutate(f.id); }}
-                className="opacity-0 group-hover:opacity-100 px-2 text-gray-400 hover:text-red-600"
-                title="Delete filter"
+                onClick={async () => {
+                  if (await confirm({ title: `Delete filter “${f.name}”?`, message: 'The filter is removed for you and anyone it is shared with.', confirmLabel: 'Delete', danger: true })) {
+                    removeFilter.mutate(f.id);
+                  }
+                }}
+                className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 btn btn-subtle btn-sm btn-icon"
+                aria-label={`Delete filter ${f.name}`}
               >
-                ×
+                <TrashIcon size={13} />
               </button>
             </div>
           ))}
         </div>
         {sharedFilters.length > 0 && (
           <div>
-            <h3 className="text-[11px] font-semibold uppercase text-gray-500 mb-1">Shared with everyone</h3>
+            <h3 className="section-title px-3 mb-2">Shared with you</h3>
             {sharedFilters.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setParams({ filter: f.id })}
-                className={`block w-full text-left px-2 py-1 rounded hover:bg-white truncate ${f.id === filterId ? 'bg-white font-medium' : ''}`}
-                title={`${f.jql} — by ${f.owner.name}`}
-              >
-                {f.name}
+              <button key={f.id} type="button" onClick={() => setParams({ filter: f.id })} className={navItem(f.id === filterId)} title={`${f.jql} — by ${f.owner.name}`}>
+                <span className="truncate">{f.name}</span>
               </button>
             ))}
           </div>
         )}
       </aside>
 
-      <div className="flex-1 min-w-0 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold truncate">
-            {activeFilter ? activeFilter.name : 'Search'}
-            {dirty && <span className="ml-2 text-sm font-normal text-amber-600">(edited)</span>}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <h1 className="page-title truncate">
+            {activeFilter ? activeFilter.name : 'Issues'}
+            {dirty && <span className="ml-3 lozenge bg-[#FFFAE6] text-[#974F0C] align-middle">Edited</span>}
           </h1>
           <div className="flex items-center gap-2 shrink-0">
             {activeFilter && activeFilter.ownerId === me?.id && (
               <>
-                {dirty && (
-                  <button type="button" onClick={() => saveChanges.mutate(activeFilter)} className="px-3 py-1.5 bg-jira-blue text-white rounded text-sm">
-                    Save changes
-                  </button>
-                )}
-                <button type="button" onClick={() => toggleShare.mutate(activeFilter)} className="px-3 py-1.5 bg-white border border-jira-border rounded text-sm">
-                  {activeFilter.shared ? 'Stop sharing' : 'Share'}
+                {dirty && <button type="button" onClick={() => saveChanges.mutate(activeFilter)} className="btn btn-primary">Save changes</button>}
+                <button type="button" onClick={() => toggleShare.mutate(activeFilter)} className="btn btn-default">
+                  {activeFilter.shared ? 'Make private' : 'Share'}
                 </button>
               </>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                const name = prompt('Name this filter', activeFilter ? `${activeFilter.name} (copy)` : '');
-                if (name?.trim()) saveNew.mutate(name.trim());
-              }}
-              className="px-3 py-1.5 bg-white border border-jira-border rounded text-sm"
-            >
-              Save as
-            </button>
-            <button type="button" onClick={exportCsv} disabled={!data?.issues.length} className="px-3 py-1.5 bg-white border border-jira-border rounded text-sm disabled:opacity-50">
-              Export CSV
+            <button type="button" onClick={() => void saveAs()} className="btn btn-default">Save as</button>
+            <button type="button" onClick={exportCsv} disabled={!data?.issues.length} className="btn btn-default">
+              <DownloadIcon size={14} /> Export
             </button>
           </div>
         </div>
 
-        <div className="bg-white border border-jira-border rounded-lg p-3 space-y-2">
+        <div className="mb-4">
           {mode === 'basic' ? (
             <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={basic.project}
-                onChange={(e) => updateBasic({ project: e.target.value })}
-                className={`border rounded px-3 py-1.5 text-sm bg-white ${basic.project ? 'border-jira-blue text-jira-blue' : 'border-jira-border'}`}
-              >
-                <option value="">All projects</option>
-                {projects.map((p) => <option key={p.id} value={p.key}>{p.name} ({p.key})</option>)}
-              </select>
-              <MultiSelect label="Type" options={TYPES} value={basic.types} onChange={(types) => updateBasic({ types })} />
-              <MultiSelect label="Status" options={STATUSES} value={basic.statuses} onChange={(statuses) => updateBasic({ statuses })} />
-              <MultiSelect label="Priority" options={PRIORITIES} value={basic.priorities} onChange={(priorities) => updateBasic({ priorities })} />
-              <select
-                value={basic.assignee}
-                onChange={(e) => updateBasic({ assignee: e.target.value as Basic['assignee'] })}
-                className={`border rounded px-3 py-1.5 text-sm bg-white ${basic.assignee ? 'border-jira-blue text-jira-blue' : 'border-jira-border'}`}
-              >
-                <option value="">Any assignee</option>
-                <option value="me">Assigned to me</option>
-                <option value="unassigned">Unassigned</option>
-              </select>
-              <form onSubmit={(e) => { e.preventDefault(); run(basicToJql(basic)); }} className="flex-1 min-w-[200px]">
+              <form onSubmit={(e) => { e.preventDefault(); run(basicToJql(basic)); }} className="relative w-60">
+                <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-jira-muted pointer-events-none" />
                 <input
                   value={basic.text}
                   onChange={(e) => setBasic({ ...basic, text: e.target.value })}
-                  placeholder="Contains text (Enter)"
-                  className="w-full border border-jira-border rounded px-3 py-1.5 text-sm"
+                  onBlur={() => basicToJql(basic) !== jql && run(basicToJql(basic))}
+                  placeholder="Search issues"
+                  className="input h-8 pl-8"
                 />
               </form>
-              <button type="button" onClick={() => { setDraft(jql); setMode('jql'); }} className="text-sm text-jira-blue hover:underline">
-                Switch to JQL
-              </button>
+              <Dropdown
+                width="w-64"
+                trigger={({ toggle, open }) => (
+                  <button type="button" onClick={toggle} className={`btn ${basic.project || open ? 'bg-jira-blue-light text-jira-blue hover:bg-[#B3D4FF]' : 'btn-default'}`}>
+                    Project{basic.project ? `: ${basic.project}` : ''} <ChevronDownIcon size={14} />
+                  </button>
+                )}
+              >
+                {(close) => (
+                  <>
+                    <button type="button" className={`menu-item ${!basic.project ? 'bg-jira-blue-light/60' : ''}`} onClick={() => { updateBasic({ project: '' }); close(); }}>All projects</button>
+                    {projects.map((p) => (
+                      <button key={p.id} type="button" className={`menu-item ${basic.project === p.key ? 'bg-jira-blue-light/60' : ''}`} onClick={() => { updateBasic({ project: p.key }); close(); }}>
+                        <span className="font-mono text-[11px] bg-jira-gray-hover rounded-[3px] px-1.5">{p.key}</span> {p.name}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </Dropdown>
+              <FilterButton
+                label="Type"
+                options={TYPES}
+                value={basic.types}
+                onChange={(types) => updateBasic({ types })}
+                render={(t) => <span className="inline-flex items-center gap-2"><IssueTypeIcon type={t} />{basic.types.length === 1 && basic.types[0] === t ? '' : typeLabel(t)}</span>}
+              />
+              <FilterButton
+                label="Status"
+                options={STATUSES}
+                value={basic.statuses}
+                onChange={(statuses) => updateBasic({ statuses })}
+                render={(s) => <StatusBadge status={s} />}
+              />
+              <FilterButton
+                label="Priority"
+                options={PRIORITIES}
+                value={basic.priorities}
+                onChange={(priorities) => updateBasic({ priorities })}
+                render={(p) => <PriorityIcon priority={p} showLabel={!(basic.priorities.length === 1 && basic.priorities[0] === p)} />}
+              />
+              <Dropdown
+                trigger={({ toggle, open }) => (
+                  <button type="button" onClick={toggle} className={`btn ${basic.assignee || open ? 'bg-jira-blue-light text-jira-blue hover:bg-[#B3D4FF]' : 'btn-default'}`}>
+                    Assignee{basic.assignee === 'me' ? ': Me' : basic.assignee === 'unassigned' ? ': Unassigned' : ''} <ChevronDownIcon size={14} />
+                  </button>
+                )}
+              >
+                {(close) => (
+                  <>
+                    {([['', 'Anyone'], ['me', 'Assigned to me'], ['unassigned', 'Unassigned']] as const).map(([v, l]) => (
+                      <button key={v} type="button" className={`menu-item ${basic.assignee === v ? 'bg-jira-blue-light/60' : ''}`} onClick={() => { updateBasic({ assignee: v }); close(); }}>{l}</button>
+                    ))}
+                  </>
+                )}
+              </Dropdown>
+              <button type="button" onClick={() => { setDraft(jql); setMode('jql'); }} className="btn btn-link ml-auto">Switch to JQL</button>
             </div>
           ) : (
-            <form onSubmit={(e) => { e.preventDefault(); run(draft.trim()); }} className="space-y-2">
+            <form onSubmit={(e) => { e.preventDefault(); run(draft.trim()); }}>
               <div className="flex gap-2">
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); run(draft.trim()); }
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); run(draft.trim()); } }}
                   rows={2}
                   spellCheck={false}
-                  className="flex-1 border border-jira-border rounded px-3 py-2 text-sm font-mono"
-                  placeholder='project = SPORTS AND status != CLOSED ORDER BY priority DESC'
+                  className="input font-mono text-[13px]"
+                  placeholder="project = SPORTS AND status != CLOSED ORDER BY priority DESC"
+                  aria-label="JQL query"
                 />
-                <button type="submit" className="px-4 bg-jira-blue text-white rounded text-sm">Search</button>
+                <button type="submit" className="btn btn-primary self-start h-9">Search</button>
               </div>
-              <div className="flex items-center justify-between text-xs text-gray-500">
+              <div className="flex items-start justify-between gap-4 mt-1.5 text-xs text-jira-muted">
                 <span>
                   Fields: project, key, type, status, priority, resolution, assignee, reporter, watcher, labels, component,
-                  fixVersion, sprint, parent, summary, description, comment, text, created, updated · Operators: = != ~ !~ &gt; &lt; IN, NOT IN, IS EMPTY ·
-                  Functions: currentUser(), startOfDay(), now() · Dates: 2026-01-31 or -7d
+                  fixVersion, sprint, parent, summary, description, comment, text, created, updated ·
+                  Operators: = != ~ !~ &gt; &lt; IN, NOT IN, IS EMPTY · Functions: currentUser(), startOfDay(), now() · Dates: 2026-01-31 or -7d
                 </span>
                 <button
                   type="button"
@@ -352,79 +402,78 @@ export default function SearchPage() {
                     setBasic(reset);
                     run(basicToJql(reset));
                   }}
-                  className="text-jira-blue hover:underline shrink-0 ml-4"
+                  className="btn btn-link btn-sm shrink-0"
                 >
                   Switch to basic
                 </button>
               </div>
             </form>
           )}
-          {mode === 'basic' && <div className="text-xs text-gray-500 font-mono truncate" title={jql}>{jql}</div>}
         </div>
 
         {error ? (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded p-3 text-sm">{(error as Error).message}</div>
+          <div className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-4 py-3">{errorMessage(error)}</div>
         ) : (
           <>
-            <div className="flex items-center justify-between text-sm text-gray-600">
-              <span>
-                {data ? (total === 0 ? 'No issues found' : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total}`) : 'Searching…'}
-                {isFetching && data && <span className="ml-2 text-gray-400">updating…</span>}
-              </span>
-              {total > PAGE_SIZE && (
-                <div className="flex gap-1">
-                  <button type="button" disabled={page === 0} onClick={() => run(jql, { page: String(page - 1) })} className="px-2 py-1 border border-jira-border rounded bg-white disabled:opacity-40">‹ Prev</button>
-                  <button type="button" disabled={page >= lastPage} onClick={() => run(jql, { page: String(page + 1) })} className="px-2 py-1 border border-jira-border rounded bg-white disabled:opacity-40">Next ›</button>
-                </div>
-              )}
-            </div>
-            <div className="bg-white rounded-lg border border-jira-border overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-jira-gray border-b border-jira-border">
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
                   <tr>
                     {COLUMNS.map((c) => (
-                      <th key={c.label} className={`text-left px-3 py-2 font-medium whitespace-nowrap ${c.className ?? ''}`}>
+                      <th key={c.label} className={c.className}>
                         {c.sort ? (
-                          <button type="button" onClick={() => run(withSort(jql, c.sort!))} className="hover:text-jira-blue">
+                          <button type="button" onClick={() => run(withSort(jql, c.sort!))} className="inline-flex items-center gap-1 hover:text-jira-navy">
                             {c.label}
-                            {sort?.field === c.sort && <span className="ml-1">{sort.dir === 'DESC' ? '↓' : '↑'}</span>}
+                            {sort?.field === c.sort && <span aria-hidden="true">{sort.dir === 'DESC' ? '↓' : '↑'}</span>}
                           </button>
                         ) : c.label}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className={isFetching && data ? 'opacity-60' : ''}>
                   {data?.issues.map((issue) => (
-                    <tr key={issue.id} className="border-b border-jira-border last:border-0 hover:bg-jira-gray/50">
-                      <td className="px-3 py-2"><TypeBadge type={issue.type} /></td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <Link to={`/browse/${issue.key}`} className="text-jira-blue hover:underline">{issue.key}</Link>
+                    <tr key={issue.id}>
+                      <td><TypeBadge type={issue.type} /></td>
+                      <td className="whitespace-nowrap">
+                        <Link to={`/browse/${issue.key}`} className={`link ${issue.status === 'CLOSED' ? 'line-through' : ''}`}>{issue.key}</Link>
                       </td>
-                      <td className="px-3 py-2 max-w-md">
+                      <td>
                         <Link to={`/browse/${issue.key}`} className="hover:underline line-clamp-1">{issue.summary}</Link>
                         {issue.labels && issue.labels.length > 0 && (
                           <div className="flex gap-1 mt-0.5">
-                            {issue.labels.map((l) => <span key={l.label.id} className="text-[10px] bg-blue-50 text-blue-800 px-1.5 rounded">{l.label.name}</span>)}
+                            {issue.labels.map((l) => <span key={l.label.id} className="lozenge bg-jira-gray-hover text-jira-subtle normal-case font-semibold">{l.label.name}</span>)}
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {issue.assignee ? <span className="flex items-center gap-1.5"><Avatar name={issue.assignee.name} size="xs" />{issue.assignee.name}</span> : <span className="text-gray-400">Unassigned</span>}
+                      <td className="whitespace-nowrap">
+                        {issue.assignee
+                          ? <span className="flex items-center gap-2"><Avatar name={issue.assignee.name} size="xs" />{issue.assignee.name}</span>
+                          : <span className="text-jira-muted">Unassigned</span>}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-gray-600">{issue.reporter?.name ?? '—'}</td>
-                      <td className="px-3 py-2"><PriorityIcon priority={issue.priority} /></td>
-                      <td className="px-3 py-2"><StatusBadge status={issue.status} /></td>
-                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{issue.resolution ? humanize(issue.resolution) : 'Unresolved'}</td>
-                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{issue.createdAt && new Date(issue.createdAt).toLocaleDateString()}</td>
-                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{issue.updatedAt && new Date(issue.updatedAt).toLocaleDateString()}</td>
+                      <td className="whitespace-nowrap">
+                        {issue.reporter ? <span className="flex items-center gap-2"><Avatar name={issue.reporter.name} size="xs" />{issue.reporter.name}</span> : '—'}
+                      </td>
+                      <td><PriorityIcon priority={issue.priority} /></td>
+                      <td><StatusBadge status={issue.status} /></td>
+                      <td className="whitespace-nowrap text-jira-subtle">{issue.createdAt && new Date(issue.createdAt).toLocaleDateString()}</td>
+                      <td className="whitespace-nowrap text-jira-subtle">{issue.updatedAt && new Date(issue.updatedAt).toLocaleDateString()}</td>
                     </tr>
                   ))}
-                  {data && data.issues.length === 0 && (
-                    <tr><td colSpan={COLUMNS.length} className="px-4 py-10 text-center text-gray-500">No issues match this search.</td></tr>
-                  )}
                 </tbody>
               </table>
+              {data && data.issues.length === 0 && (
+                <EmptyState title="No issues found">Try changing your filters or search terms.</EmptyState>
+              )}
+            </div>
+            <div className="flex items-center justify-between mt-3 text-jira-subtle">
+              <span>{data ? (total === 0 ? '' : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total} issues`) : 'Searching…'}</span>
+              {total > PAGE_SIZE && (
+                <div className="flex gap-1">
+                  <button type="button" disabled={page === 0} onClick={() => run(jql, { page: String(page - 1) })} className="btn btn-default btn-sm">Previous</button>
+                  <button type="button" disabled={page >= lastPage} onClick={() => run(jql, { page: String(page + 1) })} className="btn btn-default btn-sm">Next</button>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -432,3 +481,4 @@ export default function SearchPage() {
     </div>
   );
 }
+

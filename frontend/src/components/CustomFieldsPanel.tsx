@@ -1,10 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, CustomFieldDefinition, Issue, Version } from '../api';
-
-interface CustomFieldsPanelProps {
-  issue: Issue;
-  editable?: boolean;
-}
+import { api, type CustomFieldDefinition, type Issue } from '../api';
+import { InlineText } from './InlineEdit';
+import { SelectPicker } from './Pickers';
+import { errorMessage, useToast } from './ui';
 
 function parseOptions(options?: string): string[] {
   if (!options) return [];
@@ -15,102 +13,60 @@ function parseOptions(options?: string): string[] {
   }
 }
 
-export default function CustomFieldsPanel({ issue, editable = true }: CustomFieldsPanelProps) {
+/** Custom fields rendered as rows of the issue's Details panel. Text and numbers save on Enter, not per keystroke. */
+export default function CustomFieldRows({ issue, Row }: {
+  issue: Issue;
+  Row: (props: { label: string; children: React.ReactNode }) => JSX.Element;
+}) {
   const queryClient = useQueryClient();
-  const { data: definitions } = useQuery({
-    queryKey: ['custom-fields'],
-    queryFn: () => api.getCustomFieldDefinitions(),
-  });
-  const { data: versions } = useQuery({
-    queryKey: ['versions'],
-    queryFn: () => api.getVersions(),
-  });
+  const toast = useToast();
+  const { data: definitions } = useQuery({ queryKey: ['custom-fields'], queryFn: () => api.getCustomFieldDefinitions() });
+  const { data: versions } = useQuery({ queryKey: ['versions'], queryFn: () => api.getVersions() });
 
   const updateField = useMutation({
-    mutationFn: (customFields: Record<string, string>) =>
-      api.updateCustomFields(issue.id, customFields),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['issue', issue.id] }),
+    mutationFn: (customFields: Record<string, string>) => api.updateCustomFields(issue.id, customFields),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['issue'] }),
+    onError: (e) => toast(errorMessage(e), 'error'),
   });
 
   if (!definitions?.length) return null;
 
-  const valueMap = new Map(
-    issue.customFieldValues?.map((v) => [v.field.key, v.value]) ?? [],
-  );
+  const valueMap = new Map(issue.customFieldValues?.map((v) => [v.field.key, v.value]) ?? []);
+  const save = (key: string, value: string) => updateField.mutate({ [key]: value });
 
-  const versionName = (id: string) =>
-    versions?.find((v: Version) => v.id === id)?.name ?? id;
-
-  const handleChange = (key: string, value: string) => {
-    updateField.mutate({ [key]: value });
-  };
-
-  const renderField = (def: CustomFieldDefinition) => {
+  const render = (def: CustomFieldDefinition) => {
     const current = valueMap.get(def.key) ?? '';
-
-    if (!editable || def.key === 'reopen_count') {
-      let display = current || 'None';
-      if (def.type === 'VERSION' && current) display = versionName(current);
-      return <span className="text-sm">{display}</span>;
+    if (def.key === 'reopen_count') {
+      return <span className="px-2">{current || '0'}</span>;
     }
-
-    if (def.type === 'SELECT') {
-      const opts = parseOptions(def.options);
+    if (def.type === 'SELECT' || def.type === 'VERSION') {
+      const options = def.type === 'SELECT'
+        ? parseOptions(def.options).map((o) => ({ id: o, label: o }))
+        : (versions ?? []).map((v) => ({ id: v.id, label: v.name }));
       return (
-        <select
-          value={current}
-          onChange={(e) => handleChange(def.key, e.target.value)}
-          className="w-full border border-jira-border rounded px-2 py-1 text-sm"
-        >
-          <option value="">None</option>
-          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-      );
-    }
-
-    if (def.type === 'VERSION') {
-      return (
-        <select
-          value={current}
-          onChange={(e) => handleChange(def.key, e.target.value)}
-          className="w-full border border-jira-border rounded px-2 py-1 text-sm"
-        >
-          <option value="">None</option>
-          {versions?.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-        </select>
-      );
-    }
-
-    if (def.type === 'NUMBER') {
-      return (
-        <input
-          type="number"
-          value={current}
-          onChange={(e) => handleChange(def.key, e.target.value)}
-          className="w-full border border-jira-border rounded px-2 py-1 text-sm"
+        <SelectPicker
+          value={current || null}
+          onChange={(id) => save(def.key, id ?? '')}
+          options={options}
+          allowClear
         />
       );
     }
-
     return (
-      <input
-        type="text"
+      <InlineText
         value={current}
-        onChange={(e) => handleChange(def.key, e.target.value)}
-        className="w-full border border-jira-border rounded px-2 py-1 text-sm"
+        type={def.type === 'NUMBER' ? 'number' : 'text'}
+        onSave={(v) => save(def.key, v)}
+        className="mx-0"
       />
     );
   };
 
   return (
-    <div className="bg-white rounded-lg border border-jira-border p-4 space-y-3">
-      <h3 className="text-sm font-medium text-gray-500">Custom Fields</h3>
+    <>
       {definitions.map((def) => (
-        <div key={def.id} className="grid grid-cols-2 gap-2 items-center">
-          <span className="text-sm text-gray-500">{def.name}</span>
-          {renderField(def)}
-        </div>
+        <Row key={def.id} label={def.name}>{render(def)}</Row>
       ))}
-    </div>
+    </>
   );
 }

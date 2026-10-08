@@ -2,23 +2,27 @@ import { Fragment, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, formatMinutes, type Comment, type Issue, type User } from '../api';
 import { humanize, timeAgo } from '../utils';
+import { STATUS_LABELS } from './Badges';
 import Avatar from './Avatar';
+import { errorMessage, useDialogs, useToast } from './ui';
 
 const FIELD_LABELS: Record<string, string> = {
-  created: 'created the issue',
   fixVersions: 'Fix versions',
   affectsVersions: 'Affects versions',
   remainingEstimate: 'Remaining estimate',
   epicName: 'Epic name',
 };
 
+const fmt = (field: string, v: string | null) =>
+  v === null ? 'None' : field === 'status' ? (STATUS_LABELS[v] ?? v) : v;
+
 /** Render comment text with @mentions highlighted. */
 function CommentBody({ text }: { text: string }) {
   const parts = text.split(/(@[\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g);
   return (
-    <p className="text-sm whitespace-pre-wrap break-words">
-      {parts.map((p, i) => (p.startsWith('@') && i % 2 === 1
-        ? <span key={i} className="bg-blue-50 text-jira-blue rounded px-0.5">{p}</span>
+    <p className="whitespace-pre-wrap break-words leading-6">
+      {parts.map((p, i) => (i % 2 === 1
+        ? <span key={i} className="bg-jira-blue-light text-jira-blue rounded-[3px] px-1">{p}</span>
         : <Fragment key={i}>{p}</Fragment>))}
     </p>
   );
@@ -34,32 +38,27 @@ function CommentEditor({ initial = '', onSave, onCancel, saving, autoFocus, plac
 }) {
   const [body, setBody] = useState(initial);
   const [focused, setFocused] = useState(!!autoFocus);
-  const save = () => { if (body.trim()) { onSave(body.trim()); if (!initial) setBody(''); } };
+  const save = () => { if (body.trim()) { onSave(body.trim()); if (!initial) { setBody(''); setFocused(false); } } };
   return (
-    <div className="flex-1">
+    <div className="flex-1 min-w-0">
       <textarea
         autoFocus={autoFocus}
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onFocus={() => setFocused(true)}
-        onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save(); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save();
+          if (e.key === 'Escape') { setFocused(false); setBody(initial); onCancel?.(); }
+        }}
         rows={focused ? 4 : 1}
         placeholder={placeholder}
-        className="w-full border border-jira-border rounded px-3 py-2 text-sm"
+        className="input resize-y"
       />
       {focused && (
-        <div className="flex items-center gap-2 mt-1">
-          <button type="button" onClick={save} disabled={!body.trim() || saving} className="px-3 py-1 bg-jira-blue text-white rounded text-sm disabled:opacity-50">
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={() => { setFocused(false); setBody(initial); onCancel?.(); }}
-            className="px-3 py-1 text-sm hover:bg-jira-gray rounded"
-          >
-            Cancel
-          </button>
-          <span className="text-xs text-gray-400 ml-auto">Ctrl+Enter to save · @email to mention</span>
+        <div className="flex items-center gap-2 mt-2">
+          <button type="button" onClick={save} disabled={!body.trim() || saving} className="btn btn-primary">Save</button>
+          <button type="button" onClick={() => { setFocused(false); setBody(initial); onCancel?.(); }} className="btn btn-subtle">Cancel</button>
+          <span className="text-xs text-jira-muted ml-auto">Ctrl+Enter to save · type @email to mention someone</span>
         </div>
       )}
     </div>
@@ -68,14 +67,13 @@ function CommentEditor({ initial = '', onSave, onCancel, saving, autoFocus, plac
 
 export default function ActivitySection({ issue, currentUser }: { issue: Issue; currentUser?: User }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const { confirm } = useDialogs();
   const [tab, setTab] = useState<'comments' | 'history' | 'worklog'>('comments');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [newestFirst, setNewestFirst] = useState(false);
+  const [newestFirst, setNewestFirst] = useState(true);
 
-  const { data: comments } = useQuery({
-    queryKey: ['comments', issue.id],
-    queryFn: () => api.getComments(issue.id),
-  });
+  const { data: comments } = useQuery({ queryKey: ['comments', issue.id], queryFn: () => api.getComments(issue.id) });
   const { data: history } = useQuery({
     queryKey: ['history', issue.id],
     queryFn: () => api.getHistory(issue.id),
@@ -86,12 +84,14 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
     queryClient.invalidateQueries({ queryKey: ['comments', issue.id] });
     queryClient.invalidateQueries({ queryKey: ['issue'] });
   };
-  const add = useMutation({ mutationFn: (body: string) => api.addComment(issue.id, body), onSuccess: refresh });
+  const onError = (e: unknown) => toast(errorMessage(e), 'error');
+  const add = useMutation({ mutationFn: (body: string) => api.addComment(issue.id, body), onSuccess: refresh, onError });
   const edit = useMutation({
     mutationFn: ({ id, body }: { id: string; body: string }) => api.updateComment(issue.id, id, body),
     onSuccess: () => { refresh(); setEditingId(null); },
+    onError,
   });
-  const remove = useMutation({ mutationFn: (id: string) => api.deleteComment(issue.id, id), onSuccess: refresh });
+  const remove = useMutation({ mutationFn: (id: string) => api.deleteComment(issue.id, id), onSuccess: refresh, onError });
 
   const sorted = [...(comments ?? [])].sort((a, b) =>
     (newestFirst ? -1 : 1) * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
@@ -100,13 +100,13 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
     const mine = c.author.id === currentUser?.id;
     const edited = new Date(c.updatedAt).getTime() - new Date(c.createdAt).getTime() > 1000;
     return (
-      <div key={c.id} className="flex gap-3 group">
+      <div key={c.id} className="flex gap-3">
         <Avatar name={c.author.name} size="md" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm mb-0.5">
-            <span className="font-medium">{c.author.name}</span>
-            <span className="text-gray-500 ml-2" title={new Date(c.createdAt).toLocaleString()}>{timeAgo(c.createdAt)}</span>
-            {edited && <span className="text-gray-400 ml-1">(edited)</span>}
+          <div className="mb-1">
+            <span className="font-semibold">{c.author.name}</span>
+            <span className="text-jira-muted ml-2" title={new Date(c.createdAt).toLocaleString()}>{timeAgo(c.createdAt)}</span>
+            {edited && <span className="text-jira-muted ml-1">• Edited</span>}
           </div>
           {editingId === c.id ? (
             <CommentEditor
@@ -119,12 +119,16 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
           ) : (
             <>
               <CommentBody text={c.body} />
-              <div className="flex gap-3 text-xs text-gray-500 mt-1">
+              <div className="flex gap-3 text-xs font-medium text-jira-subtle mt-1">
                 {mine && <button type="button" onClick={() => setEditingId(c.id)} className="hover:underline">Edit</button>}
                 {(mine || currentUser?.role === 'ADMIN') && (
                   <button
                     type="button"
-                    onClick={() => { if (confirm('Delete this comment? This cannot be undone.')) remove.mutate(c.id); }}
+                    onClick={async () => {
+                      if (await confirm({ title: 'Delete this comment?', message: 'Once you delete, it\'s gone for good.', confirmLabel: 'Delete', danger: true })) {
+                        remove.mutate(c.id);
+                      }
+                    }}
                     className="hover:underline"
                   >
                     Delete
@@ -138,67 +142,71 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
     );
   };
 
+  const TABS = [
+    ['comments', 'Comments'],
+    ['history', 'History'],
+    ['worklog', 'Work log'],
+  ] as const;
+
   return (
-    <div className="bg-white rounded-lg border border-jira-border p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-gray-700">Activity</h3>
-        <div className="flex gap-1 text-sm">
-          {([['comments', `Comments${comments?.length ? ` (${comments.length})` : ''}`], ['history', 'History'], ['worklog', 'Work log']] as const).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setTab(key)}
-              className={`px-2.5 py-1 rounded ${tab === key ? 'bg-blue-50 text-jira-blue font-medium' : 'hover:bg-jira-gray'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+    <section className="mb-8">
+      <h2 className="text-base font-semibold text-jira-navy mb-2">Activity</h2>
+      <div className="flex items-center gap-1 mb-4">
+        <span className="text-jira-subtle mr-1">Show:</span>
+        {TABS.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`btn btn-sm ${tab === key ? 'bg-jira-blue-light text-jira-blue' : 'btn-default'}`}
+          >
+            {label}
+            {key === 'comments' && comments?.length ? <span className="ml-0.5 opacity-70">{comments.length}</span> : null}
+          </button>
+        ))}
+        {tab === 'comments' && sorted.length > 1 && (
+          <button type="button" onClick={() => setNewestFirst(!newestFirst)} className="btn btn-subtle btn-sm ml-auto">
+            {newestFirst ? 'Newest first' : 'Oldest first'}
+          </button>
+        )}
       </div>
 
       {tab === 'comments' && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="flex gap-3">
             {currentUser && <Avatar name={currentUser.name} size="md" />}
             <CommentEditor saving={add.isPending} onSave={(body) => add.mutate(body)} placeholder="Add a comment…" />
           </div>
-          {add.isError && <p className="text-sm text-red-600">{(add.error as Error).message}</p>}
-          {sorted.length > 1 && (
-            <button type="button" onClick={() => setNewestFirst(!newestFirst)} className="text-xs text-gray-500 hover:underline">
-              {newestFirst ? 'Newest first ↓' : 'Oldest first ↑'}
-            </button>
-          )}
           {sorted.map(renderComment)}
-          {comments && comments.length === 0 && <p className="text-sm text-gray-400">No comments yet.</p>}
         </div>
       )}
 
       {tab === 'history' && (
-        <div className="space-y-3">
-          {history?.length === 0 && <p className="text-sm text-gray-400">No history yet.</p>}
+        <div className="space-y-4">
+          {history?.length === 0 && <p className="text-jira-muted">No history yet.</p>}
           {history?.map((h) => (
-            <div key={h.id} className="flex gap-3 text-sm">
-              <Avatar name={h.user?.name ?? 'System'} size="sm" />
+            <div key={h.id} className="flex gap-3">
+              <Avatar name={h.user?.name ?? 'System'} size="md" />
               <div className="min-w-0">
                 <div>
-                  <span className="font-medium">{h.user?.name ?? 'System'}</span>{' '}
+                  <span className="font-semibold">{h.user?.name ?? 'System'}</span>{' '}
                   {h.field === 'created' ? (
-                    <span className="text-gray-600">created the issue</span>
+                    <span>created the issue</span>
                   ) : h.field === 'link' || h.field === 'attachment' ? (
-                    <span className="text-gray-600">
-                      {h.toValue ? 'added' : 'removed'} {h.field === 'link' ? 'link' : 'attachment'}{' '}
-                      <span className="font-medium text-jira-navy">{h.toValue ?? h.fromValue}</span>
+                    <span>
+                      {h.toValue ? 'added' : 'removed'} {h.field === 'link' ? 'a link' : 'an attachment'}:{' '}
+                      <span className="font-medium">{h.toValue ?? h.fromValue}</span>
                     </span>
                   ) : (
-                    <span className="text-gray-600">changed <span className="font-medium text-jira-navy">{FIELD_LABELS[h.field] ?? humanize(h.field)}</span></span>
+                    <span>changed the <span className="font-semibold">{FIELD_LABELS[h.field] ?? humanize(h.field)}</span></span>
                   )}
-                  <span className="text-gray-400 ml-2" title={new Date(h.createdAt).toLocaleString()}>{timeAgo(h.createdAt)}</span>
+                  <span className="text-jira-muted ml-2" title={new Date(h.createdAt).toLocaleString()}>{timeAgo(h.createdAt)}</span>
                 </div>
                 {!['created', 'link', 'attachment'].includes(h.field) && (
-                  <div className="text-xs mt-0.5 flex items-center gap-2 flex-wrap">
-                    <span className="bg-gray-100 rounded px-1.5 py-0.5 line-through text-gray-500 max-w-xs truncate">{h.fromValue ?? 'None'}</span>
-                    <span>→</span>
-                    <span className="bg-blue-50 rounded px-1.5 py-0.5 max-w-xs truncate">{h.toValue ?? 'None'}</span>
+                  <div className="text-sm mt-1 flex items-center gap-2 flex-wrap">
+                    <span className="text-jira-subtle line-through max-w-xs truncate">{fmt(h.field, h.fromValue)}</span>
+                    <span className="text-jira-muted">→</span>
+                    <span className="max-w-xs truncate">{fmt(h.field, h.toValue)}</span>
                   </div>
                 )}
               </div>
@@ -208,20 +216,20 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
       )}
 
       {tab === 'worklog' && (
-        <div className="space-y-2">
-          {!issue.workLogs?.length && <p className="text-sm text-gray-400">No work logged. Use More → Log time.</p>}
+        <div className="space-y-4">
+          {!issue.workLogs?.length && <p className="text-jira-muted">No work logged yet. Use “Time tracking” in the details panel.</p>}
           {issue.workLogs?.map((w) => (
-            <div key={w.id} className="flex gap-3 text-sm">
-              <Avatar name={w.user.name} size="sm" />
+            <div key={w.id} className="flex gap-3">
+              <Avatar name={w.user.name} size="md" />
               <div>
-                <span className="font-medium">{w.user.name}</span> logged <span className="font-medium">{formatMinutes(w.timeSpentMinutes)}</span>
-                <span className="text-gray-400 ml-2">{timeAgo(w.createdAt)}</span>
-                {w.comment && <p className="text-gray-600">{w.comment}</p>}
+                <span className="font-semibold">{w.user.name}</span> logged <span className="font-semibold">{formatMinutes(w.timeSpentMinutes)}</span>
+                <span className="text-jira-muted ml-2">{timeAgo(w.createdAt)}</span>
+                {w.comment && <p className="mt-1">{w.comment}</p>}
               </div>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }

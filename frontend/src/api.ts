@@ -245,8 +245,8 @@ export interface IssueVersion {
 export interface IssueLink {
   id: string;
   type: string;
-  target?: { id: string; key: string; summary: string; type: string };
-  source?: { id: string; key: string; summary: string; type: string };
+  target?: { id: string; key: string; summary: string; type: string; status?: string };
+  source?: { id: string; key: string; summary: string; type: string; status?: string };
 }
 
 export interface Attachment {

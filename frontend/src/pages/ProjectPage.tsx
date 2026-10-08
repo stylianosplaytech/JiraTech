@@ -6,9 +6,13 @@ import { useProject } from '../project';
 import { jqlValue } from '../utils';
 import UserPicker from '../components/UserPicker';
 import Avatar from '../components/Avatar';
-import { StatusBadge } from '../components/Badges';
+import { StatusBadge, STATUS_LABELS, typeLabel } from '../components/Badges';
+import { SelectPicker } from '../components/Pickers';
+import { EditIcon, PlusIcon } from '../components/Icons';
+import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
 
 const STATUSES = ['BACKLOG', 'TO_DO', 'DOING', 'CLOSED'];
+const STATUS_BAR: Record<string, string> = { BACKLOG: '#97A0AF', TO_DO: '#5E6C84', DOING: '#0052CC', CLOSED: '#36B37E' };
 
 function searchLink(projectKey: string, extra?: string) {
   const jql = `project = ${projectKey}${extra ? ` AND ${extra}` : ''} ORDER BY created DESC`;
@@ -18,6 +22,7 @@ function searchLink(projectKey: string, extra?: string) {
 export default function ProjectPage() {
   const { key = '' } = useParams<{ key: string }>();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const { projectKey, setProjectKey } = useProject();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', leadId: '' });
@@ -28,6 +33,7 @@ export default function ProjectPage() {
   const { data: project, isLoading, error } = useQuery({
     queryKey: ['project', key],
     queryFn: () => api.getProject(key),
+    retry: false,
   });
 
   // Viewing a project makes it the current one, so new versions/components land in it.
@@ -41,147 +47,106 @@ export default function ProjectPage() {
     queryClient.invalidateQueries({ queryKey: ['versions'] });
     queryClient.invalidateQueries({ queryKey: ['components'] });
   };
+  const onError = (e: unknown) => toast(errorMessage(e), 'error');
 
   const update = useMutation({
-    mutationFn: () => api.updateProject(key, {
-      name: form.name.trim(),
-      description: form.description,
-      leadId: form.leadId || undefined,
-    }),
-    onSuccess: () => { refresh(); setEditing(false); },
+    mutationFn: () => api.updateProject(key, { name: form.name.trim(), description: form.description, leadId: form.leadId || undefined }),
+    onSuccess: () => { refresh(); setEditing(false); toast('Project details saved'); },
   });
   const createVersion = useMutation({
-    mutationFn: () => api.createVersion({
-      name: newVersion.name.trim(),
-      releaseDate: newVersion.releaseDate || undefined,
-    }),
-    onSuccess: () => { refresh(); setNewVersion({ name: '', releaseDate: '' }); },
+    mutationFn: () => api.createVersion({ name: newVersion.name.trim(), releaseDate: newVersion.releaseDate || undefined }),
+    onSuccess: (v) => { refresh(); setNewVersion({ name: '', releaseDate: '' }); toast(`Version ${v.name} created`); },
+    onError,
   });
   const toggleRelease = useMutation({
     mutationFn: (v: { id: string; released: boolean }) => api.updateVersion(v.id, { released: v.released }),
     onSuccess: refresh,
+    onError,
   });
   const createComponent = useMutation({
     mutationFn: () => api.createComponent({ name: newComponent.name.trim(), type: newComponent.type }),
-    onSuccess: () => { refresh(); setNewComponent({ name: '', type: 'SERVICE' }); },
+    onSuccess: (c) => { refresh(); setNewComponent({ name: '', type: 'SERVICE' }); toast(`Component ${c.name} created`); },
+    onError,
   });
 
-  if (isLoading) return <div className="text-gray-500">Loading…</div>;
-  if (error || !project) return <div className="text-red-600">{(error as Error)?.message ?? 'Project not found'}</div>;
+  if (isLoading) return <Spinner />;
+  if (error || !project) {
+    return <EmptyState title="Project not found" action={<Link to="/projects" className="btn btn-default">All projects</Link>}>{errorMessage(error)}</EmptyState>;
+  }
 
-  const isAdmin = me?.role === 'ADMIN';
-  const canAdmin = isAdmin || me?.id === project.leadId;
+  const canAdmin = me?.role === 'ADMIN' || me?.id === project.leadId;
   const canManageVersions = canAdmin || ['RELEASE_MANAGER', 'PROJECT_MANAGER'].includes(me?.role ?? '');
   const total = project._count?.issues ?? 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-sm text-gray-500 mb-1">
-            <Link to="/projects" className="hover:underline">Projects</Link> / {project.key}
-          </div>
-          {editing ? (
-            <input
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="text-2xl font-semibold border border-jira-border rounded px-2 py-1"
-            />
-          ) : (
-            <h1 className="text-2xl font-semibold">{project.name}</h1>
-          )}
-        </div>
-        <div className="flex gap-2 shrink-0">
-          <Link to="/issues/new" className="px-3 py-1.5 bg-jira-blue text-white rounded text-sm">Create issue</Link>
-          <Link to={searchLink(project.key)} className="px-3 py-1.5 bg-jira-gray rounded text-sm hover:bg-gray-200">All issues</Link>
-          {canAdmin && !editing && (
-            <button
-              type="button"
-              onClick={() => {
-                setForm({ name: project.name, description: project.description ?? '', leadId: project.leadId ?? '' });
-                setEditing(true);
-              }}
-              className="px-3 py-1.5 bg-jira-gray rounded text-sm hover:bg-gray-200"
-            >
-              Edit details
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-6">
-        <div className="col-span-2 space-y-6">
-          <section className="bg-white rounded-lg border border-jira-border p-4">
-            <h2 className="text-sm font-medium text-gray-500 mb-2">About</h2>
-            {editing ? (
-              <div className="space-y-3">
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  rows={4}
-                  placeholder="What is this project about?"
-                  className="w-full border border-jira-border rounded px-2 py-1 text-sm"
-                />
-                <label className="block text-sm">
-                  <span className="text-gray-500">Project lead</span>
-                  <div className="mt-1 w-64">
-                    <UserPicker value={form.leadId || undefined} onChange={(id) => setForm({ ...form, leadId: id ?? '' })} allowClear={false} />
-                  </div>
-                </label>
-                {update.isError && <p className="text-sm text-red-600">{(update.error as Error).message}</p>}
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => update.mutate()} disabled={form.name.trim().length < 2} className="px-4 py-1.5 bg-jira-blue text-white rounded text-sm disabled:opacity-50">Save</button>
-                  <button type="button" onClick={() => setEditing(false)} className="px-4 py-1.5 border border-jira-border rounded text-sm">Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm whitespace-pre-wrap">{project.description || <span className="text-gray-400">No description</span>}</p>
+    <div>
+      <PageHeader
+        breadcrumbs={<><Link to="/projects" className="hover:underline">Projects</Link> / {project.name}</>}
+        title={(
+          <span className="flex items-center gap-3">
+            {project.name}
+            <span className="font-mono text-xs bg-jira-gray-hover text-jira-subtle rounded-[3px] px-1.5 py-0.5">{project.key}</span>
+          </span>
+        )}
+        actions={(
+          <>
+            <Link to={searchLink(project.key)} className="btn btn-default">View issues</Link>
+            <Link to="/" className="btn btn-default">Board</Link>
+            {canAdmin && (
+              <button
+                type="button"
+                className="btn btn-default"
+                onClick={() => { setForm({ name: project.name, description: project.description ?? '', leadId: project.leadId ?? '' }); setEditing(true); }}
+              >
+                <EditIcon size={14} /> Edit details
+              </button>
             )}
-          </section>
+          </>
+        )}
+      >
+        {project.description && <p className="text-jira-subtle mt-2 max-w-3xl whitespace-pre-wrap">{project.description}</p>}
+      </PageHeader>
 
-          <section className="bg-white rounded-lg border border-jira-border p-4">
-            <h2 className="text-sm font-medium text-gray-500 mb-3">Issues by status</h2>
-            <div className="flex h-3 rounded overflow-hidden bg-gray-100 mb-3">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-8">
+        <div className="space-y-8 min-w-0">
+          <section>
+            <h2 className="text-base font-semibold mb-3">Status overview</h2>
+            <div className="flex h-2 rounded-full overflow-hidden bg-jira-gray-hover mb-4">
               {STATUSES.map((s) => {
                 const n = project.issueCountsByStatus[s] ?? 0;
-                const color = { BACKLOG: 'bg-gray-400', TO_DO: 'bg-blue-400', DOING: 'bg-amber-400', CLOSED: 'bg-green-500' }[s];
-                return n ? <div key={s} className={color} style={{ width: `${(n / Math.max(total, 1)) * 100}%` }} title={`${s}: ${n}`} /> : null;
+                return n ? <div key={s} style={{ width: `${(n / Math.max(total, 1)) * 100}%`, background: STATUS_BAR[s] }} title={`${STATUS_LABELS[s]}: ${n}`} /> : null;
               })}
             </div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-3">
               {STATUSES.map((s) => (
-                <Link key={s} to={searchLink(project.key, `status = ${s}`)} className="p-2 rounded hover:bg-jira-gray text-center">
-                  <div className="text-2xl font-semibold">{project.issueCountsByStatus[s] ?? 0}</div>
+                <Link key={s} to={searchLink(project.key, `status = ${s}`)} className="card p-4 hover:bg-jira-gray transition-colors">
+                  <div className="text-2xl font-semibold mb-1">{project.issueCountsByStatus[s] ?? 0}</div>
                   <StatusBadge status={s} />
                 </Link>
               ))}
             </div>
           </section>
 
-          <section className="bg-white rounded-lg border border-jira-border p-4">
-            <h2 className="text-sm font-medium text-gray-500 mb-3">Versions</h2>
-            {project.versions.length === 0 ? (
-              <p className="text-sm text-gray-400 mb-3">No versions yet.</p>
-            ) : (
-              <table className="w-full text-sm mb-3">
-                <thead className="text-gray-500 text-xs">
-                  <tr><th className="text-left py-1">Name</th><th className="text-left">Status</th><th className="text-left">Release date</th><th /></tr>
-                </thead>
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold">Versions</h2>
+            </div>
+            {project.versions.length > 0 && (
+              <table className="data-table mb-3">
+                <thead><tr><th>Version</th><th>Status</th><th>Release date</th><th /></tr></thead>
                 <tbody>
                   {project.versions.map((v) => (
-                    <tr key={v.id} className="border-t border-jira-border">
-                      <td className="py-1.5">
-                        <Link to={searchLink(project.key, `fixVersion = ${jqlValue(v.name)}`)} className="text-jira-blue hover:underline">{v.name}</Link>
-                      </td>
+                    <tr key={v.id}>
+                      <td><Link to={searchLink(project.key, `fixVersion = ${jqlValue(v.name)}`)} className="link font-medium">{v.name}</Link></td>
                       <td>
-                        <span className={`text-xs px-2 py-0.5 rounded ${v.released ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>
+                        <span className={`lozenge ${v.released ? 'bg-[#E3FCEF] text-[#006644]' : 'bg-jira-gray-hover text-[#42526E]'}`}>
                           {v.released ? 'Released' : 'Unreleased'}
                         </span>
                       </td>
-                      <td>{v.releaseDate ? new Date(v.releaseDate).toLocaleDateString() : '—'}</td>
+                      <td className="text-jira-subtle">{v.releaseDate ? new Date(v.releaseDate).toLocaleDateString() : '—'}</td>
                       <td className="text-right">
                         {canManageVersions && (
-                          <button type="button" onClick={() => toggleRelease.mutate({ id: v.id, released: !v.released })} className="text-xs text-jira-blue hover:underline">
+                          <button type="button" onClick={() => toggleRelease.mutate({ id: v.id, released: !v.released })} className="btn btn-subtle btn-sm">
                             {v.released ? 'Unrelease' : 'Release'}
                           </button>
                         )}
@@ -191,73 +156,112 @@ export default function ProjectPage() {
                 </tbody>
               </table>
             )}
+            {project.versions.length === 0 && <p className="text-jira-muted mb-3">No versions yet.</p>}
             {canManageVersions && (
               <form onSubmit={(e) => { e.preventDefault(); createVersion.mutate(); }} className="flex gap-2 items-center">
-                <input value={newVersion.name} onChange={(e) => setNewVersion({ ...newVersion, name: e.target.value })} placeholder="Version name, e.g. 1.0" className="border border-jira-border rounded px-2 py-1 text-sm flex-1" />
-                <input type="date" value={newVersion.releaseDate} onChange={(e) => setNewVersion({ ...newVersion, releaseDate: e.target.value })} className="border border-jira-border rounded px-2 py-1 text-sm" />
-                <button type="submit" disabled={!newVersion.name.trim()} className="px-3 py-1 bg-jira-gray rounded text-sm hover:bg-gray-200 disabled:opacity-50">Add</button>
+                <input value={newVersion.name} onChange={(e) => setNewVersion({ ...newVersion, name: e.target.value })} placeholder="Version name, e.g. 1.0" className="input h-8 max-w-xs" aria-label="Version name" />
+                <input type="date" value={newVersion.releaseDate} onChange={(e) => setNewVersion({ ...newVersion, releaseDate: e.target.value })} className="input h-8 w-44" aria-label="Release date" />
+                <button type="submit" disabled={!newVersion.name.trim() || createVersion.isPending} className="btn btn-default"><PlusIcon size={14} /> Add version</button>
               </form>
             )}
-            {createVersion.isError && <p className="text-sm text-red-600 mt-1">{(createVersion.error as Error).message}</p>}
           </section>
 
-          <section className="bg-white rounded-lg border border-jira-border p-4">
-            <h2 className="text-sm font-medium text-gray-500 mb-3">Components</h2>
-            {project.components.length === 0 ? (
-              <p className="text-sm text-gray-400 mb-3">No components yet.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2 mb-3">
-                {project.components.map((c) => (
-                  <Link key={c.id} to={searchLink(project.key, `component = ${jqlValue(c.name)}`)} className="text-sm bg-jira-gray hover:bg-gray-200 rounded px-2 py-1">
-                    {c.name} <span className="text-xs text-gray-500">({c.type.replace(/_/g, ' ').toLowerCase()})</span>
-                  </Link>
-                ))}
-              </div>
+          <section>
+            <h2 className="text-base font-semibold mb-3">Components</h2>
+            {project.components.length > 0 && (
+              <table className="data-table mb-3">
+                <thead><tr><th>Component</th><th>Type</th><th>Lead</th></tr></thead>
+                <tbody>
+                  {project.components.map((c) => (
+                    <tr key={c.id}>
+                      <td><Link to={searchLink(project.key, `component = ${jqlValue(c.name)}`)} className="link font-medium">{c.name}</Link></td>
+                      <td className="text-jira-subtle">{typeLabel(c.type)}</td>
+                      <td>{c.lead ? <span className="flex items-center gap-2"><Avatar name={c.lead.name} size="xs" />{c.lead.name}</span> : <span className="text-jira-muted">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
+            {project.components.length === 0 && <p className="text-jira-muted mb-3">No components yet.</p>}
             {canAdmin && (
               <form onSubmit={(e) => { e.preventDefault(); createComponent.mutate(); }} className="flex gap-2 items-center">
-                <input value={newComponent.name} onChange={(e) => setNewComponent({ ...newComponent, name: e.target.value })} placeholder="Component name" className="border border-jira-border rounded px-2 py-1 text-sm flex-1" />
-                <select value={newComponent.type} onChange={(e) => setNewComponent({ ...newComponent, type: e.target.value })} className="border border-jira-border rounded px-2 py-1 text-sm">
-                  <option value="SERVICE">Service</option>
-                  <option value="TEAM">Team</option>
-                  <option value="RELEASE_TRAIN">Release train</option>
-                </select>
-                <button type="submit" disabled={!newComponent.name.trim()} className="px-3 py-1 bg-jira-gray rounded text-sm hover:bg-gray-200 disabled:opacity-50">Add</button>
+                <input value={newComponent.name} onChange={(e) => setNewComponent({ ...newComponent, name: e.target.value })} placeholder="Component name" className="input h-8 max-w-xs" aria-label="Component name" />
+                <div className="w-44">
+                  <SelectPicker
+                    variant="field"
+                    searchable={false}
+                    value={newComponent.type}
+                    onChange={(type) => type && setNewComponent({ ...newComponent, type })}
+                    options={[{ id: 'SERVICE', label: 'Service' }, { id: 'TEAM', label: 'Team' }, { id: 'RELEASE_TRAIN', label: 'Release train' }]}
+                  />
+                </div>
+                <button type="submit" disabled={!newComponent.name.trim() || createComponent.isPending} className="btn btn-default"><PlusIcon size={14} /> Add component</button>
               </form>
             )}
-            {createComponent.isError && <p className="text-sm text-red-600 mt-1">{(createComponent.error as Error).message}</p>}
+            {project.strictHierarchy && canAdmin && (
+              <p className="field-help">SPORTS naming: teams start with “@”; services and release trains use “ASSETID (serviceName)”.</p>
+            )}
           </section>
         </div>
 
         <aside className="space-y-4">
-          <div className="bg-white rounded-lg border border-jira-border p-4 space-y-3 text-sm">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">Key</span><span className="font-mono">{project.key}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">Lead</span>
-              {project.lead ? <span className="flex items-center gap-2"><Avatar name={project.lead.name} size="xs" />{project.lead.name}</span> : <span>—</span>}
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">Issues</span><span>{total}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">Conventions</span>
-              <span>{project.strictHierarchy ? 'SPORTS (strict)' : 'Standard'}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500">Created</span><span>{new Date(project.createdAt).toLocaleDateString()}</span>
-            </div>
+          <div className="card">
+            <div className="card-header"><h2 className="card-title">Details</h2></div>
+            <dl className="px-4 py-3 space-y-3">
+              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Key</dt><dd className="font-mono">{project.key}</dd></div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-jira-subtle">Lead</dt>
+                <dd>{project.lead ? <span className="flex items-center gap-2"><Avatar name={project.lead.name} size="xs" />{project.lead.name}</span> : '—'}</dd>
+              </div>
+              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Issues</dt><dd>{total}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Rules</dt><dd>{project.strictHierarchy ? 'SPORTS conventions' : 'Standard'}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Created</dt><dd>{new Date(project.createdAt).toLocaleDateString()}</dd></div>
+            </dl>
           </div>
-          <div className="bg-white rounded-lg border border-jira-border p-4 text-sm space-y-2">
-            <h3 className="font-medium text-gray-700">Quick filters</h3>
-            <Link className="block text-jira-blue hover:underline" to={searchLink(project.key, 'assignee = currentUser() AND status != CLOSED')}>My open issues</Link>
-            <Link className="block text-jira-blue hover:underline" to={searchLink(project.key, 'reporter = currentUser()')}>Reported by me</Link>
-            <Link className="block text-jira-blue hover:underline" to={searchLink(project.key, 'assignee IS EMPTY AND status != CLOSED')}>Unassigned</Link>
-            <Link className="block text-jira-blue hover:underline" to={searchLink(project.key, 'updated >= -7d')}>Updated in last 7 days</Link>
+          <div className="card">
+            <div className="card-header"><h2 className="card-title">Quick filters</h2></div>
+            <div className="py-1">
+              {[
+                ['My open issues', 'assignee = currentUser() AND status != CLOSED'],
+                ['Reported by me', 'reporter = currentUser()'],
+                ['Unassigned', 'assignee IS EMPTY AND status != CLOSED'],
+                ['Updated in the last 7 days', 'updated >= -7d'],
+              ].map(([label, q]) => (
+                <Link key={label} to={searchLink(project.key, q)} className="menu-item text-jira-blue">{label}</Link>
+              ))}
+            </div>
           </div>
         </aside>
       </div>
+
+      {editing && (
+        <Modal
+          title="Edit project details"
+          onClose={() => setEditing(false)}
+          footer={(
+            <>
+              <button type="button" className="btn btn-subtle" onClick={() => setEditing(false)}>Cancel</button>
+              <button type="button" className="btn btn-primary" disabled={form.name.trim().length < 2 || update.isPending} onClick={() => update.mutate()}>Save</button>
+            </>
+          )}
+        >
+          <div className="space-y-4">
+            <label className="block">
+              <span className="field-label">Name</span>
+              <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </label>
+            <label className="block">
+              <span className="field-label">Description</span>
+              <textarea className="input" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            </label>
+            <div>
+              <span className="field-label">Project lead</span>
+              <UserPicker value={form.leadId || undefined} onChange={(id) => setForm({ ...form, leadId: id ?? '' })} allowClear={false} />
+            </div>
+            {update.isError && <div className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2">{errorMessage(update.error)}</div>}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

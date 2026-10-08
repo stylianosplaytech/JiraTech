@@ -1,47 +1,48 @@
-const TYPE_COLORS: Record<string, string> = {
-  FEATURE_EPIC: 'bg-purple-100 text-purple-800',
-  BAU_EPIC: 'bg-orange-100 text-orange-800',
-  RELEASE_EPIC: 'bg-blue-100 text-blue-800',
-  EPIC: 'bg-indigo-100 text-indigo-800',
-  STORY: 'bg-green-100 text-green-800',
-  DEFECT: 'bg-red-100 text-red-800',
-  TASK: 'bg-yellow-100 text-yellow-800',
-  RELEASE_CANDIDATE: 'bg-cyan-100 text-cyan-800',
-  CODE: 'bg-teal-100 text-teal-800',
-  BUG_FIX: 'bg-rose-100 text-rose-800',
-  ANALYSIS: 'bg-slate-100 text-slate-800',
-  TEST_RUN: 'bg-lime-100 text-lime-800',
-  DEPLOYMENT: 'bg-violet-100 text-violet-800',
+import { IssueTypeIcon, PriorityGlyph } from './Icons';
+
+export const STATUS_LABELS: Record<string, string> = {
+  BACKLOG: 'Backlog',
+  TO_DO: 'To Do',
+  DOING: 'In Progress',
+  CLOSED: 'Closed',
 };
 
-const PRIORITY_COLORS: Record<string, string> = {
-  HIGHEST: 'text-red-600',
-  HIGH: 'text-orange-600',
-  MEDIUM: 'text-yellow-600',
-  LOW: 'text-blue-600',
-  LOWEST: 'text-gray-500',
+// Atlassian lozenges: grey = not started, blue = in progress, green = done.
+const STATUS_STYLES: Record<string, string> = {
+  BACKLOG: 'bg-[#DFE1E6] text-[#42526E]',
+  TO_DO: 'bg-[#DFE1E6] text-[#42526E]',
+  DOING: 'bg-[#DEEBFF] text-[#0747A6]',
+  CLOSED: 'bg-[#E3FCEF] text-[#006644]',
 };
 
 const RAG_COLORS: Record<string, string> = {
-  GREEN: 'bg-green-500',
-  AMBER: 'bg-amber-500',
-  RED: 'bg-red-500',
+  GREEN: 'bg-[#36B37E]',
+  AMBER: 'bg-[#FFAB00]',
+  RED: 'bg-[#DE350B]',
 };
 
-export function TypeBadge({ type }: { type: string }) {
-  const color = TYPE_COLORS[type] ?? 'bg-gray-100 text-gray-800';
-  const label = type.replace(/_/g, ' ');
+export function typeLabel(type: string) {
+  const s = type.replace(/_/g, ' ').toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Issue type icon, optionally followed by its name. */
+export function TypeBadge({ type, showLabel = false }: { type: string; showLabel?: boolean }) {
+  if (!showLabel) return <IssueTypeIcon type={type} />;
   return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${color}`}>
-      {label}
+    <span className="inline-flex items-center gap-1.5">
+      <IssueTypeIcon type={type} />
+      <span>{typeLabel(type)}</span>
     </span>
   );
 }
 
-export function PriorityIcon({ priority }: { priority: string }) {
+export function PriorityIcon({ priority, showLabel = false }: { priority: string; showLabel?: boolean }) {
+  if (!showLabel) return <PriorityGlyph priority={priority} />;
   return (
-    <span className={`text-xs font-bold ${PRIORITY_COLORS[priority] ?? ''}`} title={priority}>
-      {priority === 'HIGHEST' ? '▲▲' : priority === 'HIGH' ? '▲' : priority === 'LOW' ? '▼' : '·'}
+    <span className="inline-flex items-center gap-1.5">
+      <PriorityGlyph priority={priority} />
+      <span>{priority.charAt(0) + priority.slice(1).toLowerCase()}</span>
     </span>
   );
 }
@@ -51,21 +52,15 @@ export function RagDot({ status }: { status?: string }) {
   return (
     <span
       className={`inline-block w-2.5 h-2.5 rounded-full ${RAG_COLORS[status] ?? 'bg-gray-300'}`}
-      title={`RAG: ${status}`}
+      title={`RAG: ${status.charAt(0) + status.slice(1).toLowerCase()}`}
     />
   );
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    BACKLOG: 'bg-gray-200 text-gray-700',
-    TO_DO: 'bg-blue-100 text-blue-800',
-    DOING: 'bg-yellow-100 text-yellow-800',
-    CLOSED: 'bg-green-100 text-green-800',
-  };
   return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${colors[status] ?? ''}`}>
-      {status.replace(/_/g, ' ')}
+    <span className={`lozenge ${STATUS_STYLES[status] ?? 'bg-[#DFE1E6] text-[#42526E]'}`}>
+      {STATUS_LABELS[status] ?? status.replace(/_/g, ' ')}
     </span>
   );
 }

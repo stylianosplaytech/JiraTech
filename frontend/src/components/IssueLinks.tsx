@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type Issue } from '../api';
-import { TypeBadge } from './Badges';
+import { StatusBadge, TypeBadge } from './Badges';
+import { PlusIcon, XIcon } from './Icons';
 import IssuePicker from './IssuePicker';
+import { errorMessage, useToast } from './ui';
 
 // Each option is stored as one link type; "inward" options create the link from the other issue.
 const RELATIONS = [
@@ -21,18 +23,21 @@ const INWARD: Record<string, string> = {
   BLOCKS: 'is blocked by', DEPENDS_ON: 'is depended on by', RELATES_TO: 'relates to', PARENT_LINK: 'is child of',
 };
 
+type LinkedIssue = { id: string; key: string; summary: string; type: string; status?: string };
+
 export default function IssueLinks({ issue, adding, onAddingChange }: {
   issue: Issue;
   adding: boolean;
   onAddingChange: (v: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [relation, setRelation] = useState(0);
   const [target, setTarget] = useState<Issue | null>(null);
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['issue'] });
-    queryClient.invalidateQueries({ queryKey: ['history', issue.id] });
+    queryClient.invalidateQueries({ queryKey: ['history'] });
   };
 
   const create = useMutation({
@@ -47,75 +52,86 @@ export default function IssueLinks({ issue, adding, onAddingChange }: {
   const remove = useMutation({
     mutationFn: (linkId: string) => api.deleteLink(issue.id, linkId),
     onSuccess: refresh,
+    onError: (e) => toast(errorMessage(e), 'error'),
   });
 
-  const groups = new Map<string, { linkId: string; other: NonNullable<Issue['linksFrom']>[number]['target'] }[]>();
+  const groups = new Map<string, { linkId: string; other: LinkedIssue }[]>();
   for (const l of issue.linksFrom ?? []) {
+    if (!l.target) continue;
     const label = OUTWARD[l.type] ?? l.type;
     groups.set(label, [...(groups.get(label) ?? []), { linkId: l.id, other: l.target }]);
   }
   for (const l of issue.linksTo ?? []) {
+    if (!l.source) continue;
     const label = INWARD[l.type] ?? l.type;
     groups.set(label, [...(groups.get(label) ?? []), { linkId: l.id, other: l.source }]);
   }
-  const linkedIds = [issue.id, ...[...groups.values()].flat().map((g) => g.other!.id)];
+  const linkedIds = [issue.id, ...[...groups.values()].flat().map((g) => g.other.id)];
+  const total = [...groups.values()].reduce((n, g) => n + g.length, 0);
+
+  if (total === 0 && !adding) return null;
 
   return (
-    <div className="bg-white rounded-lg border border-jira-border p-4">
+    <section className="mb-8">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-medium text-gray-500">Linked issues</h3>
+        <h2 className="text-base font-semibold text-jira-navy">Linked issues</h2>
         {!adding && (
-          <button type="button" onClick={() => onAddingChange(true)} className="text-xs text-jira-blue hover:underline">+ Link issue</button>
+          <button type="button" onClick={() => onAddingChange(true)} className="btn btn-subtle btn-sm btn-icon" aria-label="Link an issue">
+            <PlusIcon size={16} />
+          </button>
         )}
       </div>
-
-      {groups.size === 0 && !adding && <p className="text-sm text-gray-400">No linked issues</p>}
-
-      {[...groups.entries()].map(([label, items]) => (
-        <div key={label} className="mb-2">
-          <div className="text-xs text-gray-500 mb-1">{label}</div>
-          {items.map(({ linkId, other }) => other && (
-            <div key={linkId} className="group flex items-center gap-2 px-2 py-1 rounded hover:bg-jira-gray text-sm">
-              <TypeBadge type={other.type} />
-              <Link to={`/browse/${other.key}`} className="text-jira-blue hover:underline shrink-0">{other.key}</Link>
-              <span className="truncate flex-1">{other.summary}</span>
-              <button
-                type="button"
-                onClick={() => remove.mutate(linkId)}
-                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 px-1"
-                title="Remove link"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      ))}
 
       {adding && (
         <form
           onSubmit={(e) => { e.preventDefault(); if (target) create.mutate(); }}
-          className="mt-2 space-y-2 border-t border-jira-border pt-3"
+          className="card p-3 mb-3 space-y-3"
         >
           <div className="flex gap-2">
             <select
               value={relation}
               onChange={(e) => setRelation(Number(e.target.value))}
-              className="border border-jira-border rounded px-2 py-1.5 text-sm"
+              className="input w-44 shrink-0"
+              aria-label="Link type"
             >
               {RELATIONS.map((r, i) => <option key={r.label} value={i}>{r.label}</option>)}
             </select>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <IssuePicker value={target} onChange={setTarget} excludeIds={linkedIds} autoFocus />
             </div>
           </div>
-          {create.isError && <p className="text-sm text-red-600">{(create.error as Error).message}</p>}
+          {create.isError && <p className="field-error">{errorMessage(create.error)}</p>}
           <div className="flex gap-2 justify-end">
-            <button type="button" onClick={() => { onAddingChange(false); setTarget(null); }} className="px-3 py-1 border border-jira-border rounded text-sm">Cancel</button>
-            <button type="submit" disabled={!target || create.isPending} className="px-3 py-1 bg-jira-blue text-white rounded text-sm disabled:opacity-50">Link</button>
+            <button type="button" onClick={() => { onAddingChange(false); setTarget(null); }} className="btn btn-subtle">Cancel</button>
+            <button type="submit" disabled={!target || create.isPending} className="btn btn-primary">Link</button>
           </div>
         </form>
       )}
-    </div>
+
+      {[...groups.entries()].map(([label, items]) => (
+        <div key={label} className="mb-3">
+          <div className="text-xs font-semibold text-jira-subtle mb-1">{label}</div>
+          <div className="card divide-y divide-jira-border">
+            {items.map(({ linkId, other }) => (
+              <div key={linkId} className="group flex items-center gap-3 px-3 py-2 hover:bg-jira-gray">
+                <TypeBadge type={other.type} />
+                <Link to={`/browse/${other.key}`} className={`link shrink-0 ${other.status === 'CLOSED' ? 'line-through' : ''}`}>{other.key}</Link>
+                <Link to={`/browse/${other.key}`} className="truncate flex-1 hover:underline">{other.summary}</Link>
+                {other.status && <StatusBadge status={other.status} />}
+                <button
+                  type="button"
+                  onClick={() => remove.mutate(linkId)}
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-jira-muted hover:text-jira-navy"
+                  title="Remove link"
+                  aria-label={`Remove link to ${other.key}`}
+                >
+                  <XIcon size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
