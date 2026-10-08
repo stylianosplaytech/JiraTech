@@ -177,9 +177,10 @@ export default function IssueDetailPage() {
   const epicParent = issue.parent && isEpicType(issue.parent.type) ? issue.parent : null;
   const transitions = TRANSITIONS[issue.status] ?? [];
   const isWatching = issue.watchers?.some((w) => w.userId === currentUser?.id) ?? false;
-  const canDelete = !!currentUser && (
-    currentUser.role === 'ADMIN' || currentUser.id === issue.reporter?.id || currentUser.id === issue.project?.leadId
-  );
+  // The server sends what this user may do in the issue's project.
+  const canEdit = issue.permissions?.canEdit ?? false;
+  const canDelete = issue.permissions?.canDelete ?? false;
+  const roleName = issue.permissions?.role === 'VIEWER' ? 'viewer' : 'limited';
 
   const fixIds = issue.versions?.filter((v) => v.isFix).map((v) => v.versionId) ?? [];
   const affectsIds = issue.versions?.filter((v) => !v.isFix).map((v) => v.versionId) ?? [];
@@ -252,9 +253,13 @@ export default function IssueDetailPage() {
           >
             {(close) => (
               <>
-                <button type="button" className="menu-item" onClick={() => { close(); setLogTimeOpen(true); }}><ClockIcon size={14} /> Log time</button>
-                <button type="button" className="menu-item" onClick={() => { close(); navigate(`/issues/new?parentId=${issue.id}&type=SUB_TASK`); }}><SubtaskIcon size={14} /> Create sub-task</button>
-                <button type="button" className="menu-item" onClick={() => { close(); setAddingLink(true); }}><LinkIcon size={14} /> Link issue</button>
+                {canEdit && (
+                  <>
+                    <button type="button" className="menu-item" onClick={() => { close(); setLogTimeOpen(true); }}><ClockIcon size={14} /> Log time</button>
+                    <button type="button" className="menu-item" onClick={() => { close(); navigate(`/issues/new?parentId=${issue.id}&type=SUB_TASK`); }}><SubtaskIcon size={14} /> Create sub-task</button>
+                    <button type="button" className="menu-item" onClick={() => { close(); setAddingLink(true); }}><LinkIcon size={14} /> Link issue</button>
+                  </>
+                )}
                 <button type="button" className="menu-item" onClick={() => { close(); void copyLink(); }}><CopyIcon size={14} /> Copy link</button>
                 {canDelete && (
                   <button type="button" className="menu-item text-[#DE350B] border-t border-jira-border mt-1" onClick={() => { close(); void confirmDelete(); }}>
@@ -267,10 +272,17 @@ export default function IssueDetailPage() {
         </div>
       </div>
 
+      {!canEdit && (
+        <div className="flex items-start gap-2 rounded-[3px] bg-jira-blue-light text-[#0747A6] px-4 py-3 mb-4" role="status">
+          <span className="font-semibold">View only.</span>
+          <span>Your {roleName} access to {issue.project?.name ?? 'this project'} lets you read, comment on and watch this issue. Ask a project administrator for member access to change it.</span>
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_440px] gap-8">
         {/* ─── Main column ─── */}
         <div className="min-w-0">
           <InlineText
+            readOnly={!canEdit}
             value={issue.summary}
             onSave={(summary) => update.mutate({ summary })}
             className="text-2xl font-medium leading-tight"
@@ -278,7 +290,7 @@ export default function IssueDetailPage() {
             validate={(v) => (v.length < 3 ? 'Summary must be at least 3 characters' : null)}
           />
 
-          <div className="flex flex-wrap gap-2 mt-3 mb-6">
+          {canEdit && <div className="flex flex-wrap gap-2 mt-3 mb-6">
             <button type="button" className="btn btn-default" onClick={() => fileInputRef.current?.click()} disabled={upload.isPending}>
               <PaperclipIcon size={14} /> {upload.isPending ? 'Uploading…' : 'Attach'}
             </button>
@@ -288,6 +300,9 @@ export default function IssueDetailPage() {
             <button type="button" className="btn btn-default" onClick={() => setAddingLink(true)}>
               <LinkIcon size={14} /> Link issue
             </button>
+          </div>}
+          {!canEdit && <div className="mb-6" />}
+          <div className="hidden">
             <input
               ref={fileInputRef}
               type="file"
@@ -302,6 +317,7 @@ export default function IssueDetailPage() {
 
           <Section title="Description">
             <InlineTextarea
+              readOnly={!canEdit}
               value={issue.description ?? ''}
               onSave={(description) => update.mutate({ description })}
               saving={update.isPending}
@@ -311,7 +327,7 @@ export default function IssueDetailPage() {
           {(issue.attachments?.length ?? 0) > 0 && (
             <Section
               title={`Attachments (${issue.attachments!.length})`}
-              action={<button type="button" className="btn btn-subtle btn-sm" onClick={() => fileInputRef.current?.click()}><PaperclipIcon size={14} /> Add</button>}
+              action={canEdit && <button type="button" className="btn btn-subtle btn-sm" onClick={() => fileInputRef.current?.click()}><PaperclipIcon size={14} /> Add</button>}
             >
               <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
                 {issue.attachments!.map((a) => (
@@ -334,7 +350,7 @@ export default function IssueDetailPage() {
                         <span className="block text-xs text-jira-muted">{Math.max(1, Math.round(a.size / 1024))} KB · {timeAgo(a.createdAt)}</span>
                       </span>
                     </button>
-                    {(a.uploadedBy.id === currentUser?.id || currentUser?.role === 'ADMIN') && (
+                    {canEdit && (a.uploadedBy.id === currentUser?.id || issue.permissions?.canAdmin) && (
                       <button
                         type="button"
                         onClick={async () => {
@@ -357,7 +373,7 @@ export default function IssueDetailPage() {
           {children.length > 0 && (
             <Section
               title="Child issues"
-              action={<Link to={`/issues/new?parentId=${issue.id}&type=SUB_TASK`} className="btn btn-subtle btn-sm">+ Add</Link>}
+              action={canEdit && <Link to={`/issues/new?parentId=${issue.id}&type=SUB_TASK`} className="btn btn-subtle btn-sm">+ Add</Link>}
             >
               <div className="flex items-center gap-3 mb-2">
                 <div className="flex-1 h-1.5 rounded-full bg-jira-gray-hover overflow-hidden">
@@ -378,9 +394,9 @@ export default function IssueDetailPage() {
             </Section>
           )}
 
-          <IssueLinks issue={issue} adding={addingLink} onAddingChange={setAddingLink} />
+          <IssueLinks issue={issue} adding={addingLink} onAddingChange={setAddingLink} readOnly={!canEdit} />
 
-          {isIncident && (
+          {isIncident && canEdit && (
             <Section title="Incident handling">
               <div className="flex flex-wrap gap-2">
                 {teams?.map((team) => (
@@ -406,8 +422,9 @@ export default function IssueDetailPage() {
                 <button
                   type="button"
                   onClick={toggle}
-                  disabled={transition.isPending}
-                  className={`btn font-semibold ${STATUS_BUTTON[issue.status] ?? 'btn-default'}`}
+                  disabled={transition.isPending || !canEdit}
+                  title={canEdit ? undefined : 'You need member access to change the status'}
+                  className={`btn font-semibold disabled:opacity-100 disabled:cursor-default ${STATUS_BUTTON[issue.status] ?? 'btn-default'}`}
                 >
                   {STATUS_LABELS[issue.status] ?? issue.status}
                   <ChevronDownIcon size={14} />
@@ -445,6 +462,7 @@ export default function IssueDetailPage() {
               <DetailRow label="Assignee">
                 <UserPicker
                   variant="inline"
+                  disabled={!canEdit}
                   value={issue.assignee?.id}
                   onChange={(assigneeId) => update.mutate({ assigneeId: assigneeId ?? '' })}
                   currentUserId={currentUser?.id}
@@ -453,6 +471,7 @@ export default function IssueDetailPage() {
               <DetailRow label="Reporter">
                 <UserPicker
                   variant="inline"
+                  disabled={!canEdit}
                   value={issue.reporter?.id}
                   onChange={(reporterId) => reporterId && update.mutate({ reporterId })}
                   allowClear={false}
@@ -461,6 +480,7 @@ export default function IssueDetailPage() {
               </DetailRow>
               <DetailRow label="Priority">
                 <SelectPicker
+                  disabled={!canEdit}
                   value={issue.priority}
                   onChange={(priority) => priority && update.mutate({ priority })}
                   searchable={false}
@@ -469,6 +489,7 @@ export default function IssueDetailPage() {
               </DetailRow>
               <DetailRow label="Labels">
                 <MultiPicker
+                  disabled={!canEdit}
                   commitOnClose
                   value={issue.labels?.map((l) => l.label.id) ?? []}
                   onChange={(labelIds) => update.mutate({ labelIds })}
@@ -484,6 +505,7 @@ export default function IssueDetailPage() {
               </DetailRow>
               <DetailRow label="Components">
                 <MultiPicker
+                  disabled={!canEdit}
                   commitOnClose
                   value={issue.components?.map((c) => c.component.id) ?? []}
                   onChange={(componentIds) => update.mutate({ componentIds })}
@@ -493,6 +515,7 @@ export default function IssueDetailPage() {
               </DetailRow>
               <DetailRow label="Fix versions">
                 <MultiPicker
+                  disabled={!canEdit}
                   commitOnClose
                   value={fixIds}
                   onChange={(fixVersionIds) => update.mutate({ fixVersionIds })}
@@ -502,6 +525,7 @@ export default function IssueDetailPage() {
               </DetailRow>
               <DetailRow label="Affects versions">
                 <MultiPicker
+                  disabled={!canEdit}
                   commitOnClose
                   value={affectsIds}
                   onChange={(affectsVersionIds) => update.mutate({ affectsVersionIds })}
@@ -519,7 +543,7 @@ export default function IssueDetailPage() {
               )}
               {isEpicType(issue.type) && (
                 <DetailRow label="Epic name">
-                  <InlineText value={issue.epicName ?? ''} onSave={(epicName) => update.mutate({ epicName })} className="mx-0" />
+                  <InlineText readOnly={!canEdit} value={issue.epicName ?? ''} onSave={(epicName) => update.mutate({ epicName })} className="mx-0" />
                 </DetailRow>
               )}
               {issue.sprint && (
@@ -527,6 +551,7 @@ export default function IssueDetailPage() {
               )}
               <DetailRow label="Estimate">
                 <InlineText
+                  readOnly={!canEdit}
                   type="number"
                   value={issue.estimate != null ? String(issue.estimate) : ''}
                   display={issue.estimate != null ? `${issue.estimate}h` : undefined}
@@ -537,7 +562,7 @@ export default function IssueDetailPage() {
                 />
               </DetailRow>
               <DetailRow label="Time tracking">
-                <button type="button" onClick={() => setLogTimeOpen(true)} className="w-full text-left px-2 py-1.5 rounded-[3px] hover:bg-jira-gray-hover" title="Log time">
+                <button type="button" onClick={() => setLogTimeOpen(true)} disabled={!canEdit} className="w-full text-left px-2 py-1.5 rounded-[3px] hover:bg-jira-gray-hover disabled:hover:bg-transparent disabled:cursor-default" title={canEdit ? 'Log time' : undefined}>
                   <div className="h-1.5 rounded-full bg-jira-gray-hover overflow-hidden flex">
                     <div className="bg-jira-blue" style={{ width: `${(loggedMinutes / totalBar) * 100}%` }} />
                   </div>
@@ -555,6 +580,7 @@ export default function IssueDetailPage() {
                         key={r}
                         type="button"
                         onClick={() => updateRag.mutate(r)}
+                        disabled={!canEdit}
                         className={`px-2 py-0.5 rounded-[3px] text-xs font-semibold border-2 ${issue.ragStatus === r ? 'border-jira-navy' : 'border-transparent opacity-60 hover:opacity-100'}
                           ${r === 'GREEN' ? 'bg-[#E3FCEF] text-[#006644]' : r === 'AMBER' ? 'bg-[#FFFAE6] text-[#974F0C]' : 'bg-[#FFEBE6] text-[#BF2600]'}`}
                       >
@@ -566,11 +592,11 @@ export default function IssueDetailPage() {
               )}
               <DetailRow label="Blocked">
                 <label className="flex items-center gap-2 px-2 py-[7px] cursor-pointer">
-                  <input type="checkbox" checked={!!issue.blocked} onChange={(e) => update.mutate({ blocked: e.target.checked })} />
+                  <input type="checkbox" disabled={!canEdit} checked={!!issue.blocked} onChange={(e) => update.mutate({ blocked: e.target.checked })} />
                   <span className="text-jira-subtle">{issue.blocked ? 'Yes' : 'No'}</span>
                 </label>
               </DetailRow>
-              <CustomFieldRows issue={issue} Row={DetailRow} />
+              <CustomFieldRows issue={issue} Row={DetailRow} readOnly={!canEdit} />
             </div>
           </div>
 
@@ -588,23 +614,23 @@ export default function IssueDetailPage() {
                 <div key={w.userId} className="group flex items-center gap-2 py-1">
                   <Avatar name={w.user.name} size="xs" />
                   <span className="flex-1 truncate">{w.user.name}</span>
-                  <button
+                  {(canEdit || w.userId === currentUser?.id) && <button
                     type="button"
                     onClick={() => removeWatcher.mutate(w.userId)}
                     className="opacity-0 group-hover:opacity-100 text-jira-muted hover:text-jira-navy"
                     aria-label={`Remove ${w.user.name}`}
                   >
                     <XIcon size={14} />
-                  </button>
+                  </button>}
                 </div>
               ))}
-              <UserPicker
+              {canEdit && <UserPicker
                 variant="inline"
                 value={undefined}
                 onChange={(uid) => uid && addWatcher.mutate(uid)}
                 placeholder="+ Add watcher"
                 allowClear={false}
-              />
+              />}
             </div>
           </div>
 

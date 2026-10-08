@@ -23,10 +23,8 @@ export class ComponentsService {
   }
 
   async create(dto: CreateComponentDto, user: AuthUser, projectKey?: string) {
+    // Permission (project admin) is enforced by the controller's access rule.
     const project = await resolveProject(this.prisma, projectKey);
-    if (user.role !== UserRole.ADMIN && user.id !== project.leadId) {
-      throw new ForbiddenException('Only admins or the project lead can create components');
-    }
     // ASSETID / @team naming is a SPORTS convention; other projects name components freely.
     if (project.strictHierarchy) this.validateNaming(dto.name, dto.type);
     return this.prisma.component.create({
@@ -36,10 +34,6 @@ export class ComponentsService {
   }
 
   async archive(id: string, user: AuthUser) {
-    const component = await this.prisma.component.findUniqueOrThrow({ where: { id }, include: { project: true } });
-    if (user.role !== UserRole.ADMIN && user.id !== component.project.leadId) {
-      throw new ForbiddenException('Only admins or the project lead can archive components');
-    }
     return this.prisma.component.update({ where: { id }, data: { archived: true } });
   }
 

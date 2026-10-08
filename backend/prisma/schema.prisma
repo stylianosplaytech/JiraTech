@@ -134,6 +134,7 @@ model User {
   historyEntries   IssueHistory[]
   savedFilters     SavedFilter[]
   notifications    Notification[]    @relation("NotificationRecipient")
+  projectMemberships ProjectMember[]
   notificationsSent Notification[]   @relation("NotificationActor")
 }
 
@@ -149,10 +150,13 @@ model Project {
   issueCounter    Int      @default(0)
   /// When true, non-epic issues must have a parent (SPORTS hierarchy rules)
   strictHierarchy Boolean  @default(true)
+  /// What people who aren't project members can do
+  defaultAccess   ProjectAccess @default(MEMBER)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   lead                  User?                   @relation("ProjectLead", fields: [leadId], references: [id])
+  members               ProjectMember[]
 
   components            Component[]
   versions              Version[]
@@ -528,4 +532,32 @@ model Notification {
   issue Issue? @relation(fields: [issueId], references: [id], onDelete: SetNull)
 
   @@index([userId, readAt, createdAt])
+}
+
+// ─── Project permissions ─────────────────────────────────────────────────────
+
+/** Viewer: browse and comment. Member: create, edit and transition issues. Admin: manage the project. */
+enum ProjectRole {
+  VIEWER
+  MEMBER
+  ADMIN
+}
+
+enum ProjectAccess {
+  NONE
+  VIEWER
+  MEMBER
+}
+
+model ProjectMember {
+  projectId String
+  userId    String
+  role      ProjectRole @default(MEMBER)
+  createdAt DateTime    @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
 }

@@ -111,7 +111,13 @@ export const api = {
   getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
   createProject: (data: { key: string; name: string; description?: string; leadId?: string; strictHierarchy?: boolean }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(data) }),
-  updateProject: (key: string, data: { name?: string; description?: string; leadId?: string }) =>
+  getProjectMembers: (key: string) =>
+    request<{ leadId: string | null; defaultAccess: ProjectAccess; members: ProjectMember[] }>(`/projects/${key}/members`),
+  setProjectMember: (key: string, userId: string, role: ProjectRole) =>
+    request<ProjectMember>(`/projects/${key}/members/${userId}`, { method: 'PUT', body: JSON.stringify({ role }) }),
+  removeProjectMember: (key: string, userId: string) =>
+    request(`/projects/${key}/members/${userId}`, { method: 'DELETE' }),
+  updateProject: (key: string, data: { name?: string; description?: string; leadId?: string; defaultAccess?: ProjectAccess }) =>
     request<Project>(`/projects/${key}`, { method: 'PATCH', body: JSON.stringify(data) }),
   createVersion: (data: { name: string; description?: string; releaseDate?: string }) =>
     request<Version>('/versions', { method: 'POST', body: JSON.stringify(data) }),
@@ -293,12 +299,34 @@ export interface AppNotification {
   issue: { id: string; key: string; summary: string; type: string; status: string } | null;
 }
 
+export type ProjectRole = 'VIEWER' | 'MEMBER' | 'ADMIN';
+export type EffectiveRole = 'NONE' | ProjectRole;
+export type ProjectAccess = 'NONE' | 'VIEWER' | 'MEMBER';
+
+export interface Permissions {
+  role: EffectiveRole;
+  canBrowse: boolean;
+  canComment: boolean;
+  canEdit: boolean;
+  canAdmin: boolean;
+  canDelete?: boolean;
+}
+
+export interface ProjectMember {
+  projectId: string;
+  userId: string;
+  role: ProjectRole;
+  user: { id: string; name: string; email: string; role: string };
+}
+
 export interface Project {
   id: string;
   key: string;
   name: string;
   description?: string | null;
   strictHierarchy: boolean;
+  defaultAccess: ProjectAccess;
+  myRole?: EffectiveRole;
   leadId?: string | null;
   lead?: { id: string; name: string; email: string } | null;
   createdAt: string;
@@ -306,6 +334,7 @@ export interface Project {
 }
 
 export interface ProjectDetail extends Project {
+  permissions: Permissions;
   components: Component[];
   versions: Version[];
   issueCountsByStatus: Record<string, number>;
@@ -351,6 +380,7 @@ export interface Issue {
   id: string;
   key: string;
   project?: { id: string; key: string; name: string; strictHierarchy?: boolean; leadId?: string | null };
+  permissions?: Permissions;
   reporterId?: string;
   _count?: { comments: number; children: number };
   type: string;

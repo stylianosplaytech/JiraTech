@@ -9,6 +9,7 @@ import { nextIssueKey, resolveProject } from '../common/project.util';
 import { AuthUser } from '../common/auth-user';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { NotificationsService, extractMentions } from '../notifications/notifications.service';
+import { AccessService } from '../access/access.service';
 import {
   CreateIssueDto, UpdateIssueDto, TransitionDto, CreateLinkDto, CreateWorkLogDto,
 } from './dto/issue.dto';
@@ -33,6 +34,7 @@ export class IssuesService {
     private prisma: PrismaService,
     private customFieldsService: CustomFieldsService,
     private notifications: NotificationsService,
+    private access: AccessService,
   ) {
     if (!fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true });
@@ -97,7 +99,8 @@ export class IssuesService {
 
   // ─── Create / update / delete ──────────────────────────────────────────────
 
-  async create(dto: CreateIssueDto, reporterId: string, headerProjectKey?: string) {
+  async create(dto: CreateIssueDto, user: AuthUser, headerProjectKey?: string) {
+    const reporterId = user.id;
     let parent: { id: string; type: IssueType; projectId: string } | null = null;
     if (dto.parentId) {
       parent = await this.prisma.issue.findFirst({
@@ -111,6 +114,7 @@ export class IssuesService {
     const project = parent
       ? await this.prisma.project.findUniqueOrThrow({ where: { id: parent.projectId } })
       : await resolveProject(this.prisma, dto.projectKey ?? headerProjectKey);
+    await this.access.require(user, project.id, 'edit');
 
     if ((parent || project.strictHierarchy) && !isValidParentChild(dto.type, parent?.type ?? null)) {
       throw new BadRequestException(
@@ -251,10 +255,9 @@ export class IssuesService {
       include: { project: true, attachments: true, _count: { select: { children: true } } },
     });
     if (!issue) throw new NotFoundException('Issue not found');
-    const allowed = user.role === UserRole.ADMIN
-      || user.id === issue.reporterId
-      || user.id === issue.project.leadId;
-    if (!allowed) throw new ForbiddenException('Only the reporter, the project lead or an admin can delete an issue');
+    const perms = await this.access.permissions(user, issue.projectId);
+    const allowed = perms.canAdmin || (perms.canEdit && user.id === issue.reporterId);
+    if (!allowed) throw new ForbiddenException('Only project administrators, or the reporter, can delete an issue');
     if (issue._count.children > 0) {
       throw new BadRequestException(`${issue.key} has ${issue._count.children} child issue(s); delete or move them first`);
     }
@@ -300,11 +303,13 @@ export class IssuesService {
 
   // ─── Links ─────────────────────────────────────────────────────────────────
 
-  async createLink(idOrKey: string, dto: CreateLinkDto, userId: string) {
+  async createLink(idOrKey: string, dto: CreateLinkDto, user: AuthUser) {
+    const userId = user.id;
     const source = await this.findOne(idOrKey);
     const targetRef = dto.targetId ?? dto.targetKey;
     if (!targetRef) throw new BadRequestException('targetId or targetKey is required');
     const target = await this.findOne(targetRef);
+    await this.access.require(user, target.projectId, 'browse');
     if (source.id === target.id) throw new BadRequestException('An issue cannot be linked to itself');
     if (!Object.values(LinkType).includes(dto.type as LinkType)) {
       throw new BadRequestException(`Unknown link type ${dto.type}`);
@@ -419,7 +424,7 @@ export class IssuesService {
 
   async deleteComment(idOrKey: string, commentId: string, user: AuthUser) {
     const comment = await this.findComment(idOrKey, commentId);
-    if (comment.authorId !== user.id && user.role !== UserRole.ADMIN) {
+    if (comment.authorId !== user.id && !(await this.access.can(user, comment.issue.projectId, 'admin'))) {
       throw new ForbiddenException('You can only delete your own comments');
     }
     await this.prisma.comment.delete({ where: { id: comment.id } });
@@ -428,7 +433,10 @@ export class IssuesService {
 
   private async findComment(idOrKey: string, commentId: string) {
     const issueId = await this.findIdOrThrow(idOrKey);
-    const comment = await this.prisma.comment.findFirst({ where: { id: commentId, issueId } });
+    const comment = await this.prisma.comment.findFirst({
+      where: { id: commentId, issueId },
+      include: { issue: { select: { projectId: true } } },
+    });
     if (!comment) throw new NotFoundException('Comment not found');
     return comment;
   }
@@ -536,7 +544,7 @@ export class IssuesService {
       if (!record) throw e;
       return record;
     });
-    if (attachment.uploadedById !== user.id && user.role !== UserRole.ADMIN) {
+    if (attachment.uploadedById !== user.id && !(await this.access.can(user, await this.access.projectOfIssue(attachment.issueId), 'admin'))) {
       throw new ForbiddenException('You can only delete attachments you uploaded');
     }
     await this.prisma.$transaction(async (tx) => {

@@ -4,8 +4,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { resolveProject } from '../common/project.util';
 import { AuthUser } from '../common/auth-user';
 
-const VERSION_MANAGERS: UserRole[] = [UserRole.ADMIN, UserRole.RELEASE_MANAGER, UserRole.PROJECT_MANAGER];
-
 @Injectable()
 export class VersionsService {
   constructor(private prisma: PrismaService) {}
@@ -25,7 +23,6 @@ export class VersionsService {
     user: AuthUser,
   ) {
     const project = await resolveProject(this.prisma, projectKey);
-    this.assertCanManage(user, project.leadId);
     const existing = await this.prisma.version.findUnique({
       where: { projectId_name: { projectId: project.id, name: data.name } },
     });
@@ -45,9 +42,8 @@ export class VersionsService {
     data: { name?: string; description?: string; releaseDate?: string; released?: boolean },
     user: AuthUser,
   ) {
-    const version = await this.prisma.version.findUnique({ where: { id }, include: { project: true } });
+    const version = await this.prisma.version.findUnique({ where: { id } });
     if (!version) throw new NotFoundException('Version not found');
-    this.assertCanManage(user, version.project.leadId);
     return this.prisma.version.update({
       where: { id },
       data: {
@@ -55,11 +51,5 @@ export class VersionsService {
         releaseDate: data.releaseDate ? new Date(data.releaseDate) : undefined,
       },
     });
-  }
-
-  private assertCanManage(user: AuthUser, leadId: string | null) {
-    if (!VERSION_MANAGERS.includes(user.role) && user.id !== leadId) {
-      throw new ForbiddenException('Only the project lead, release managers or admins can manage versions');
-    }
   }
 }

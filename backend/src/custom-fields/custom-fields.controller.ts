@@ -3,6 +3,7 @@ import { IsString, IsEnum, IsOptional, IsArray, IsBoolean, IsInt } from 'class-v
 import { CustomFieldType, UserRole } from '@prisma/client';
 import { CustomFieldsService } from './custom-fields.service';
 import { JwtAuthGuard } from '../auth/guards';
+import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { ProjectKey } from '../common/project-key.decorator';
 
 class CreateCustomFieldDto {
@@ -30,16 +31,18 @@ class CreateCustomFieldDto {
 }
 
 @Controller('custom-fields')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AccessGuard)
 export class CustomFieldsController {
   constructor(private customFieldsService: CustomFieldsService) {}
 
   @Get()
+  @RequireAccess('browse')
   getDefinitions(@ProjectKey() projectKey?: string) {
     return this.customFieldsService.getDefinitions(projectKey);
   }
 
   @Post()
+  @RequireAccess('admin')
   createDefinition(
     @Body() dto: CreateCustomFieldDto,
     @Request() req: { user: { role: UserRole } },

@@ -25,10 +25,11 @@ const INWARD: Record<string, string> = {
 
 type LinkedIssue = { id: string; key: string; summary: string; type: string; status?: string };
 
-export default function IssueLinks({ issue, adding, onAddingChange }: {
+export default function IssueLinks({ issue, adding, onAddingChange, readOnly }: {
   issue: Issue;
   adding: boolean;
   onAddingChange: (v: boolean) => void;
+  readOnly?: boolean;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -75,14 +76,14 @@ export default function IssueLinks({ issue, adding, onAddingChange }: {
     <section className="mb-8">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-base font-semibold text-jira-navy">Linked issues</h2>
-        {!adding && (
+        {!adding && !readOnly && (
           <button type="button" onClick={() => onAddingChange(true)} className="btn btn-subtle btn-sm btn-icon" aria-label="Link an issue">
             <PlusIcon size={16} />
           </button>
         )}
       </div>
 
-      {adding && (
+      {adding && !readOnly && (
         <form
           onSubmit={(e) => { e.preventDefault(); if (target) create.mutate(); }}
           className="card p-3 mb-3 space-y-3"
@@ -118,7 +119,7 @@ export default function IssueLinks({ issue, adding, onAddingChange }: {
                 <Link to={`/browse/${other.key}`} className={`link shrink-0 ${other.status === 'CLOSED' ? 'line-through' : ''}`}>{other.key}</Link>
                 <Link to={`/browse/${other.key}`} className="truncate flex-1 hover:underline">{other.summary}</Link>
                 {other.status && <StatusBadge status={other.status} />}
-                <button
+                {!readOnly && <button
                   type="button"
                   onClick={() => remove.mutate(linkId)}
                   className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-jira-muted hover:text-jira-navy"
@@ -126,7 +127,7 @@ export default function IssueLinks({ issue, adding, onAddingChange }: {
                   aria-label={`Remove link to ${other.key}`}
                 >
                   <XIcon size={14} />
-                </button>
+                </button>}
               </div>
             ))}
           </div>

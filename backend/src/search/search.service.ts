@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
 import { PRIORITY_ORDER } from '../common/issue-rules';
 import { compileJql, JqlError, JqlSort } from './jql';
+import { AccessService } from '../access/access.service';
 
 export const SEARCH_INCLUDE = {
   project: { select: { id: true, key: true, name: true } },
@@ -23,13 +24,19 @@ const MEMORY_SORT_LIMIT = 5000;
 
 @Injectable()
 export class SearchService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private access: AccessService) {}
+
+  /** Restrict a query to projects the user is allowed to browse. */
+  private async visible(user: AuthUser, where: Prisma.IssueWhereInput): Promise<Prisma.IssueWhereInput> {
+    const ids = await this.access.browsableProjectIds(user);
+    return ids === null ? where : { AND: [where, { projectId: { in: ids } }] };
+  }
 
   async search(jql: string, user: AuthUser, startAt = 0, maxResults = 50) {
     const compiled = this.compile(jql, user);
     const take = Math.min(Math.max(maxResults, 1), 200);
     const skip = Math.max(startAt, 0);
-    const where = compiled.where;
+    const where = await this.visible(user, compiled.where);
     const total = await this.prisma.issue.count({ where });
 
     let issues;
@@ -67,22 +74,24 @@ export class SearchService {
     return { valid: true };
   }
 
-  async quickSearch(q: string) {
+  async quickSearch(q: string, user: AuthUser) {
     const term = q.trim();
+    const ids = await this.access.browsableProjectIds(user);
+    const inProjects = ids === null ? {} : { projectId: { in: ids } };
     if (!term) return { issues: [], projects: [] };
     const upper = term.toUpperCase();
     const [exact, issues, projects] = await Promise.all([
       /^[A-Z][A-Z0-9]+-\d+$/.test(upper)
-        ? this.prisma.issue.findUnique({ where: { key: upper }, include: SEARCH_INCLUDE })
+        ? this.prisma.issue.findFirst({ where: { key: upper, ...inProjects }, include: SEARCH_INCLUDE })
         : null,
       this.prisma.issue.findMany({
-        where: { OR: [{ key: { contains: upper } }, { summary: { contains: term } }] },
+        where: { ...inProjects, OR: [{ key: { contains: upper } }, { summary: { contains: term } }] },
         include: SEARCH_INCLUDE,
         orderBy: { updatedAt: 'desc' },
         take: 8,
       }),
       this.prisma.project.findMany({
-        where: { OR: [{ key: { contains: upper } }, { name: { contains: term } }] },
+        where: { ...(ids === null ? {} : { id: { in: ids } }), OR: [{ key: { contains: upper } }, { name: { contains: term } }] },
         select: { id: true, key: true, name: true },
         take: 5,
       }),

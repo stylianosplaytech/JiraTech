@@ -4,8 +4,9 @@ import MentionTextarea from './MentionTextarea';
 
 /** Click-to-edit single-line text. Enter or ✓ saves, Escape or ✕ cancels. */
 export function InlineText({
-  value, onSave, placeholder = 'None', className = '', inputClassName = '', type = 'text', validate, display,
+  value, onSave, placeholder = 'None', className = '', inputClassName = '', type = 'text', validate, display, readOnly,
 }: {
+  readOnly?: boolean;
   value: string;
   onSave: (v: string) => void;
   placeholder?: string;
@@ -32,6 +33,14 @@ export function InlineText({
     if (v !== value) onSave(v);
   };
   const cancel = () => { setEditing(false); setDraft(value); setError(null); };
+
+  if (readOnly) {
+    return (
+      <div className={`px-2 py-1 -mx-2 ${className}`}>
+        {display ?? (value ? value : <span className="text-jira-muted">{placeholder}</span>)}
+      </div>
+    );
+  }
 
   if (!editing) {
     return (
@@ -69,8 +78,9 @@ export function InlineText({
 
 /** Click-to-edit multi-line text (descriptions). */
 export function InlineTextarea({
-  value, onSave, placeholder = 'Add a description…', saving,
+  value, onSave, placeholder = 'Add a description…', saving, readOnly,
 }: {
+  readOnly?: boolean;
   value: string;
   onSave: (v: string) => void;
   placeholder?: string;
@@ -79,6 +89,12 @@ export function InlineTextarea({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+
+  if (readOnly) {
+    return value
+      ? <p className="whitespace-pre-wrap break-words leading-6">{value}</p>
+      : <p className="text-jira-muted">No description</p>;
+  }
 
   if (!editing) {
     return (

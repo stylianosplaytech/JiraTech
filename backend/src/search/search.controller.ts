@@ -83,8 +83,8 @@ export class SearchController {
   }
 
   @Get('search/quick')
-  quick(@Query('q') q = '') {
-    return this.searchService.quickSearch(q);
+  quick(@Request() req: AuthRequest, @Query('q') q = '') {
+    return this.searchService.quickSearch(q, req.user);
   }
 
   @Get('filters')

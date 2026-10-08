@@ -11,16 +11,18 @@ interface UserPickerProps {
   variant?: 'inline' | 'field';
   /** Adds an "Assign to me" shortcut. */
   currentUserId?: string;
+  disabled?: boolean;
 }
 
 export default function UserPicker({
-  value, onChange, placeholder = 'Unassigned', allowClear = true, variant = 'field', currentUserId,
+  value, onChange, placeholder = 'Unassigned', allowClear = true, variant = 'field', currentUserId, disabled,
 }: UserPickerProps) {
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.getUsers() });
 
   return (
     <SelectPicker
       variant={variant}
+      disabled={disabled}
       value={value}
       onChange={(id) => onChange(id ?? undefined)}
       placeholder={placeholder}

@@ -5,6 +5,7 @@ import { api } from '../api';
 import { useProject } from '../project';
 import { jqlValue } from '../utils';
 import UserPicker from '../components/UserPicker';
+import ProjectPeople, { ACCESS_INFO } from '../components/ProjectPeople';
 import Avatar from '../components/Avatar';
 import { StatusBadge, STATUS_LABELS, typeLabel } from '../components/Badges';
 import { SelectPicker } from '../components/Pickers';
@@ -29,7 +30,6 @@ export default function ProjectPage() {
   const [newVersion, setNewVersion] = useState({ name: '', releaseDate: '' });
   const [newComponent, setNewComponent] = useState({ name: '', type: 'SERVICE' });
 
-  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const { data: project, isLoading, error } = useQuery({
     queryKey: ['project', key],
     queryFn: () => api.getProject(key),
@@ -74,8 +74,8 @@ export default function ProjectPage() {
     return <EmptyState title="Project not found" action={<Link to="/projects" className="btn btn-default">All projects</Link>}>{errorMessage(error)}</EmptyState>;
   }
 
-  const canAdmin = me?.role === 'ADMIN' || me?.id === project.leadId;
-  const canManageVersions = canAdmin || ['RELEASE_MANAGER', 'PROJECT_MANAGER'].includes(me?.role ?? '');
+  const canAdmin = project.permissions.canAdmin;
+  const canManageVersions = canAdmin;
   const total = project._count?.issues ?? 0;
 
   return (
@@ -202,6 +202,8 @@ export default function ProjectPage() {
               <p className="field-help">SPORTS naming: teams start with “@”; services and release trains use “ASSETID (serviceName)”.</p>
             )}
           </section>
+
+          <ProjectPeople projectKey={project.key} canAdmin={canAdmin} />
         </div>
 
         <aside className="space-y-4">
@@ -215,6 +217,8 @@ export default function ProjectPage() {
               </div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Issues</dt><dd>{total}</dd></div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Rules</dt><dd>{project.strictHierarchy ? 'SPORTS conventions' : 'Standard'}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Access</dt><dd>{ACCESS_INFO[project.defaultAccess].label}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Your role</dt><dd>{project.permissions.role === 'NONE' ? '—' : project.permissions.role.charAt(0) + project.permissions.role.slice(1).toLowerCase()}</dd></div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Created</dt><dd>{new Date(project.createdAt).toLocaleDateString()}</dd></div>
             </dl>
           </div>

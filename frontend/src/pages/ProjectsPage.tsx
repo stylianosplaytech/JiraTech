@@ -5,6 +5,7 @@ import { api } from '../api';
 import { useProject } from '../project';
 import { suggestProjectKey } from '../utils';
 import UserPicker from '../components/UserPicker';
+import { ACCESS_INFO } from '../components/ProjectPeople';
 import Avatar from '../components/Avatar';
 import { FolderIcon, PlusIcon, SearchIcon } from '../components/Icons';
 import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
@@ -136,6 +137,8 @@ export default function ProjectsPage() {
                 <th>Name</th>
                 <th>Key</th>
                 <th>Type</th>
+                <th>Access</th>
+                <th>Your role</th>
                 <th>Lead</th>
                 <th className="text-right">Issues</th>
                 <th />
@@ -155,6 +158,12 @@ export default function ProjectsPage() {
                   </td>
                   <td className="font-mono text-xs">{p.key}</td>
                   <td className="text-jira-subtle">{p.strictHierarchy ? 'SPORTS conventions' : 'Standard'}</td>
+                  <td>
+                    <span className={`lozenge ${p.defaultAccess === 'NONE' ? 'bg-[#FFEBE6] text-[#BF2600]' : p.defaultAccess === 'VIEWER' ? 'bg-[#FFFAE6] text-[#974F0C]' : 'bg-[#E3FCEF] text-[#006644]'}`} title={ACCESS_INFO[p.defaultAccess].help}>
+                      {ACCESS_INFO[p.defaultAccess].label}
+                    </span>
+                  </td>
+                  <td className="text-jira-subtle">{p.myRole && p.myRole !== 'NONE' ? p.myRole.charAt(0) + p.myRole.slice(1).toLowerCase() : '—'}</td>
                   <td>
                     {p.lead ? <span className="flex items-center gap-2"><Avatar name={p.lead.name} size="xs" />{p.lead.name}</span> : <span className="text-jira-muted">—</span>}
                   </td>

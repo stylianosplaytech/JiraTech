@@ -1,4 +1,5 @@
-import { IsBoolean, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { ProjectAccess, ProjectRole } from '@prisma/client';
+import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class CreateProjectDto {
   @IsString()
@@ -23,6 +24,10 @@ export class CreateProjectDto {
   @IsOptional()
   @IsBoolean()
   strictHierarchy?: boolean;
+
+  @IsOptional()
+  @IsEnum(ProjectAccess)
+  defaultAccess?: ProjectAccess;
 }
 
 export class UpdateProjectDto {
@@ -43,4 +48,13 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsBoolean()
   strictHierarchy?: boolean;
+
+  @IsOptional()
+  @IsEnum(ProjectAccess)
+  defaultAccess?: ProjectAccess;
+}
+
+export class SetMemberDto {
+  @IsEnum(ProjectRole)
+  role!: ProjectRole;
 }

@@ -2,13 +2,15 @@ import { Controller, Post, Get, Param, Body, UseGuards, Request } from '@nestjs/
 import { EscalationAction } from '@prisma/client';
 import { IncidentsService } from './incidents.service';
 import { JwtAuthGuard } from '../auth/guards';
+import { AccessGuard, RequireAccess } from '../access/access.guard';
 
 @Controller('incidents')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AccessGuard)
 export class IncidentsController {
   constructor(private incidentsService: IncidentsService) {}
 
   @Post(':id/escalate')
+  @RequireAccess('edit', { from: 'issueParam', param: 'id' })
   escalate(
     @Param('id') id: string,
     @Body() body: { action: EscalationAction; toTeam?: string; note?: string },
@@ -18,6 +20,7 @@ export class IncidentsController {
   }
 
   @Get(':id/history')
+  @RequireAccess('browse', { from: 'issueParam', param: 'id' })
   history(@Param('id') id: string) {
     return this.incidentsService.getEscalationHistory(id);
   }

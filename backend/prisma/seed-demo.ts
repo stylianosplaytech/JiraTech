@@ -8,7 +8,8 @@
  *   npm run db:seed:demo -w backend
  */
 import {
-  ComponentType, IssueResolution, IssueStatus, IssueType, LinkType, Priority, PrismaClient, RagStatus, UserRole,
+  ComponentType, IssueResolution, IssueStatus, IssueType, LinkType, Priority, PrismaClient, ProjectAccess, ProjectRole,
+  RagStatus, UserRole,
   type Issue, type User,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -622,6 +623,28 @@ async function main() {
   await worklog(crash, lina, 420, 'Paging adapter for the market list', 3);
   await worklog(oddsBug, andreas, 180, 'Reproduced reconnect in staging', 1);
   await worklog(voiceOver, nikos, 210, 'Accessibility labels for odds', 7);
+
+  // ── Project roles ─────────────────────────────────────────────────────────
+  // PAY: everyone can read, only the team can change things. MOB: private to the app team.
+  // SPORTS keeps the open default (everyone is a member).
+  const setRoles = async (projectId: string, defaultAccess: ProjectAccess, roles: [User, ProjectRole][]) => {
+    await prisma.project.update({ where: { id: projectId }, data: { defaultAccess } });
+    for (const [u, role] of roles) {
+      await prisma.projectMember.upsert({
+        where: { projectId_userId: { projectId, userId: u.id } },
+        update: {},
+        create: { projectId, userId: u.id, role },
+      });
+    }
+  };
+  await setRoles(pay.id, ProjectAccess.VIEWER, [
+    [elena, ProjectRole.ADMIN], [nikos, ProjectRole.MEMBER], [lina, ProjectRole.MEMBER], [andreas, ProjectRole.MEMBER],
+    [sofia, ProjectRole.MEMBER], [katerina, ProjectRole.MEMBER], [daniel, ProjectRole.VIEWER],
+  ]);
+  await setRoles(mob.id, ProjectAccess.NONE, [
+    [katerina, ProjectRole.ADMIN], [nikos, ProjectRole.MEMBER], [lina, ProjectRole.MEMBER], [andreas, ProjectRole.MEMBER],
+    [sofia, ProjectRole.MEMBER], [marcus, ProjectRole.MEMBER], [daniel, ProjectRole.VIEWER], [alex, ProjectRole.VIEWER],
+  ]);
 
   // ── Saved filters ─────────────────────────────────────────────────────────
   await filter(admin, 'Release blockers', 'labels = release-blocker OR (priority = Highest AND status != CLOSED) ORDER BY priority DESC', true,

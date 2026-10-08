@@ -112,7 +112,8 @@ export default function CreateIssueForm({
               // Labels, components and versions belong to the old project.
               setForm((f) => ({ ...f, labelIds: [], componentIds: [], fixVersionIds: [] }));
             }}
-            options={projects.map((p) => ({ id: p.key, label: `${p.name} (${p.key})` }))}
+            // Only projects where the user may create issues.
+            options={projects.filter((p) => p.myRole === 'MEMBER' || p.myRole === 'ADMIN').map((p) => ({ id: p.key, label: `${p.name} (${p.key})` }))}
           />
         </div>
         <div>

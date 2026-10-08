@@ -27,7 +27,6 @@ export class CustomFieldsService {
     role: UserRole,
     projectKey?: string,
   ) {
-    if (role !== UserRole.ADMIN) throw new ForbiddenException('Admin only');
     const project = await resolveProject(this.prisma, projectKey);
     return this.prisma.customFieldDefinition.create({
       data: {

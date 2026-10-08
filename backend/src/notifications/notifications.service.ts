@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from './mailer.service';
+import { AccessService } from '../access/access.service';
 
 const STATUS_NAMES: Record<string, string> = {
   BACKLOG: 'Backlog', TO_DO: 'To Do', DOING: 'In Progress', CLOSED: 'Closed',
@@ -32,6 +33,7 @@ interface IssueRef {
   id: string;
   key: string;
   summary: string;
+  projectId: string;
 }
 
 type Recipients = Map<string, { type: NotificationType; detail?: string | null }>;
@@ -52,7 +54,7 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
   private readonly appUrl = (process.env.APP_URL ?? 'http://localhost:5173').replace(/\/$/, '');
 
-  constructor(private prisma: PrismaService, private mailer: MailerService) {}
+  constructor(private prisma: PrismaService, private mailer: MailerService, private access: AccessService) {}
 
   // ─── Events (called by IssuesService after its changes are committed) ──────
 
@@ -251,6 +253,9 @@ export class NotificationsService {
 
   private async dispatch(issue: IssueRef, actorId: string, recipients: Recipients) {
     recipients.delete(actorId); // never notify people about their own actions
+    // People who lost access to the project (or never had it) aren't told about its issues.
+    const allowed = await this.access.filterBrowsers(issue.projectId, [...recipients.keys()]);
+    for (const userId of [...recipients.keys()]) if (!allowed.has(userId)) recipients.delete(userId);
     if (!recipients.size) return;
 
     const created = await this.prisma.$transaction(

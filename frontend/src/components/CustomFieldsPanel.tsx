@@ -14,8 +14,9 @@ function parseOptions(options?: string): string[] {
 }
 
 /** Custom fields rendered as rows of the issue's Details panel. Text and numbers save on Enter, not per keystroke. */
-export default function CustomFieldRows({ issue, Row }: {
+export default function CustomFieldRows({ issue, Row, readOnly }: {
   issue: Issue;
+  readOnly?: boolean;
   Row: (props: { label: string; children: React.ReactNode }) => JSX.Element;
 }) {
   const queryClient = useQueryClient();
@@ -45,6 +46,7 @@ export default function CustomFieldRows({ issue, Row }: {
         : (versions ?? []).map((v) => ({ id: v.id, label: v.name }));
       return (
         <SelectPicker
+          disabled={readOnly}
           value={current || null}
           onChange={(id) => save(def.key, id ?? '')}
           options={options}
@@ -54,6 +56,7 @@ export default function CustomFieldRows({ issue, Row }: {
     }
     return (
       <InlineText
+        readOnly={readOnly}
         value={current}
         type={def.type === 'NUMBER' ? 'number' : 'text'}
         onSave={(v) => save(def.key, v)}
