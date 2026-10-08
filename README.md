@@ -29,6 +29,21 @@ For PostgreSQL, change `provider` in `backend/prisma/schema.prisma` to `postgres
 
 Default login: `admin@jiratech.local` / `admin123`
 
+### Demo data
+
+To try every feature with realistic content, load the demo data on top of the base seed:
+
+```bash
+npm run db:seed:demo
+```
+
+It adds 7 more people, two standard projects — **PAY** (Payments Platform) and **MOB** (Mobile App) — and more SPORTS work.
+The new issues cover every status, priority and type, with epics and child issues, blocked and at-risk items,
+comments with @mentions, links (also across projects), watchers, work logs, history and shared saved filters.
+It is safe to run more than once. Every demo user logs in with the same password as the admin account, e.g.
+`elena@jiratech.local` (team lead), `nikos@jiratech.local` (developer), `sofia@jiratech.local` (QA),
+`daniel@jiratech.local` (release manager), `katerina@jiratech.local` (product owner).
+
 ## Modules
 
 | Phase | Module | Status |
