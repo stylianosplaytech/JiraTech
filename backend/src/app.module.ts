@@ -16,6 +16,7 @@ import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { VersionsModule } from './versions/versions.module';
 import { ProjectsModule } from './projects/projects.module';
 import { SearchModule } from './search/search.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SearchModule } from './search/search.module';
     UsersModule,
     ProjectsModule,
     SearchModule,
+    NotificationsModule,
     IssuesModule,
     ComponentsModule,
     LabelsModule,

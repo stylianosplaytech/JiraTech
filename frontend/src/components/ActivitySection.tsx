@@ -4,6 +4,7 @@ import { api, formatMinutes, type Comment, type Issue, type User } from '../api'
 import { humanize, timeAgo } from '../utils';
 import { STATUS_LABELS } from './Badges';
 import Avatar from './Avatar';
+import MentionTextarea from './MentionTextarea';
 import { errorMessage, useDialogs, useToast } from './ui';
 
 const FIELD_LABELS: Record<string, string> = {
@@ -41,10 +42,10 @@ function CommentEditor({ initial = '', onSave, onCancel, saving, autoFocus, plac
   const save = () => { if (body.trim()) { onSave(body.trim()); if (!initial) { setBody(''); setFocused(false); } } };
   return (
     <div className="flex-1 min-w-0">
-      <textarea
+      <MentionTextarea
         autoFocus={autoFocus}
         value={body}
-        onChange={(e) => setBody(e.target.value)}
+        onChange={setBody}
         onFocus={() => setFocused(true)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save();
@@ -58,7 +59,7 @@ function CommentEditor({ initial = '', onSave, onCancel, saving, autoFocus, plac
         <div className="flex items-center gap-2 mt-2">
           <button type="button" onClick={save} disabled={!body.trim() || saving} className="btn btn-primary">Save</button>
           <button type="button" onClick={() => { setFocused(false); setBody(initial); onCancel?.(); }} className="btn btn-subtle">Cancel</button>
-          <span className="text-xs text-jira-muted ml-auto">Ctrl+Enter to save · type @email to mention someone</span>
+          <span className="text-xs text-jira-muted ml-auto">Ctrl+Enter to save · type @ to mention someone</span>
         </div>
       )}
     </div>

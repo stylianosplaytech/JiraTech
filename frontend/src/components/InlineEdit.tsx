@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CheckIcon, XIcon } from './Icons';
+import MentionTextarea from './MentionTextarea';
 
 /** Click-to-edit single-line text. Enter or ✓ saves, Escape or ✕ cancels. */
 export function InlineText({
@@ -98,10 +99,10 @@ export function InlineTextarea({
   const save = () => { setEditing(false); if (draft !== value) onSave(draft); };
   return (
     <div>
-      <textarea
+      <MentionTextarea
         autoFocus
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={setDraft}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save();
           if (e.key === 'Escape') { setEditing(false); setDraft(value); }
@@ -113,7 +114,7 @@ export function InlineTextarea({
       <div className="flex items-center gap-2 mt-2">
         <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>Save</button>
         <button type="button" className="btn btn-subtle" onClick={() => { setEditing(false); setDraft(value); }}>Cancel</button>
-        <span className="text-xs text-jira-muted ml-auto">Ctrl+Enter to save · Esc to cancel</span>
+        <span className="text-xs text-jira-muted ml-auto">Type @ to mention · Ctrl+Enter to save · Esc to cancel</span>
       </div>
     </div>
   );

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '../api';
 import type { User } from '../api';
 import { useProject } from '../project';
 import { humanize } from '../utils';
 import QuickSearch from './QuickSearch';
+import NotificationBell from './NotificationBell';
 import Avatar from './Avatar';
 import { Dropdown, Modal, useToast } from './ui';
 import { ChevronDownIcon, LogoutIcon, PlusIcon } from './Icons';
@@ -79,6 +81,41 @@ function ProjectSwitcher() {
   );
 }
 
+/** Account-menu switch for notification emails (in-app notifications are always on). */
+function EmailPreference() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const { data } = useQuery({ queryKey: ['notification-prefs'], queryFn: api.getNotificationPreferences });
+  const save = useMutation({
+    mutationFn: (emailNotifications: boolean) => api.setNotificationPreferences({ emailNotifications }),
+    onSuccess: (p) => {
+      queryClient.setQueryData(['notification-prefs'], p);
+      toast(p.emailNotifications ? 'Email notifications turned on' : 'Email notifications turned off');
+    },
+  });
+  const on = data?.emailNotifications ?? true;
+  return (
+    <div className="border-t border-jira-border mt-1 pt-1">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        disabled={!data || save.isPending}
+        onClick={() => save.mutate(!on)}
+        className="menu-item justify-between"
+      >
+        <span>
+          Email notifications
+          <span className="block text-xs text-jira-muted">For assignments, mentions and issues you watch</span>
+        </span>
+        <span className={`relative w-8 h-4 rounded-full shrink-0 transition-colors ${on ? 'bg-[#36B37E]' : 'bg-jira-border'}`}>
+          <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
+        </span>
+      </button>
+    </div>
+  );
+}
+
 export default function Layout({ children, user, loading }: { children: React.ReactNode; user?: User; loading: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -120,6 +157,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
           </button>
           <div className="ml-auto flex items-center gap-2">
             <QuickSearch />
+            <NotificationBell />
             {!loading && user && (
               <Dropdown
                 align="right"
@@ -140,6 +178,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
                         <div className="text-xs text-jira-muted">{humanize(user.role)}</div>
                       </div>
                     </div>
+                    <EmailPreference />
                     <div className="border-t border-jira-border mt-1 pt-1">
                       <button type="button" className="menu-item" onClick={logout}><LogoutIcon size={14} /> Log out</button>
                     </div>

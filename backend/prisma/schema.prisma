@@ -117,6 +117,8 @@ model User {
   name         String
   passwordHash String
   role         UserRole @default(DEVELOPER)
+  /// Send an email for each notification (in-app notifications are always on)
+  emailNotifications Boolean @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -131,6 +133,8 @@ model User {
   comments         Comment[]
   historyEntries   IssueHistory[]
   savedFilters     SavedFilter[]
+  notifications    Notification[]    @relation("NotificationRecipient")
+  notificationsSent Notification[]   @relation("NotificationActor")
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────
@@ -333,6 +337,7 @@ model Issue {
   workLogs          WorkLog[]
   comments          Comment[]
   history           IssueHistory[]
+  notifications     Notification[]
 
   @@index([projectId, type])
   @@index([projectId, status])
@@ -489,4 +494,38 @@ model SavedFilter {
   updatedAt   DateTime @updatedAt
 
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+enum NotificationType {
+  ASSIGNED
+  MENTIONED
+  COMMENTED
+  STATUS_CHANGED
+  UPDATED
+  WATCHING
+  DELETED
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  actorId   String?
+  /// Null once the issue is deleted; issueKey/issueSummary keep the context.
+  issueId   String?
+  issueKey  String
+  issueSummary String
+  type      NotificationType
+  /// Short human-readable detail, e.g. "To Do → In Progress" or a comment excerpt
+  detail    String?
+  readAt    DateTime?
+  emailedAt DateTime?
+  createdAt DateTime         @default(now())
+
+  user  User   @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor User?  @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  issue Issue? @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt, createdAt])
 }

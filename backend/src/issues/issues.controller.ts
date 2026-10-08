@@ -113,7 +113,7 @@ export class IssuesController {
 
   @Post(':id/watchers')
   addWatcher(@Param('id') id: string, @Body() dto: AddWatcherDto, @Request() req: AuthRequest) {
-    return this.issuesService.addWatcher(id, dto.userId ?? req.user.id);
+    return this.issuesService.addWatcher(id, dto.userId ?? req.user.id, req.user.id);
   }
 
   @Delete(':id/watchers/:userId')

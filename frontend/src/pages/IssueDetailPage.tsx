@@ -87,6 +87,15 @@ export default function IssueDetailPage() {
     if (issue?.project && issue.project.key !== projectKey) setProjectKey(issue.project.key);
   }, [issue?.project, projectKey, setProjectKey]);
 
+  // Opening an issue counts as reading its notifications.
+  const issueId = issue?.id;
+  useEffect(() => {
+    if (!issueId) return;
+    api.markIssueNotificationsRead(issueId)
+      .then((r) => queryClient.setQueryData(['notifications', 'count'], r))
+      .catch(() => undefined);
+  }, [issueId, queryClient]);
+
   const sameProject = issue?.project?.key === projectKey;
   const { data: labels } = useQuery({ queryKey: ['labels'], queryFn: () => api.getLabels(), enabled: sameProject });
   const { data: components } = useQuery({ queryKey: ['components'], queryFn: () => api.getComponents(), enabled: sameProject });

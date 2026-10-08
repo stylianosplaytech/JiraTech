@@ -11,3 +11,4 @@ backend/prisma/dev.db
 backend/prisma/dev.db-journal
 *.tsbuildinfo
 backend/uploads/
+mail-outbox/

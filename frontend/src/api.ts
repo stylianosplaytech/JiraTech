@@ -95,6 +95,18 @@ export const api = {
   deleteAttachment: (id: string, attachmentId: string) =>
     request(`/issues/${id}/attachments/${attachmentId}`, { method: 'DELETE' }),
 
+  getNotifications: (scope: 'all' | 'direct' = 'all', unreadOnly = false, limit = 30) =>
+    request<{ items: AppNotification[]; unread: number }>(`/notifications?scope=${scope}&unread=${unreadOnly}&limit=${limit}`),
+  getUnreadCount: () => request<{ unread: number }>('/notifications/unread-count'),
+  markNotificationRead: (id: string, read = true) =>
+    request<{ unread: number }>(`/notifications/${id}/${read ? 'read' : 'unread'}`, { method: 'POST' }),
+  markAllNotificationsRead: () => request<{ unread: number }>('/notifications/read-all', { method: 'POST' }),
+  markIssueNotificationsRead: (issueId: string) =>
+    request<{ unread: number }>(`/notifications/issue/${issueId}/read`, { method: 'POST' }),
+  getNotificationPreferences: () => request<{ emailNotifications: boolean }>('/notifications/preferences'),
+  setNotificationPreferences: (prefs: { emailNotifications: boolean }) =>
+    request<{ emailNotifications: boolean }>('/notifications/preferences', { method: 'PATCH', body: JSON.stringify(prefs) }),
+
   getProjects: () => request<Project[]>('/projects'),
   getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
   createProject: (data: { key: string; name: string; description?: string; leadId?: string; strictHierarchy?: boolean }) =>
@@ -264,6 +276,21 @@ export interface WorkLog {
   comment?: string;
   createdAt: string;
   user: { id: string; name: string };
+}
+
+export type NotificationType =
+  | 'ASSIGNED' | 'MENTIONED' | 'COMMENTED' | 'STATUS_CHANGED' | 'UPDATED' | 'WATCHING' | 'DELETED';
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  issueKey: string;
+  issueSummary: string;
+  detail: string | null;
+  readAt: string | null;
+  createdAt: string;
+  actor: { id: string; name: string } | null;
+  issue: { id: string; key: string; summary: string; type: string; status: string } | null;
 }
 
 export interface Project {

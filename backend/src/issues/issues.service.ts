@@ -8,6 +8,7 @@ import { ISSUE_INCLUDE } from '../common/issue-include';
 import { nextIssueKey, resolveProject } from '../common/project.util';
 import { AuthUser } from '../common/auth-user';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
+import { NotificationsService, extractMentions } from '../notifications/notifications.service';
 import {
   CreateIssueDto, UpdateIssueDto, TransitionDto, CreateLinkDto, CreateWorkLogDto,
 } from './dto/issue.dto';
@@ -31,6 +32,7 @@ export class IssuesService {
   constructor(
     private prisma: PrismaService,
     private customFieldsService: CustomFieldsService,
+    private notifications: NotificationsService,
   ) {
     if (!fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true });
@@ -155,6 +157,7 @@ export class IssuesService {
     if (dto.customFields) {
       await this.customFieldsService.setIssueValues(issueId, dto.customFields);
     }
+    await this.notifications.issueCreated(issueId, reporterId);
     return this.findOne(issueId);
   }
 
@@ -162,7 +165,7 @@ export class IssuesService {
     const before = await this.findOne(idOrKey);
     const id = before.id;
 
-    await this.prisma.$transaction(async (tx) => {
+    const changed = await this.prisma.$transaction(async (tx) => {
       const changes: HistoryChange[] = [];
 
       if (dto.componentIds) {
@@ -226,12 +229,19 @@ export class IssuesService {
         Object.entries(data).map(([k, v]) => [k, v === '' && k !== 'summary' ? null : v]),
       );
       await tx.issue.update({ where: { id }, data: clean });
-      await this.recordHistory(tx, id, userId, changes.filter((c) => c.from !== c.to));
+      const real = changes.filter((c) => c.from !== c.to);
+      await this.recordHistory(tx, id, userId, real);
+      return real.map((c) => c.field);
     });
 
     if (dto.customFields) {
       await this.customFieldsService.setIssueValues(id, dto.customFields);
     }
+    await this.notifications.issueUpdated(id, userId, {
+      fields: changed,
+      previousAssigneeId: before.assigneeId,
+      previousDescription: before.description,
+    });
     return this.findOne(id);
   }
 
@@ -249,6 +259,7 @@ export class IssuesService {
       throw new BadRequestException(`${issue.key} has ${issue._count.children} child issue(s); delete or move them first`);
     }
 
+    await this.notifications.issueDeleted(issue.id, user.id);
     await this.prisma.$transaction(async (tx) => {
       await tx.issueComponent.deleteMany({ where: { issueId: issue.id } });
       await tx.issueVersion.deleteMany({ where: { issueId: issue.id } });
@@ -283,6 +294,7 @@ export class IssuesService {
       }
       await this.recordHistory(tx, issue.id, userId, changes);
     });
+    await this.notifications.statusChanged(issue.id, userId, issue.status, dto.status);
     return this.findOne(issue.id);
   }
 
@@ -332,7 +344,7 @@ export class IssuesService {
 
   // ─── Watchers ──────────────────────────────────────────────────────────────
 
-  async addWatcher(idOrKey: string, userId: string) {
+  async addWatcher(idOrKey: string, userId: string, actorId: string) {
     const issueId = await this.findIdOrThrow(idOrKey);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
@@ -342,6 +354,7 @@ export class IssuesService {
     } catch {
       throw new ConflictException('User is already watching this issue');
     }
+    await this.notifications.watcherAdded(issueId, actorId, userId);
     return this.findOne(issueId);
   }
 
@@ -366,7 +379,7 @@ export class IssuesService {
     const issueId = await this.findIdOrThrow(idOrKey);
     const text = body.trim();
     if (!text) throw new BadRequestException('Comment cannot be empty');
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       const comment = await tx.comment.create({
         data: { issueId, authorId, body: text },
         include: { author: USER_BRIEF },
@@ -386,6 +399,8 @@ export class IssuesService {
       await tx.issue.update({ where: { id: issueId }, data: { updatedAt: new Date() } });
       return comment;
     });
+    await this.notifications.commentAdded(issueId, authorId, text);
+    return created;
   }
 
   async updateComment(idOrKey: string, commentId: string, user: AuthUser, body: string) {
@@ -393,11 +408,13 @@ export class IssuesService {
     if (comment.authorId !== user.id) throw new ForbiddenException('You can only edit your own comments');
     const text = body.trim();
     if (!text) throw new BadRequestException('Comment cannot be empty');
-    return this.prisma.comment.update({
+    const updated = await this.prisma.comment.update({
       where: { id: comment.id },
       data: { body: text },
       include: { author: USER_BRIEF },
     });
+    await this.notifications.commentEdited(comment.issueId, user.id, comment.body, text);
+    return updated;
   }
 
   async deleteComment(idOrKey: string, commentId: string, user: AuthUser) {
@@ -573,9 +590,4 @@ function listChange(field: string, from: string[], to: string[]): HistoryChange 
 function truncate(v: string | null | undefined) {
   if (v === null || v === undefined) return null;
   return v.length > 2000 ? `${v.slice(0, 2000)}…` : v;
-}
-
-/** "@jane.doe@example.com" → ["jane.doe@example.com"] */
-export function extractMentions(text: string): string[] {
-  return [...text.matchAll(/(?:^|\s)@([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g)].map((m) => m[1].toLowerCase());
 }
