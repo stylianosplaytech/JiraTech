@@ -1,10 +1,10 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, formatMinutes, type Comment, type Issue, type User } from '../api';
 import { humanize, timeAgo } from '../utils';
 import { STATUS_LABELS } from './Badges';
 import Avatar from './Avatar';
-import MentionTextarea from './MentionTextarea';
+import { RichTextEditor, RichTextView } from './RichText';
 import { errorMessage, useDialogs, useToast } from './ui';
 
 const FIELD_LABELS: Record<string, string> = {
@@ -17,18 +17,6 @@ const FIELD_LABELS: Record<string, string> = {
 const fmt = (field: string, v: string | null) =>
   v === null ? 'None' : field === 'status' ? (STATUS_LABELS[v] ?? v) : v;
 
-/** Render comment text with @mentions highlighted. */
-function CommentBody({ text }: { text: string }) {
-  const parts = text.split(/(@[\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g);
-  return (
-    <p className="whitespace-pre-wrap break-words leading-6">
-      {parts.map((p, i) => (i % 2 === 1
-        ? <span key={i} className="bg-jira-blue-light text-jira-blue rounded-[3px] px-1">{p}</span>
-        : <Fragment key={i}>{p}</Fragment>))}
-    </p>
-  );
-}
-
 function CommentEditor({ initial = '', onSave, onCancel, saving, autoFocus, placeholder }: {
   initial?: string;
   onSave: (body: string) => void;
@@ -39,26 +27,30 @@ function CommentEditor({ initial = '', onSave, onCancel, saving, autoFocus, plac
 }) {
   const [body, setBody] = useState(initial);
   const [focused, setFocused] = useState(!!autoFocus);
-  const save = () => { if (body.trim()) { onSave(body.trim()); if (!initial) { setBody(''); setFocused(false); } } };
+  const save = () => { if (body) { onSave(body); if (!initial) { setBody(''); setFocused(false); } } };
+  const cancel = () => { setFocused(false); setBody(initial); onCancel?.(); };
+  if (!focused) {
+    return (
+      <button type="button" onClick={() => setFocused(true)} className="input flex-1 text-left text-jira-muted cursor-text">
+        {placeholder}
+      </button>
+    );
+  }
   return (
     <div className="flex-1 min-w-0">
-      <MentionTextarea
-        autoFocus={autoFocus}
+      <RichTextEditor
+        autoFocus
         value={body}
         onChange={setBody}
-        onFocus={() => setFocused(true)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save();
-          if (e.key === 'Escape') { setFocused(false); setBody(initial); onCancel?.(); }
-        }}
-        rows={focused ? 4 : 1}
-        placeholder={placeholder}
-        className="input resize-y"
+        onSubmit={save}
+        onCancel={cancel}
+        placeholder={placeholder ?? 'Write a comment…'}
+        minHeight={90}
       />
       {focused && (
         <div className="flex items-center gap-2 mt-2">
-          <button type="button" onClick={save} disabled={!body.trim() || saving} className="btn btn-primary">Save</button>
-          <button type="button" onClick={() => { setFocused(false); setBody(initial); onCancel?.(); }} className="btn btn-subtle">Cancel</button>
+          <button type="button" onClick={save} disabled={!body || saving} className="btn btn-primary">Save</button>
+          <button type="button" onClick={cancel} className="btn btn-subtle">Cancel</button>
           <span className="text-xs text-jira-muted ml-auto">Ctrl+Enter to save · type @ to mention someone</span>
         </div>
       )}
@@ -119,7 +111,7 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
             />
           ) : (
             <>
-              <CommentBody text={c.body} />
+              <RichTextView value={c.body} />
               <div className="flex gap-3 text-xs font-medium text-jira-subtle mt-1">
                 {mine && <button type="button" onClick={() => setEditingId(c.id)} className="hover:underline">Edit</button>}
                 {(mine || currentUser?.role === 'ADMIN') && (

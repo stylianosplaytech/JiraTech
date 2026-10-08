@@ -8,6 +8,7 @@ import { IssueTypeIcon } from './Icons';
 import UserPicker from './UserPicker';
 import IssuePicker from './IssuePicker';
 import { errorMessage } from './ui';
+import { RichTextEditor } from './RichText';
 
 // The everyday Jira types first; SPORTS-specific ones follow.
 const COMMON_TYPES = ['TASK', 'STORY', 'DEFECT', 'EPIC', 'SUB_TASK'];
@@ -64,7 +65,7 @@ export default function CreateIssueForm({
         projectKey: parent?.project?.key ?? project?.key,
         type: form.type,
         summary: form.summary.trim(),
-        description: form.description.trim() || undefined,
+        description: form.description || undefined,
         priority: form.priority,
         parentId: parent?.id,
         epicName: form.epicName.trim() || undefined,
@@ -141,10 +142,15 @@ export default function CreateIssueForm({
         </label>
       )}
 
-      <label className="block">
+      <div>
         <span className="field-label">Description</span>
-        <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={5} className="input" />
-      </label>
+        <RichTextEditor
+          value={form.description}
+          onChange={(description) => setForm((f) => ({ ...f, description }))}
+          placeholder="Describe the work. Type @ to mention someone."
+          minHeight={110}
+        />
+      </div>
 
       <div>
         <span className="field-label">Parent {needsParent && <span className="text-[#DE350B]">*</span>}</span>

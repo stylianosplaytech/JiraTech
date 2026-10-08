@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CheckIcon, XIcon } from './Icons';
-import MentionTextarea from './MentionTextarea';
+import { RichTextEditor, RichTextView } from './RichText';
 
 /** Click-to-edit single-line text. Enter or ✓ saves, Escape or ✕ cancels. */
 export function InlineText({
@@ -90,11 +90,7 @@ export function InlineTextarea({
   const [draft, setDraft] = useState(value);
   useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
 
-  if (readOnly) {
-    return value
-      ? <p className="whitespace-pre-wrap break-words leading-6">{value}</p>
-      : <p className="text-jira-muted">No description</p>;
-  }
+  if (readOnly) return <RichTextView value={value} empty={<p className="text-jira-muted">No description</p>} />;
 
   if (!editing) {
     return (
@@ -105,9 +101,7 @@ export function InlineTextarea({
         onKeyDown={(e) => { if (e.key === 'Enter') setEditing(true); }}
         className="rounded-[3px] px-2 py-1.5 -mx-2 hover:bg-jira-gray-hover cursor-text min-h-[40px] transition-colors"
       >
-        {value
-          ? <p className="whitespace-pre-wrap break-words leading-6">{value}</p>
-          : <p className="text-jira-muted">{placeholder}</p>}
+        <RichTextView value={value} empty={<p className="text-jira-muted">{placeholder}</p>} />
       </div>
     );
   }
@@ -115,17 +109,14 @@ export function InlineTextarea({
   const save = () => { setEditing(false); if (draft !== value) onSave(draft); };
   return (
     <div>
-      <MentionTextarea
+      <RichTextEditor
         autoFocus
         value={draft}
         onChange={setDraft}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save();
-          if (e.key === 'Escape') { setEditing(false); setDraft(value); }
-        }}
-        rows={Math.max(6, draft.split('\n').length + 1)}
-        className="input"
+        onSubmit={save}
+        onCancel={() => { setEditing(false); setDraft(value); }}
         placeholder={placeholder}
+        minHeight={160}
       />
       <div className="flex items-center gap-2 mt-2">
         <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>Save</button>

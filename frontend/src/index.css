@@ -62,3 +62,26 @@ body {
 
   .link { @apply text-jira-blue hover:underline; }
 }
+
+/* Rich text (descriptions and comments) */
+@layer components {
+  .rich-text { @apply text-sm leading-6 text-jira-navy break-words; }
+  .rich-text > * + * { @apply mt-2; }
+  .rich-text h2 { @apply text-lg font-semibold mt-4; }
+  .rich-text h3 { @apply text-base font-semibold mt-3; }
+  .rich-text ul { @apply list-disc pl-6; }
+  .rich-text ol { @apply list-decimal pl-6; }
+  .rich-text li > p { @apply m-0; }
+  .rich-text blockquote { @apply border-l-4 border-jira-border pl-3 text-jira-subtle; }
+  .rich-text code { @apply font-mono text-[13px] bg-jira-gray-hover rounded-[3px] px-1 py-0.5; }
+  .rich-text pre { @apply font-mono text-[13px] bg-jira-gray rounded-[3px] p-3 overflow-x-auto; }
+  .rich-text pre code { @apply bg-transparent p-0; }
+  .rich-text a { @apply text-jira-blue underline; }
+  .rich-text hr { @apply border-jira-border; }
+  .rich-text .mention { @apply bg-jira-blue-light text-jira-blue rounded-full px-1.5 py-px font-medium whitespace-nowrap; }
+  .rich-text-editor { @apply outline-none; }
+  .rich-text-editor p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    @apply text-jira-muted float-left h-0 pointer-events-none;
+  }
+}

@@ -10,6 +10,14 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.64.2",
+    "@tiptap/extension-link": "^2.27.3",
+    "@tiptap/extension-mention": "^2.27.3",
+    "@tiptap/extension-placeholder": "^2.27.3",
+    "@tiptap/pm": "^2.27.3",
+    "@tiptap/react": "^2.27.3",
+    "@tiptap/starter-kit": "^2.27.3",
+    "@tiptap/suggestion": "^2.27.3",
+    "dompurify": "^3.4.16",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.1.3"

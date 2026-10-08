@@ -8,7 +8,8 @@ import { ISSUE_INCLUDE } from '../common/issue-include';
 import { nextIssueKey, resolveProject } from '../common/project.util';
 import { AuthUser } from '../common/auth-user';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
-import { NotificationsService, extractMentions } from '../notifications/notifications.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { extractMentions, sanitizeRich, toPlainText } from '../common/rich-text';
 import { AccessService } from '../access/access.service';
 import {
   CreateIssueDto, UpdateIssueDto, TransitionDto, CreateLinkDto, CreateWorkLogDto,
@@ -130,7 +131,7 @@ export class IssuesService {
           number,
           type: dto.type,
           summary: dto.summary,
-          description: dto.description,
+          description: sanitizeRich(dto.description),
           parentId: parent?.id,
           epicName: dto.epicName,
           priority: dto.priority,
@@ -211,10 +212,12 @@ export class IssuesService {
         componentIds: _c, labelIds: _l, fixVersionIds: _f, affectsVersionIds: _a,
         customFields: _cf, ...data
       } = dto;
+      if (data.description !== undefined) data.description = sanitizeRich(data.description) ?? '';
 
       for (const field of ['summary', 'description', 'priority', 'estimate', 'remainingEstimate', 'blocked', 'epicName'] as const) {
-        if (data[field] !== undefined && data[field] !== before[field]) {
-          changes.push({ field, from: str(before[field]), to: str(data[field]) });
+        if (data[field] !== undefined && (data[field] || null) !== (before[field] || null)) {
+          const text = (v: unknown) => (field === 'description' ? toPlainText(v as string) || null : str(v));
+          changes.push({ field, from: text(before[field]), to: text(data[field]) });
         }
       }
       if (data.assigneeId !== undefined && data.assigneeId !== before.assigneeId) {
@@ -382,7 +385,7 @@ export class IssuesService {
 
   async addComment(idOrKey: string, authorId: string, body: string) {
     const issueId = await this.findIdOrThrow(idOrKey);
-    const text = body.trim();
+    const text = sanitizeRich(body);
     if (!text) throw new BadRequestException('Comment cannot be empty');
     const created = await this.prisma.$transaction(async (tx) => {
       const comment = await tx.comment.create({
@@ -390,8 +393,9 @@ export class IssuesService {
         include: { author: USER_BRIEF },
       });
       // Commenters (and anyone @mentioned by email) start watching the issue, as in Jira.
+      const { ids, emails } = extractMentions(text);
       const mentioned = await tx.user.findMany({
-        where: { email: { in: extractMentions(text) } },
+        where: { OR: [{ id: { in: ids } }, { email: { in: emails } }] },
         select: { id: true },
       });
       for (const userId of new Set([authorId, ...mentioned.map((u) => u.id)])) {
@@ -411,7 +415,7 @@ export class IssuesService {
   async updateComment(idOrKey: string, commentId: string, user: AuthUser, body: string) {
     const comment = await this.findComment(idOrKey, commentId);
     if (comment.authorId !== user.id) throw new ForbiddenException('You can only edit your own comments');
-    const text = body.trim();
+    const text = sanitizeRich(body);
     if (!text) throw new BadRequestException('Comment cannot be empty');
     const updated = await this.prisma.comment.update({
       where: { id: comment.id },

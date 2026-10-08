@@ -3,6 +3,7 @@ import { NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from './mailer.service';
 import { AccessService } from '../access/access.service';
+import { extractMentions, mentionKeys, Mentions, toPlainText } from '../common/rich-text';
 
 const STATUS_NAMES: Record<string, string> = {
   BACKLOG: 'Backlog', TO_DO: 'To Do', DOING: 'In Progress', CLOSED: 'Closed',
@@ -38,15 +39,19 @@ interface IssueRef {
 
 type Recipients = Map<string, { type: NotificationType; detail?: string | null }>;
 
-/** "@jane.doe@example.com" → ["jane.doe@example.com"] */
-export function extractMentions(text: string | null | undefined): string[] {
-  if (!text) return [];
-  return [...text.matchAll(/(?:^|[\s(])@([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g)].map((m) => m[1].toLowerCase());
+function excerpt(text: string, max = 160) {
+  const flat = toPlainText(text).replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-function excerpt(text: string, max = 160) {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+/** Mentions present in `after` but not in `before` (so edits only notify newly mentioned people). */
+function newMentions(before: string | null | undefined, after: string | null | undefined): Mentions {
+  const old = new Set(mentionKeys(extractMentions(before)));
+  const now = extractMentions(after);
+  return {
+    ids: now.ids.filter((id) => !old.has(`id:${id}`)),
+    emails: now.emails.filter((e) => !old.has(`email:${e}`)),
+  };
 }
 
 @Injectable()
@@ -95,8 +100,7 @@ export class NotificationsService {
         this.add(r, issue.assigneeId, NotificationType.ASSIGNED);
       }
       if (change.fields.includes('description')) {
-        const before = new Set(extractMentions(change.previousDescription));
-        const added = extractMentions(issue.description).filter((e) => !before.has(e));
+        const added = newMentions(change.previousDescription, issue.description);
         await this.addMentions(r, issue.id, added, excerpt(issue.description ?? ''));
       }
       await this.dispatch(issue, actorId, r);
@@ -126,9 +130,8 @@ export class NotificationsService {
 
   async commentEdited(issueId: string, actorId: string, before: string, after: string) {
     await this.safely(async () => {
-      const previous = new Set(extractMentions(before));
-      const added = extractMentions(after).filter((e) => !previous.has(e));
-      if (!added.length) return;
+      const added = newMentions(before, after);
+      if (!added.ids.length && !added.emails.length) return;
       const issue = await this.issueWithPeople(issueId);
       const r: Recipients = new Map();
       await this.addMentions(r, issue.id, added, excerpt(after));
@@ -234,9 +237,12 @@ export class NotificationsService {
     }
   }
 
-  private async addMentions(r: Recipients, issueId: string, emails: string[], detail: string) {
-    if (!emails.length) return;
-    const users = await this.prisma.user.findMany({ where: { email: { in: emails } }, select: { id: true } });
+  private async addMentions(r: Recipients, issueId: string, mentions: Mentions, detail: string) {
+    if (!mentions.ids.length && !mentions.emails.length) return;
+    const users = await this.prisma.user.findMany({
+      where: { OR: [{ id: { in: mentions.ids } }, { email: { in: mentions.emails } }] },
+      select: { id: true },
+    });
     for (const u of users) {
       await this.watch(issueId, u.id);
       this.add(r, u.id, NotificationType.MENTIONED, detail);
