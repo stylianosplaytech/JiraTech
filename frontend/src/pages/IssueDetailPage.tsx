@@ -258,7 +258,7 @@ export default function IssueDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_440px] gap-8">
         {/* ─── Main column ─── */}
         <div className="min-w-0">
           <InlineText

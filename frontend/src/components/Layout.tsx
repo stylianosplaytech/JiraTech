@@ -151,7 +151,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-[1400px] mx-auto px-8 py-6">{children}</main>
+      <main className="flex-1 w-full px-6 py-6">{children}</main>
 
       {creating && (
         <Modal title="Create issue" onClose={() => !createPending && setCreating(false)} width="max-w-2xl">

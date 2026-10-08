@@ -8,7 +8,7 @@ export default function CreateIssuePage() {
   const [params] = useSearchParams();
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <h1 className="page-title mb-6">Create issue</h1>
       <div className="card p-6">
         <CreateIssueForm
