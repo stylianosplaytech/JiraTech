@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: jiratech-db
+    environment:
+      POSTGRES_USER: jiratech
+      POSTGRES_PASSWORD: jiratech
+      POSTGRES_DB: jiratech
+    ports:
+      - "5432:5432"
+    volumes:
+      - jiratech_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jiratech"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  jiratech_pgdata:

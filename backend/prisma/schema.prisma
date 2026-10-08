@@ -1,0 +1,861 @@
+generator client {
+
+  provider = "prisma-client-js"
+
+}
+
+
+
+datasource db {
+
+  provider = "sqlite"
+
+  url      = env("DATABASE_URL")
+
+}
+
+
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+
+
+enum UserRole {
+
+  ADMIN
+
+  DEVELOPER
+
+  MERGE_MASTER
+
+  PRODUCT_MANAGER
+
+  PRODUCT_OWNER
+
+  PROGRAM_MANAGER
+
+  PROJECT_MANAGER
+
+  QA_SPECIALIST
+
+  RELEASE_MANAGER
+
+  SCRUM_MASTER
+
+  TEAM_LEAD
+
+}
+
+
+
+enum ComponentType {
+
+  SERVICE
+
+  RELEASE_TRAIN
+
+  TEAM
+
+}
+
+
+
+enum IssueType {
+
+  EPIC
+
+  FEATURE_EPIC
+
+  BAU_EPIC
+
+  RELEASE_EPIC
+
+  STORY
+
+  DEFECT
+
+  TASK
+
+  RELEASE_CANDIDATE
+
+  ANALYSIS
+
+  BUG_FIX
+
+  CODE
+
+  CODE_REVIEW
+
+  ARCH_REVIEW
+
+  CODE_MERGE
+
+  DOCUMENTATION
+
+  TEST_CASE
+
+  TEST_RUN
+
+  DEPLOYMENT
+
+  CONFIGURATION
+
+  SUB_TASK
+
+}
+
+
+
+enum IssueStatus {
+
+  BACKLOG
+
+  TO_DO
+
+  DOING
+
+  CLOSED
+
+}
+
+
+
+enum IssueResolution {
+
+  COMPLETED
+
+  REJECTED
+
+}
+
+
+
+enum Priority {
+
+  HIGHEST
+
+  HIGH
+
+  MEDIUM
+
+  LOW
+
+  LOWEST
+
+}
+
+
+
+enum RagStatus {
+
+  GREEN
+
+  AMBER
+
+  RED
+
+}
+
+
+
+enum LinkType {
+
+  DEPENDS_ON
+
+  BLOCKS
+
+  RELATES_TO
+
+  PARENT_LINK
+
+}
+
+
+
+enum PiStatus {
+
+  PLANNING
+
+  ACTIVE
+
+  COMPLETED
+
+}
+
+
+
+enum EscalationAction {
+
+  ESCALATE
+
+  DE_ESCALATE
+
+  REJECT
+
+  REFUSE
+
+  HANDLE
+
+  REOPEN
+
+}
+
+
+
+enum CustomFieldType {
+
+  TEXT
+
+  NUMBER
+
+  SELECT
+
+  DATE
+
+  USER
+
+  VERSION
+
+}
+
+
+
+// ─── Users & Auth ────────────────────────────────────────────────────────────
+
+
+
+model User {
+
+  id           String   @id @default(cuid())
+
+  email        String   @unique
+
+  name         String
+
+  passwordHash String
+
+  role         UserRole @default(DEVELOPER)
+
+  createdAt    DateTime @default(now())
+
+  updatedAt    DateTime @updatedAt
+
+
+
+  assignedIssues   Issue[]           @relation("Assignee")
+
+  reportedIssues   Issue[]           @relation("Reporter")
+
+  ledComponents    Component[]       @relation("ComponentLead")
+
+  escalationEvents EscalationEvent[]
+
+  watchedIssues    IssueWatcher[]
+
+  workLogs         WorkLog[]
+
+  attachments      Attachment[]
+
+}
+
+
+
+// ─── Project ─────────────────────────────────────────────────────────────────
+
+
+
+model Project {
+
+  id        String   @id @default(cuid())
+
+  key       String   @unique
+
+  name      String
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+
+
+  components            Component[]
+
+  versions              Version[]
+
+  issues                Issue[]
+
+  programIncrements     ProgramIncrement[]
+
+  labels                Label[]
+
+  customFieldDefinitions CustomFieldDefinition[]
+
+}
+
+
+
+// ─── Components ──────────────────────────────────────────────────────────────
+
+
+
+model Component {
+
+  id        String        @id @default(cuid())
+
+  name      String
+
+  type      ComponentType
+
+  archived  Boolean       @default(false)
+
+  projectId String
+
+  leadId    String?
+
+  createdAt DateTime      @default(now())
+
+  updatedAt DateTime      @updatedAt
+
+
+
+  project  Project @relation(fields: [projectId], references: [id])
+
+  lead     User?   @relation("ComponentLead", fields: [leadId], references: [id])
+
+  issues   IssueComponent[]
+
+  sprints  Sprint[]
+
+
+
+  @@unique([projectId, name])
+
+}
+
+
+
+// ─── Versions ────────────────────────────────────────────────────────────────
+
+
+
+model Version {
+
+  id          String    @id @default(cuid())
+
+  name        String
+
+  description String?
+
+  released    Boolean   @default(false)
+
+  releaseDate DateTime?
+
+  projectId   String
+
+  createdAt   DateTime  @default(now())
+
+  updatedAt   DateTime  @updatedAt
+
+
+
+  project       Project        @relation(fields: [projectId], references: [id])
+
+  issueVersions IssueVersion[]
+
+
+
+  @@unique([projectId, name])
+
+}
+
+
+
+// ─── Program Increments & Sprints ─────────────────────────────────────────────
+
+
+
+model ProgramIncrement {
+
+  id        String   @id @default(cuid())
+
+  name      String
+
+  startDate DateTime
+
+  endDate   DateTime
+
+  status    PiStatus @default(PLANNING)
+
+  projectId String
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+
+
+  project   Project    @relation(fields: [projectId], references: [id])
+
+  sprints   Sprint[]
+
+  issues    Issue[]
+
+  baselines Baseline[]
+
+}
+
+
+
+model Sprint {
+
+  id        String   @id @default(cuid())
+
+  name      String
+
+  startDate DateTime
+
+  endDate   DateTime
+
+  piId      String
+
+  teamId    String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+
+
+  pi     ProgramIncrement @relation(fields: [piId], references: [id])
+
+  team   Component?       @relation(fields: [teamId], references: [id])
+
+  issues Issue[]
+
+}
+
+
+
+// ─── Labels ──────────────────────────────────────────────────────────────────
+
+
+
+model Label {
+
+  id        String   @id @default(cuid())
+
+  name      String
+
+  projectId String
+
+  createdAt DateTime @default(now())
+
+
+
+  project Project      @relation(fields: [projectId], references: [id])
+
+  issues  IssueLabel[]
+
+
+
+  @@unique([projectId, name])
+
+}
+
+
+
+model IssueLabel {
+
+  issueId String
+
+  labelId String
+
+
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+
+
+  @@id([issueId, labelId])
+
+}
+
+
+
+// ─── Custom Fields ───────────────────────────────────────────────────────────
+
+
+
+model CustomFieldDefinition {
+
+  id        String          @id @default(cuid())
+
+  projectId String
+
+  key       String
+
+  name      String
+
+  type      CustomFieldType
+
+  options   String?
+
+  required  Boolean         @default(false)
+
+  order     Int             @default(0)
+
+  createdAt DateTime        @default(now())
+
+  updatedAt DateTime        @updatedAt
+
+
+
+  project Project            @relation(fields: [projectId], references: [id])
+
+  values  CustomFieldValue[]
+
+
+
+  @@unique([projectId, key])
+
+}
+
+
+
+model CustomFieldValue {
+
+  issueId String
+
+  fieldId String
+
+  value   String
+
+
+
+  issue Issue                 @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  field CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+
+
+  @@id([issueId, fieldId])
+
+}
+
+
+
+// ─── Issues ──────────────────────────────────────────────────────────────────
+
+
+
+model Issue {
+
+  id                String           @id @default(cuid())
+
+  key               String           @unique
+
+  number            Int
+
+  type              IssueType
+
+  summary           String
+
+  description       String?
+
+  status            IssueStatus      @default(BACKLOG)
+
+  resolution        IssueResolution?
+
+  priority          Priority         @default(MEDIUM)
+
+  epicName          String?
+
+  rank              Int?
+
+  ragStatus         RagStatus        @default(GREEN)
+
+  blocked           Boolean          @default(false)
+
+  estimate          Float?
+
+  remainingEstimate Float?
+
+  scheduledStart    DateTime?
+
+  scheduledEnd      DateTime?
+
+  projectId         String
+
+  parentId          String?
+
+  parentLinkKey     String?
+
+  assigneeId        String?
+
+  reporterId        String?
+
+  sprintId          String?
+
+  piId              String?
+
+  createdAt         DateTime         @default(now())
+
+  updatedAt         DateTime         @updatedAt
+
+
+
+  project           Project            @relation(fields: [projectId], references: [id])
+
+  parent            Issue?             @relation("IssueHierarchy", fields: [parentId], references: [id])
+
+  children          Issue[]            @relation("IssueHierarchy")
+
+  assignee          User?              @relation("Assignee", fields: [assigneeId], references: [id])
+
+  reporter          User?              @relation("Reporter", fields: [reporterId], references: [id])
+
+  sprint            Sprint?            @relation(fields: [sprintId], references: [id])
+
+  pi                ProgramIncrement?  @relation(fields: [piId], references: [id])
+
+  components        IssueComponent[]
+
+  versions          IssueVersion[]
+
+  linksFrom         IssueLink[]        @relation("LinkSource")
+
+  linksTo           IssueLink[]        @relation("LinkTarget")
+
+  escalations       EscalationEvent[]
+
+  watchers          IssueWatcher[]
+
+  labels            IssueLabel[]
+
+  customFieldValues CustomFieldValue[]
+
+  attachments       Attachment[]
+
+  workLogs          WorkLog[]
+
+
+
+  @@index([projectId, type])
+
+  @@index([projectId, status])
+
+  @@index([parentId])
+
+}
+
+
+
+model IssueWatcher {
+
+  issueId   String
+
+  userId    String
+
+  createdAt DateTime @default(now())
+
+
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+
+
+  @@id([issueId, userId])
+
+}
+
+
+
+model IssueComponent {
+
+  issueId     String
+
+  componentId String
+
+
+
+  issue     Issue     @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  component Component @relation(fields: [componentId], references: [id])
+
+
+
+  @@id([issueId, componentId])
+
+}
+
+
+
+model IssueVersion {
+
+  issueId   String
+
+  versionId String
+
+  isFix     Boolean @default(true)
+
+
+
+  issue   Issue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  version Version @relation(fields: [versionId], references: [id])
+
+
+
+  @@id([issueId, versionId, isFix])
+
+}
+
+
+
+model IssueLink {
+
+  id        String   @id @default(cuid())
+
+  type      LinkType
+
+  sourceId  String
+
+  targetId  String
+
+  createdAt DateTime @default(now())
+
+
+
+  source Issue @relation("LinkSource", fields: [sourceId], references: [id], onDelete: Cascade)
+
+  target Issue @relation("LinkTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+
+
+  @@unique([sourceId, targetId, type])
+
+}
+
+
+
+// ─── Attachments ─────────────────────────────────────────────────────────────
+
+
+
+model Attachment {
+
+  id           String   @id @default(cuid())
+
+  issueId      String
+
+  filename     String
+
+  mimeType     String
+
+  size         Int
+
+  storagePath  String
+
+  uploadedById String
+
+  createdAt    DateTime @default(now())
+
+
+
+  issue      Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  uploadedBy User  @relation(fields: [uploadedById], references: [id])
+
+}
+
+
+
+// ─── Work Logs ───────────────────────────────────────────────────────────────
+
+
+
+model WorkLog {
+
+  id               String   @id @default(cuid())
+
+  issueId          String
+
+  userId           String
+
+  timeSpentMinutes Int
+
+  comment          String?
+
+  createdAt        DateTime @default(now())
+
+
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  user  User  @relation(fields: [userId], references: [id])
+
+}
+
+
+
+// ─── Baselines ─────────────────────────────────────────────────────────────────
+
+
+
+model Baseline {
+
+  id         String   @id @default(cuid())
+
+  name       String
+
+  piId       String
+
+  snapshot   Json
+
+  capturedAt DateTime @default(now())
+
+  capturedBy String?
+
+
+
+  pi ProgramIncrement @relation(fields: [piId], references: [id])
+
+}
+
+
+
+// ─── Incident Escalation ─────────────────────────────────────────────────────
+
+
+
+model EscalationEvent {
+
+  id        String           @id @default(cuid())
+
+  issueId   String
+
+  userId    String
+
+  action    EscalationAction
+
+  fromTeam  String?
+
+  toTeam    String?
+
+  note      String?
+
+  createdAt DateTime         @default(now())
+
+
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  user  User  @relation(fields: [userId], references: [id])
+
+}
+
+
