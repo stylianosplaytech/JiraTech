@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 export const ISSUE_INCLUDE = {
+  workflowStatus: { select: { id: true, name: true, category: true } },
   project: { select: { id: true, key: true, name: true, strictHierarchy: true, leadId: true } },
   assignee: { select: { id: true, name: true, email: true } },
   reporter: { select: { id: true, name: true, email: true } },
@@ -14,7 +15,7 @@ export const ISSUE_INCLUDE = {
   watchers: { include: { user: { select: { id: true, name: true, email: true } } } },
   sprint: true,
   pi: true,
-  children: { select: { id: true, key: true, type: true, summary: true, status: true } },
-  linksFrom: { include: { target: { select: { id: true, key: true, summary: true, type: true, status: true, projectId: true } } } },
-  linksTo: { include: { source: { select: { id: true, key: true, summary: true, type: true, status: true, projectId: true } } } },
+  children: { select: { id: true, key: true, type: true, summary: true, status: true, workflowStatus: { select: { id: true, name: true, category: true } } } },
+  linksFrom: { include: { target: { select: { id: true, key: true, summary: true, type: true, status: true, projectId: true, workflowStatus: { select: { id: true, name: true, category: true } } } } } },
+  linksTo: { include: { source: { select: { id: true, key: true, summary: true, type: true, status: true, projectId: true, workflowStatus: { select: { id: true, name: true, category: true } } } } } },
 } satisfies Prisma.IssueInclude;

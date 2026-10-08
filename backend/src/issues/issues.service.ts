@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { IssueStatus, IssueResolution, LinkType, IssueType, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { isValidParentChild, WORKFLOW_TRANSITIONS } from '../common/issue-rules';
+import { isValidParentChild } from '../common/issue-rules';
 import { ISSUE_INCLUDE } from '../common/issue-include';
 import { nextIssueKey, resolveProject } from '../common/project.util';
 import { AuthUser } from '../common/auth-user';
@@ -11,6 +11,7 @@ import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { extractMentions, sanitizeRich, toPlainText } from '../common/rich-text';
 import { AccessService } from '../access/access.service';
+import { WorkflowService, CATEGORY_NAMES } from '../workflow/workflow.service';
 import {
   CreateIssueDto, UpdateIssueDto, TransitionDto, CreateLinkDto, CreateWorkLogDto,
 } from './dto/issue.dto';
@@ -36,6 +37,7 @@ export class IssuesService {
     private customFieldsService: CustomFieldsService,
     private notifications: NotificationsService,
     private access: AccessService,
+    private workflow: WorkflowService,
   ) {
     if (!fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true });
@@ -125,10 +127,13 @@ export class IssuesService {
 
     const issueId = await this.prisma.$transaction(async (tx) => {
       const { key, number } = await nextIssueKey(tx, project.id);
+      const initial = await this.workflow.initialStatus(tx, project.id);
       const issue = await tx.issue.create({
         data: {
           key,
           number,
+          statusId: initial.id,
+          status: initial.category,
           type: dto.type,
           summary: dto.summary,
           description: sanitizeRich(dto.description),
@@ -277,30 +282,38 @@ export class IssuesService {
     return { deleted: true, key: issue.key };
   }
 
+  /** Statuses this issue can move to, per its project's workflow. */
+  async transitions(idOrKey: string) {
+    const id = await this.findIdOrThrow(idOrKey);
+    return this.workflow.availableTransitions(id);
+  }
+
   async transition(idOrKey: string, dto: TransitionDto, userId: string) {
     const issue = await this.findOne(idOrKey);
-    const allowed = WORKFLOW_TRANSITIONS[issue.status] ?? [];
-    if (!allowed.includes(dto.status)) {
-      throw new BadRequestException(`Cannot transition from ${issue.status} to ${dto.status}`);
+    const to = await this.workflow.resolveTarget(issue, dto);
+    const closing = to.category === IssueStatus.CLOSED;
+    if (closing && !dto.resolution) {
+      throw new BadRequestException(`Choose a resolution to move the issue to ${to.name}`);
     }
-    if (dto.status === 'CLOSED' && !dto.resolution) {
-      throw new BadRequestException('Resolution required when closing an issue');
+    if (dto.resolution && !Object.values(IssueResolution).includes(dto.resolution as IssueResolution)) {
+      throw new BadRequestException(`Unknown resolution ${dto.resolution}`);
     }
-    // Leaving CLOSED (re-open) clears the resolution.
-    const resolution = dto.status === 'CLOSED' ? (dto.resolution as IssueResolution) : null;
+    // Leaving a Done status (re-open) clears the resolution.
+    const resolution = closing ? (dto.resolution as IssueResolution) : null;
+    const fromName = issue.workflowStatus?.name ?? CATEGORY_NAMES[issue.status];
 
     await this.prisma.$transaction(async (tx) => {
       await tx.issue.update({
         where: { id: issue.id },
-        data: { status: dto.status as IssueStatus, resolution },
+        data: { statusId: to.id, status: to.category, resolution },
       });
-      const changes: HistoryChange[] = [{ field: 'status', from: issue.status, to: dto.status }];
+      const changes: HistoryChange[] = [{ field: 'status', from: fromName, to: to.name }];
       if ((issue.resolution ?? null) !== resolution) {
         changes.push({ field: 'resolution', from: issue.resolution, to: resolution });
       }
       await this.recordHistory(tx, issue.id, userId, changes);
     });
-    await this.notifications.statusChanged(issue.id, userId, issue.status, dto.status);
+    await this.notifications.statusChanged(issue.id, userId, fromName, to.name);
     return this.findOne(issue.id);
   }
 

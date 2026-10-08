@@ -6,6 +6,7 @@ import { useProject } from '../project';
 import { jqlValue } from '../utils';
 import UserPicker from '../components/UserPicker';
 import ProjectPeople, { ACCESS_INFO } from '../components/ProjectPeople';
+import WorkflowEditor from '../components/WorkflowEditor';
 import Avatar from '../components/Avatar';
 import { StatusBadge, STATUS_LABELS, typeLabel } from '../components/Badges';
 import { SelectPicker } from '../components/Pickers';
@@ -202,6 +203,8 @@ export default function ProjectPage() {
               <p className="field-help">SPORTS naming: teams start with “@”; services and release trains use “ASSETID (serviceName)”.</p>
             )}
           </section>
+
+          <WorkflowEditor projectKey={project.key} canAdmin={canAdmin} />
 
           <ProjectPeople projectKey={project.key} canAdmin={canAdmin} />
         </div>

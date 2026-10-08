@@ -87,6 +87,12 @@ export class IssuesController {
     return this.issuesService.transition(id, dto, req.user.id);
   }
 
+  @Get(':id/transitions')
+  @RequireAccess('browse', ISSUE)
+  transitions(@Param('id') id: string) {
+    return this.issuesService.transitions(id);
+  }
+
   @Get(':id/history')
   @RequireAccess('browse', ISSUE)
   history(@Param('id') id: string) {

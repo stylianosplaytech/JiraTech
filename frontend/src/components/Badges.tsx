@@ -57,10 +57,16 @@ export function RagDot({ status }: { status?: string }) {
   );
 }
 
-export function StatusBadge({ status }: { status: string }) {
+/** Category labels (used for filters and reports). */
+export const CATEGORY_LABELS: Record<string, string> = {
+  BACKLOG: 'Backlog', TO_DO: 'To Do', DOING: 'In Progress', CLOSED: 'Done',
+};
+
+/** A status lozenge: the workflow status name if known, coloured by its category. */
+export function StatusBadge({ status, name }: { status: string; name?: string | null }) {
   return (
     <span className={`lozenge ${STATUS_STYLES[status] ?? 'bg-[#DFE1E6] text-[#42526E]'}`}>
-      {STATUS_LABELS[status] ?? status.replace(/_/g, ' ')}
+      {name ?? STATUS_LABELS[status] ?? status.replace(/_/g, ' ')}
     </span>
   );
 }

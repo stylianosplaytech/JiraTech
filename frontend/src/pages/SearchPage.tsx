@@ -343,7 +343,7 @@ export default function SearchPage() {
                 render={(t) => <span className="inline-flex items-center gap-2"><IssueTypeIcon type={t} />{basic.types.length === 1 && basic.types[0] === t ? '' : typeLabel(t)}</span>}
               />
               <FilterButton
-                label="Status"
+                label="Status category"
                 options={STATUSES}
                 value={basic.statuses}
                 onChange={(statuses) => updateBasic({ statuses })}
@@ -455,7 +455,7 @@ export default function SearchPage() {
                         {issue.reporter ? <span className="flex items-center gap-2"><Avatar name={issue.reporter.name} size="xs" />{issue.reporter.name}</span> : '—'}
                       </td>
                       <td><PriorityIcon priority={issue.priority} /></td>
-                      <td><StatusBadge status={issue.status} /></td>
+                      <td><StatusBadge status={issue.status} name={issue.workflowStatus?.name} /></td>
                       <td className="whitespace-nowrap text-jira-subtle">{issue.createdAt && new Date(issue.createdAt).toLocaleDateString()}</td>
                       <td className="whitespace-nowrap text-jira-subtle">{issue.updatedAt && new Date(issue.updatedAt).toLocaleDateString()}</td>
                     </tr>

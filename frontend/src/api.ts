@@ -70,11 +70,23 @@ export const api = {
     request<Issue>('/issues', { method: 'POST', body: JSON.stringify(data) }),
   updateIssue: (id: string, data: UpdateIssuePayload) =>
     request<Issue>(`/issues/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  transitionIssue: (id: string, status: string, resolution?: string) =>
+  transitionIssue: (id: string, target: { statusId?: string; status?: string }, resolution?: string) =>
     request<Issue>(`/issues/${id}/transition`, {
       method: 'POST',
-      body: JSON.stringify({ status, resolution }),
+      body: JSON.stringify({ ...target, resolution }),
     }),
+  getTransitions: (id: string) => request<WorkflowStatusRef[]>(`/issues/${id}/transitions`),
+  getWorkflow: (key: string) => request<Workflow>(`/projects/${key}/workflow`),
+  addWorkflowStatus: (key: string, data: { name: string; category: string }) =>
+    request<WorkflowStatus>(`/projects/${key}/workflow/statuses`, { method: 'POST', body: JSON.stringify(data) }),
+  updateWorkflowStatus: (key: string, statusId: string, data: { name?: string; category?: string }) =>
+    request<WorkflowStatus>(`/projects/${key}/workflow/statuses/${statusId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteWorkflowStatus: (key: string, statusId: string, moveTo?: string) =>
+    request<Workflow>(`/projects/${key}/workflow/statuses/${statusId}${moveTo ? `?moveTo=${moveTo}` : ''}`, { method: 'DELETE' }),
+  reorderWorkflow: (key: string, statusIds: string[]) =>
+    request<Workflow>(`/projects/${key}/workflow/order`, { method: 'PUT', body: JSON.stringify({ statusIds }) }),
+  setWorkflowTransitions: (key: string, transitions: { fromStatusId: string; toStatusId: string }[]) =>
+    request<Workflow>(`/projects/${key}/workflow/transitions`, { method: 'PUT', body: JSON.stringify({ transitions }) }),
   deleteIssue: (id: string) =>
     request<{ deleted: boolean; key: string }>(`/issues/${id}`, { method: 'DELETE' }),
   createLink: (id: string, target: { targetId?: string; targetKey?: string }, type: string) =>
@@ -263,8 +275,8 @@ export interface IssueVersion {
 export interface IssueLink {
   id: string;
   type: string;
-  target?: { id: string; key: string; summary: string; type: string; status?: string };
-  source?: { id: string; key: string; summary: string; type: string; status?: string };
+  target?: { id: string; key: string; summary: string; type: string; status?: string; workflowStatus?: WorkflowStatusRef | null };
+  source?: { id: string; key: string; summary: string; type: string; status?: string; workflowStatus?: WorkflowStatusRef | null };
 }
 
 export interface Attachment {
@@ -379,6 +391,7 @@ export interface SavedFilter {
 export interface Issue {
   id: string;
   key: string;
+  workflowStatus?: WorkflowStatusRef | null;
   project?: { id: string; key: string; name: string; strictHierarchy?: boolean; leadId?: string | null };
   permissions?: Permissions;
   reporterId?: string;
@@ -440,7 +453,24 @@ export interface UpdateIssuePayload extends Partial<CreateIssuePayload> {
 }
 
 export interface BoardData {
-  columns: { status: string; issues: Issue[] }[];
+  columns: { statusId: string; name: string; status: string; issues: Issue[] }[];
+}
+
+/** A status in a project's workflow; category is Backlog / To Do / In Progress / Done. */
+export interface WorkflowStatusRef {
+  id: string;
+  name: string;
+  category: string;
+}
+
+export interface WorkflowStatus extends WorkflowStatusRef {
+  position: number;
+  issueCount?: number;
+}
+
+export interface Workflow {
+  statuses: WorkflowStatus[];
+  transitions: { id: string; fromStatusId: string; toStatusId: string }[];
 }
 
 export interface ProgramIncrement {

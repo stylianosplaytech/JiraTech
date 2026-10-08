@@ -122,7 +122,7 @@ export default function PlanningPage() {
                         <td><TypeBadge type={issue.type} /></td>
                         <td className="whitespace-nowrap"><Link to={`/browse/${issue.key}`} className="link">{issue.key}</Link></td>
                         <td className="max-w-md"><Link to={`/browse/${issue.key}`} className="hover:underline line-clamp-1">{issue.summary}</Link></td>
-                        <td><StatusBadge status={issue.status} /></td>
+                        <td><StatusBadge status={issue.status} name={issue.workflowStatus?.name} /></td>
                         <td>{issue.estimate ? `${issue.estimate}h` : '—'}</td>
                         <td className="text-jira-subtle whitespace-nowrap">
                           {issue.scheduledStart

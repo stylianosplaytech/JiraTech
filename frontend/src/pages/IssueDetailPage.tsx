@@ -17,19 +17,6 @@ import CustomFieldRows from '../components/CustomFieldsPanel';
 import IssueLinks from '../components/IssueLinks';
 import ActivitySection from '../components/ActivitySection';
 
-const TRANSITIONS: Record<string, { status: string; label: string; resolution?: string }[]> = {
-  BACKLOG: [{ status: 'TO_DO', label: 'Select for work' }],
-  TO_DO: [
-    { status: 'DOING', label: 'Start progress' },
-    { status: 'BACKLOG', label: 'Move to backlog' },
-  ],
-  DOING: [
-    { status: 'CLOSED', label: 'Done', resolution: 'COMPLETED' },
-    { status: 'CLOSED', label: 'Reject', resolution: 'REJECTED' },
-    { status: 'TO_DO', label: 'Stop progress' },
-  ],
-  CLOSED: [{ status: 'TO_DO', label: 'Re-open' }],
-};
 
 const STATUS_BUTTON: Record<string, string> = {
   BACKLOG: 'bg-[#091E420F] text-jira-navy hover:bg-[#091E4224]',
@@ -96,6 +83,12 @@ export default function IssueDetailPage() {
       .catch(() => undefined);
   }, [issueId, queryClient]);
 
+  const { data: transitions = [] } = useQuery({
+    queryKey: ['transitions', issue?.id, issue?.workflowStatus?.id],
+    queryFn: () => api.getTransitions(issue!.id),
+    enabled: !!issue?.id && !!issue.permissions?.canEdit,
+  });
+
   const sameProject = issue?.project?.key === projectKey;
   const { data: labels } = useQuery({ queryKey: ['labels'], queryFn: () => api.getLabels(), enabled: sameProject });
   const { data: components } = useQuery({ queryKey: ['components'], queryFn: () => api.getComponents(), enabled: sameProject });
@@ -116,8 +109,9 @@ export default function IssueDetailPage() {
     onError,
   });
   const transition = useMutation({
-    mutationFn: ({ status, resolution }: { status: string; resolution?: string }) => api.transitionIssue(id!, status, resolution),
-    onSuccess: refresh,
+    mutationFn: ({ statusId, resolution }: { statusId: string; resolution?: string }) =>
+      api.transitionIssue(id!, { statusId }, resolution),
+    onSuccess: () => { refresh(); queryClient.invalidateQueries({ queryKey: ['transitions'] }); },
     onError,
   });
   const escalate = useMutation({
@@ -175,7 +169,6 @@ export default function IssueDetailPage() {
   const strict = issue.project?.strictHierarchy !== false;
   const isIncident = strict && (issue.type === 'DEFECT' || issue.type === 'TASK');
   const epicParent = issue.parent && isEpicType(issue.parent.type) ? issue.parent : null;
-  const transitions = TRANSITIONS[issue.status] ?? [];
   const isWatching = issue.watchers?.some((w) => w.userId === currentUser?.id) ?? false;
   // The server sends what this user may do in the issue's project.
   const canEdit = issue.permissions?.canEdit ?? false;
@@ -387,7 +380,7 @@ export default function IssueDetailPage() {
                     <TypeBadge type={child.type} />
                     <span className={`text-jira-blue shrink-0 ${child.status === 'CLOSED' ? 'line-through' : ''}`}>{child.key}</span>
                     <span className="flex-1 truncate">{child.summary}</span>
-                    <StatusBadge status={child.status} />
+                    <StatusBadge status={child.status} name={(child as { workflowStatus?: { name: string } }).workflowStatus?.name} />
                   </Link>
                 ))}
               </div>
@@ -426,23 +419,33 @@ export default function IssueDetailPage() {
                   title={canEdit ? undefined : 'You need member access to change the status'}
                   className={`btn font-semibold disabled:opacity-100 disabled:cursor-default ${STATUS_BUTTON[issue.status] ?? 'btn-default'}`}
                 >
-                  {STATUS_LABELS[issue.status] ?? issue.status}
-                  <ChevronDownIcon size={14} />
+                  {issue.workflowStatus?.name ?? STATUS_LABELS[issue.status] ?? issue.status}
+                  {canEdit && <ChevronDownIcon size={14} />}
                 </button>
               )}
             >
               {(close) => (
                 <>
-                  <div className="menu-heading">Transition to</div>
-                  {transitions.map((t) => (
+                  <div className="menu-heading">Move to</div>
+                  {transitions.length === 0 && (
+                    <p className="px-3 py-2 text-xs text-jira-muted">The workflow has no transitions out of this status.</p>
+                  )}
+                  {transitions.flatMap((t) => (t.category === 'CLOSED'
+                    // Done statuses need a resolution: offer both.
+                    ? [
+                      { key: `${t.id}-done`, label: t.name, hint: 'Done', statusId: t.id, resolution: 'COMPLETED', category: t.category },
+                      { key: `${t.id}-rejected`, label: t.name, hint: "Won't do", statusId: t.id, resolution: 'REJECTED', category: t.category },
+                    ]
+                    : [{ key: t.id, label: t.name, hint: undefined as string | undefined, statusId: t.id, resolution: undefined as string | undefined, category: t.category }]
+                  )).map((o) => (
                     <button
-                      key={`${t.status}-${t.resolution ?? ''}`}
+                      key={o.key}
                       type="button"
                       className="menu-item justify-between"
-                      onClick={() => { close(); transition.mutate({ status: t.status, resolution: t.resolution }); }}
+                      onClick={() => { close(); transition.mutate({ statusId: o.statusId, resolution: o.resolution }); }}
                     >
-                      <span>{t.label}</span>
-                      <StatusBadge status={t.status} />
+                      <StatusBadge status={o.category} name={o.label} />
+                      {o.hint && <span className="text-xs text-jira-muted">{o.hint}</span>}
                     </button>
                   ))}
                 </>

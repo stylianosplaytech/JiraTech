@@ -9,6 +9,7 @@ import { compileJql, JqlError, JqlSort } from './jql';
 import { AccessService } from '../access/access.service';
 
 export const SEARCH_INCLUDE = {
+  workflowStatus: { select: { id: true, name: true, category: true } },
   project: { select: { id: true, key: true, name: true } },
   assignee: { select: { id: true, name: true, email: true } },
   reporter: { select: { id: true, name: true, email: true } },

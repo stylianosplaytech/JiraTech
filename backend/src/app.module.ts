@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module';
 import { AccessModule } from './access/access.module';
+import { WorkflowModule } from './workflow/workflow.module';
 import { AuthModule } from './auth/auth.module';
 import { IssuesModule } from './issues/issues.module';
 import { ComponentsModule } from './components/components.module';
@@ -23,6 +24,7 @@ import { NotificationsModule } from './notifications/notifications.module';
   imports: [
     PrismaModule,
     AccessModule,
+    WorkflowModule,
     HealthModule,
     AuthModule,
     UsersModule,

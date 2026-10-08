@@ -2,10 +2,11 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { IssueType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { nextIssueKey } from '../common/project.util';
+import { WorkflowService } from '../workflow/workflow.service';
 
 @Injectable()
 export class ReleasesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private workflow: WorkflowService) {}
 
   async getCandidates(releaseEpicId: string) {
     const epic = await this.prisma.issue.findUnique({ where: { id: releaseEpicId } });
@@ -25,9 +26,13 @@ export class ReleasesService {
       throw new BadRequestException('Release Candidates must be under a Release Epic');
     }
 
-    return this.prisma.$transaction(async (tx) => tx.issue.create({
+    return this.prisma.$transaction(async (tx) => {
+      const initial = await this.workflow.initialStatus(tx, epic.projectId);
+      return tx.issue.create({
       data: {
         ...(await nextIssueKey(tx, epic.projectId)),
+        statusId: initial.id,
+        status: initial.category,
         type: IssueType.RELEASE_CANDIDATE,
         summary,
         parentId: releaseEpicId,
@@ -38,7 +43,8 @@ export class ReleasesService {
         },
       },
       include: { versions: { include: { version: true } } },
-    }));
+    });
+    });
   }
 
   async signOffGoldenMaster(candidateId: string) {
@@ -67,7 +73,7 @@ export class ReleasesService {
 
     await this.prisma.issue.update({
       where: { id: candidateId },
-      data: { status: 'CLOSED', resolution: 'COMPLETED' },
+      data: { status: 'CLOSED', resolution: 'COMPLETED', statusId: (await this.workflow.statusForCategory(this.prisma, candidate.projectId, 'CLOSED')).id },
     });
 
     return { message: 'Golden Master signed off', epicId: candidate.parentId };

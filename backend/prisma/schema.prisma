@@ -157,6 +157,8 @@ model Project {
 
   lead                  User?                   @relation("ProjectLead", fields: [leadId], references: [id])
   members               ProjectMember[]
+  workflowStatuses      WorkflowStatus[]
+  workflowTransitions   WorkflowTransition[]
 
   components            Component[]
   versions              Version[]
@@ -301,7 +303,10 @@ model Issue {
   type              IssueType
   summary           String
   description       String?
+  /// Status category (kept in sync with workflowStatus.category); used by reports and filters
   status            IssueStatus      @default(BACKLOG)
+  /// The project's workflow status the issue is in
+  statusId          String?
   resolution        IssueResolution?
   priority          Priority         @default(MEDIUM)
   epicName          String?
@@ -323,6 +328,7 @@ model Issue {
   updatedAt         DateTime         @updatedAt
 
   project           Project            @relation(fields: [projectId], references: [id])
+  workflowStatus    WorkflowStatus?    @relation(fields: [statusId], references: [id])
   parent            Issue?             @relation("IssueHierarchy", fields: [parentId], references: [id])
   children          Issue[]            @relation("IssueHierarchy")
   assignee          User?              @relation("Assignee", fields: [assigneeId], references: [id])
@@ -560,4 +566,38 @@ model ProjectMember {
 
   @@id([projectId, userId])
   @@index([userId])
+}
+
+// ─── Workflows ───────────────────────────────────────────────────────────────
+
+/** A project's status, e.g. "In Review". Its category maps it onto Backlog / To Do / In Progress / Done. */
+model WorkflowStatus {
+  id        String      @id @default(cuid())
+  projectId String
+  name      String
+  category  IssueStatus
+  position  Int         @default(0)
+  createdAt DateTime    @default(now())
+
+  project         Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues          Issue[]
+  transitionsFrom WorkflowTransition[] @relation("TransitionFrom")
+  transitionsTo   WorkflowTransition[] @relation("TransitionTo")
+
+  @@unique([projectId, name])
+  @@index([projectId, position])
+}
+
+/** An allowed move from one status to another within a project. */
+model WorkflowTransition {
+  id           String @id @default(cuid())
+  projectId    String
+  fromStatusId String
+  toStatusId   String
+
+  project    Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromStatus WorkflowStatus @relation("TransitionFrom", fields: [fromStatusId], references: [id], onDelete: Cascade)
+  toStatus   WorkflowStatus @relation("TransitionTo", fields: [toStatusId], references: [id], onDelete: Cascade)
+
+  @@unique([fromStatusId, toStatusId])
 }

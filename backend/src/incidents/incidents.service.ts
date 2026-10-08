@@ -2,12 +2,14 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { EscalationAction, IssueType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
+import { WorkflowService } from '../workflow/workflow.service';
 
 @Injectable()
 export class IncidentsService {
   constructor(
     private prisma: PrismaService,
     private customFieldsService: CustomFieldsService,
+    private workflow: WorkflowService,
   ) {}
 
   async escalate(issueId: string, userId: string, action: EscalationAction, toTeam?: string, note?: string) {
@@ -45,14 +47,14 @@ export class IncidentsService {
     if (action === EscalationAction.REJECT) {
       await this.prisma.issue.update({
         where: { id: issueId },
-        data: { status: 'CLOSED', resolution: 'REJECTED' },
+        data: { status: 'CLOSED', resolution: 'REJECTED', statusId: (await this.workflow.statusForCategory(this.prisma, issue.projectId, 'CLOSED')).id },
       });
     }
 
     if (action === EscalationAction.REOPEN) {
       await this.prisma.issue.update({
         where: { id: issueId },
-        data: { status: 'DOING', resolution: null },
+        data: { status: 'DOING', resolution: null, statusId: (await this.workflow.statusForCategory(this.prisma, issue.projectId, 'DOING')).id },
       });
       await this.customFieldsService.incrementReopenCount(issueId);
     }

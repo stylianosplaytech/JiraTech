@@ -2,11 +2,12 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { IssueType, PiStatus, Priority, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { nextIssueKey, resolveProject } from '../common/project.util';
+import { WorkflowService } from '../workflow/workflow.service';
 import { CreatePiDto, CreateSprintDto, WorkBreakdownDto } from './dto/planning.dto';
 
 @Injectable()
 export class PlanningService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private workflow: WorkflowService) {}
 
   async getPis(projectKey?: string) {
     const project = await resolveProject(this.prisma, projectKey);
@@ -49,10 +50,13 @@ export class PlanningService {
     // One transaction: the whole breakdown is created, or none of it.
     const created = await this.prisma.$transaction(async (tx) => {
       const issues: Prisma.IssueGetPayload<object>[] = [];
+      const initial = await this.workflow.initialStatus(tx, epic.projectId);
       for (const story of dto.stories) {
         const storyIssue = await tx.issue.create({
           data: {
             ...(await nextIssueKey(tx, epic.projectId)),
+            statusId: initial.id,
+            status: initial.category,
             type: IssueType.STORY,
             summary: story.summary,
             priority: (story.priority as Priority) ?? Priority.MEDIUM,
@@ -71,6 +75,8 @@ export class PlanningService {
           const subIssue = await tx.issue.create({
             data: {
               ...(await nextIssueKey(tx, epic.projectId)),
+              statusId: initial.id,
+              status: initial.category,
               type: child.type as IssueType,
               summary: child.summary,
               parentId: storyIssue.id,

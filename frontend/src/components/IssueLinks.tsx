@@ -23,7 +23,7 @@ const INWARD: Record<string, string> = {
   BLOCKS: 'is blocked by', DEPENDS_ON: 'is depended on by', RELATES_TO: 'relates to', PARENT_LINK: 'is child of',
 };
 
-type LinkedIssue = { id: string; key: string; summary: string; type: string; status?: string };
+type LinkedIssue = { id: string; key: string; summary: string; type: string; status?: string; workflowStatus?: { name: string } | null };
 
 export default function IssueLinks({ issue, adding, onAddingChange, readOnly }: {
   issue: Issue;
@@ -118,7 +118,7 @@ export default function IssueLinks({ issue, adding, onAddingChange, readOnly }: 
                 <TypeBadge type={other.type} />
                 <Link to={`/browse/${other.key}`} className={`link shrink-0 ${other.status === 'CLOSED' ? 'line-through' : ''}`}>{other.key}</Link>
                 <Link to={`/browse/${other.key}`} className="truncate flex-1 hover:underline">{other.summary}</Link>
-                {other.status && <StatusBadge status={other.status} />}
+                {other.status && <StatusBadge status={other.status} name={other.workflowStatus?.name} />}
                 {!readOnly && <button
                   type="button"
                   onClick={() => remove.mutate(linkId)}

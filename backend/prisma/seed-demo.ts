@@ -254,6 +254,43 @@ async function filter(owner: User, name: string, jql: string, shared: boolean, d
   if (!exists) await prisma.savedFilter.create({ data: { ownerId: owner.id, name, jql, shared, description } });
 }
 
+// ─── Workflows ───────────────────────────────────────────────────────────────
+
+type Flow = { name: string; category: IssueStatus }[];
+const DEFAULT_FLOW: Flow = [
+  { name: 'Backlog', category: IssueStatus.BACKLOG },
+  { name: 'To Do', category: IssueStatus.TO_DO },
+  { name: 'In Progress', category: IssueStatus.DOING },
+  { name: 'Closed', category: IssueStatus.CLOSED },
+];
+const DEFAULT_MOVES: [string, string][] = [
+  ['Backlog', 'To Do'], ['To Do', 'In Progress'], ['To Do', 'Backlog'],
+  ['In Progress', 'Closed'], ['In Progress', 'To Do'], ['Closed', 'To Do'],
+];
+
+/** Same default workflow the API creates; returns status ids by name. */
+async function ensureWorkflow(projectId: string, flow: Flow = DEFAULT_FLOW, moves: [string, string][] = DEFAULT_MOVES) {
+  if (!(await prisma.workflowStatus.count({ where: { projectId } }))) {
+    for (const [position, s] of flow.entries()) {
+      await prisma.workflowStatus.create({ data: { projectId, name: s.name, category: s.category, position } });
+    }
+    const ids = new Map((await prisma.workflowStatus.findMany({ where: { projectId } })).map((s) => [s.name, s.id]));
+    await prisma.workflowTransition.createMany({
+      data: moves.map(([a, b]) => ({ projectId, fromStatusId: ids.get(a)!, toStatusId: ids.get(b)! })),
+    });
+  }
+  return new Map((await prisma.workflowStatus.findMany({ where: { projectId } })).map((s) => [s.name, s]));
+}
+
+/** Put issues that have no workflow status yet into the first status of their category. */
+async function backfillStatuses(projectId: string) {
+  const statuses = await prisma.workflowStatus.findMany({ where: { projectId }, orderBy: { position: 'asc' } });
+  for (const category of Object.values(IssueStatus)) {
+    const s = statuses.find((x) => x.category === category);
+    if (s) await prisma.issue.updateMany({ where: { projectId, statusId: null, status: category }, data: { statusId: s.id } });
+  }
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -623,6 +660,30 @@ async function main() {
   await worklog(crash, lina, 420, 'Paging adapter for the market list', 3);
   await worklog(oddsBug, andreas, 180, 'Reproduced reconnect in staging', 1);
   await worklog(voiceOver, nikos, 210, 'Accessibility labels for odds', 7);
+
+  // ── Workflows: PAY and SPORTS use the default; MOB has review and QA steps ─
+  await ensureWorkflow(pay.id);
+  await ensureWorkflow(sports.id);
+  const mobFlow = await ensureWorkflow(mob.id, [
+    { name: 'Backlog', category: IssueStatus.BACKLOG },
+    { name: 'To Do', category: IssueStatus.TO_DO },
+    { name: 'In Progress', category: IssueStatus.DOING },
+    { name: 'In Review', category: IssueStatus.DOING },
+    { name: 'QA', category: IssueStatus.DOING },
+    { name: 'Done', category: IssueStatus.CLOSED },
+  ], [
+    ['Backlog', 'To Do'], ['To Do', 'Backlog'], ['To Do', 'In Progress'],
+    ['In Progress', 'To Do'], ['In Progress', 'In Review'],
+    ['In Review', 'In Progress'], ['In Review', 'QA'],
+    ['QA', 'In Progress'], ['QA', 'Done'],
+    ['Done', 'To Do'],
+  ]);
+  for (const p of [pay.id, sports.id, mob.id]) await backfillStatuses(p);
+  // Show the extra MOB steps in use.
+  if (mobFlow.has('In Review')) {
+    await prisma.issue.updateMany({ where: { id: crash.id, statusId: mobFlow.get('In Progress')!.id }, data: { statusId: mobFlow.get('In Review')!.id } });
+    await prisma.issue.updateMany({ where: { id: voiceOver.id, statusId: mobFlow.get('In Progress')!.id }, data: { statusId: mobFlow.get('QA')!.id } });
+  }
 
   // ── Project roles ─────────────────────────────────────────────────────────
   // PAY: everyone can read, only the team can change things. MOB: private to the app team.

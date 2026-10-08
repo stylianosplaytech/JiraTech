@@ -152,8 +152,15 @@ export class UpdateIssueDto {
 }
 
 export class TransitionDto {
+  /** Target workflow status */
+  @IsOptional()
   @IsString()
-  status!: string;
+  statusId?: string;
+
+  /** Legacy: a status category code (BACKLOG, TO_DO, DOING, CLOSED) or a status name */
+  @IsOptional()
+  @IsString()
+  status?: string;
 
   @IsOptional()
   @IsString()

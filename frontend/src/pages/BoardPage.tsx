@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api';
 import { useProject } from '../project';
-import { PriorityIcon, RagDot, STATUS_LABELS, TypeBadge } from '../components/Badges';
+import { PriorityIcon, RagDot, TypeBadge } from '../components/Badges';
 import { SearchIcon } from '../components/Icons';
 import Avatar from '../components/Avatar';
 import { PageHeader, Spinner } from '../components/ui';
@@ -51,13 +51,14 @@ export default function BoardPage() {
       </PageHeader>
 
       {isLoading ? <Spinner /> : (
-        <div className="grid grid-cols-4 gap-2 items-start">
+        <div className="grid gap-2 items-start" style={{ gridTemplateColumns: `repeat(${Math.max(data?.columns.length ?? 4, 1)}, minmax(200px, 1fr))` }}>
           {data?.columns.map((col) => {
+            const doneColumn = col.status === 'CLOSED';
             const issues = visible(col.issues);
             return (
-              <div key={col.status} className="bg-jira-gray rounded-[3px] min-h-[300px]">
+              <div key={col.statusId} className="bg-jira-gray rounded-[3px] min-h-[300px]">
                 <div className="px-3 pt-3 pb-2 text-xs font-semibold uppercase text-jira-subtle">
-                  {STATUS_LABELS[col.status] ?? col.status} <span className="ml-1 font-normal">{issues.length}</span>
+                  {col.name} <span className="ml-1 font-normal">{issues.length}</span>
                 </div>
                 <div className="px-2 pb-2 space-y-1.5">
                   {issues.map((issue) => (
@@ -88,7 +89,7 @@ export default function BoardPage() {
                       </div>
                     </Link>
                   ))}
-                  {issues.length === 0 && <p className="text-xs text-jira-muted text-center py-6">No issues</p>}
+                  {issues.length === 0 && <p className="text-xs text-jira-muted text-center py-6">{doneColumn ? 'Nothing done in the last 14 days' : 'No issues'}</p>}
                 </div>
               </div>
             );

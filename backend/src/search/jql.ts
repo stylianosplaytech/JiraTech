@@ -316,6 +316,18 @@ const RESOLUTION_ALIASES: Record<string, IssueResolution> = {
   WONT_FIX: IssueResolution.REJECTED,
 };
 
+/** SQLite comparisons are case-sensitive: try the common spellings of a status name. */
+function nameVariants(v: string): string[] {
+  const t = v.trim();
+  const title = t.toLowerCase().replace(/(^|\s)\S/g, (m) => m.toUpperCase());
+  return [...new Set([t, t.toLowerCase(), t.toUpperCase(), title])];
+}
+
+function tryEnum<T extends string>(raw: string, values: Record<string, T>, aliases: Record<string, T>): T | undefined {
+  const key = toEnumKey(raw);
+  return (values as Record<string, T>)[key] ?? aliases[key] ?? aliases[key.replace(/_/g, '')];
+}
+
 function enumValue<T extends string>(
   raw: string,
   values: Record<string, T>,
@@ -364,7 +376,13 @@ class Compiler {
       case 'issuetype':
         return this.equality(c, (v) => ({ type: enumValue(v, IssueType, TYPE_ALIASES, 'issue type') }));
       case 'status':
-        return this.equality(c, (v) => ({ status: enumValue(v, IssueStatus, STATUS_ALIASES, 'status') }));
+        return this.equality(c, (v) => {
+          const byName: Prisma.IssueWhereInput = { workflowStatus: { name: { in: nameVariants(v) } } };
+          const category = tryEnum(v, IssueStatus, STATUS_ALIASES);
+          return category ? { OR: [byName, { status: category }] } : byName;
+        });
+      case 'statuscategory':
+        return this.equality(c, (v) => ({ status: enumValue(v, IssueStatus, STATUS_ALIASES, 'status category') }));
       case 'priority':
         return this.equality(c, (v) => ({ priority: enumValue(v, Priority, {}, 'priority') }));
       case 'resolution':
@@ -449,7 +467,7 @@ class Compiler {
       default:
         throw new JqlError(
           `Unknown field '${c.field}'. Try: project, key, type, status, priority, resolution, assignee, reporter, ` +
-          'watcher, labels, component, fixVersion, affectedVersion, sprint, parent, summary, description, ' +
+          'statusCategory, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, summary, description, ' +
           'comment, text, created, updated, blocked',
         );
     }
