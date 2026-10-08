@@ -1,11 +1,12 @@
 import {
-  Injectable, BadRequestException, NotFoundException, ConflictException,
+  Injectable, BadRequestException, NotFoundException, ConflictException, ForbiddenException,
 } from '@nestjs/common';
-import { IssueStatus, IssueResolution, LinkType, IssueType } from '@prisma/client';
+import { IssueStatus, IssueResolution, LinkType, IssueType, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { isValidParentChild, WORKFLOW_TRANSITIONS } from '../common/issue-rules';
 import { ISSUE_INCLUDE } from '../common/issue-include';
-import { getSportsProject } from '../common/project.util';
+import { nextIssueKey, resolveProject } from '../common/project.util';
+import { AuthUser } from '../common/auth-user';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import {
   CreateIssueDto, UpdateIssueDto, TransitionDto, CreateLinkDto, CreateWorkLogDto,
@@ -13,9 +14,19 @@ import {
 import * as fs from 'fs';
 import * as path from 'path';
 
+type Tx = Prisma.TransactionClient;
+
+interface HistoryChange {
+  field: string;
+  from?: string | null;
+  to?: string | null;
+}
+
+const USER_BRIEF = { select: { id: true, name: true, email: true } };
+
 @Injectable()
 export class IssuesService {
-  private readonly uploadDir = path.join(process.cwd(), 'uploads');
+  private readonly uploadDir = path.resolve(__dirname, '../../uploads');
 
   constructor(
     private prisma: PrismaService,
@@ -26,51 +37,23 @@ export class IssuesService {
     }
   }
 
-  private async nextIssueKey(projectId: string): Promise<{ key: string; number: number }> {
-    const project = await this.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
-    const lastIssue = await this.prisma.issue.findFirst({
-      where: { projectId },
-      orderBy: { number: 'desc' },
-      select: { number: true },
-    });
-    const number = (lastIssue?.number ?? 0) + 1;
-    return { key: `${project.key}-${number}`, number };
-  }
+  // ─── Queries ───────────────────────────────────────────────────────────────
 
-  private async syncVersions(issueId: string, fixVersionIds?: string[], affectsVersionIds?: string[]) {
-    if (fixVersionIds === undefined && affectsVersionIds === undefined) return;
-    await this.prisma.issueVersion.deleteMany({ where: { issueId } });
-    const creates = [
-      ...(fixVersionIds ?? []).map((versionId) => ({ issueId, versionId, isFix: true })),
-      ...(affectsVersionIds ?? []).map((versionId) => ({ issueId, versionId, isFix: false })),
-    ];
-    if (creates.length) {
-      await this.prisma.issueVersion.createMany({ data: creates });
-    }
-  }
-
-  private async syncLabels(issueId: string, labelIds?: string[]) {
-    if (labelIds === undefined) return;
-    await this.prisma.issueLabel.deleteMany({ where: { issueId } });
-    if (labelIds.length) {
-      await this.prisma.issueLabel.createMany({
-        data: labelIds.map((labelId) => ({ issueId, labelId })),
-      });
-    }
-  }
-
-  async findAll(filters: {
-    type?: IssueType;
-    status?: IssueStatus;
-    parentId?: string;
-    sprintId?: string;
-    piId?: string;
-    assigneeId?: string;
-    epicName?: string;
-    search?: string;
-  }) {
-    const project = await getSportsProject(this.prisma);
-    const where: Record<string, unknown> = { projectId: project.id };
+  async findAll(
+    filters: {
+      type?: IssueType;
+      status?: IssueStatus;
+      parentId?: string;
+      sprintId?: string;
+      piId?: string;
+      assigneeId?: string;
+      epicName?: string;
+      search?: string;
+    },
+    projectKey?: string,
+  ) {
+    const project = await resolveProject(this.prisma, projectKey);
+    const where: Prisma.IssueWhereInput = { projectId: project.id };
     if (filters.type) where.type = filters.type;
     if (filters.status) where.status = filters.status;
     if (filters.parentId) where.parentId = filters.parentId;
@@ -81,7 +64,7 @@ export class IssuesService {
     if (filters.search) {
       where.OR = [
         { summary: { contains: filters.search } },
-        { key: { contains: filters.search } },
+        { key: { contains: filters.search.toUpperCase() } },
       ];
     }
     return this.prisma.issue.findMany({
@@ -91,134 +74,266 @@ export class IssuesService {
     });
   }
 
-  async findOne(id: string) {
-    const issue = await this.prisma.issue.findUnique({ where: { id }, include: ISSUE_INCLUDE });
+  /** Look up by id or by key (e.g. SPORTS-12), like Jira's /browse/KEY. */
+  async findOne(idOrKey: string) {
+    const issue = await this.prisma.issue.findFirst({
+      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      include: ISSUE_INCLUDE,
+    });
     if (!issue) throw new NotFoundException('Issue not found');
     return issue;
   }
 
-  async create(dto: CreateIssueDto, reporterId: string) {
-    const project = await getSportsProject(this.prisma);
-    let parentType: IssueType | null = null;
+  private async findIdOrThrow(idOrKey: string) {
+    const issue = await this.prisma.issue.findFirst({
+      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      select: { id: true },
+    });
+    if (!issue) throw new NotFoundException('Issue not found');
+    return issue.id;
+  }
 
+  // ─── Create / update / delete ──────────────────────────────────────────────
+
+  async create(dto: CreateIssueDto, reporterId: string, headerProjectKey?: string) {
+    let parent: { id: string; type: IssueType; projectId: string } | null = null;
     if (dto.parentId) {
-      const parent = await this.prisma.issue.findUnique({ where: { id: dto.parentId } });
+      parent = await this.prisma.issue.findFirst({
+        where: { OR: [{ id: dto.parentId }, { key: dto.parentId.toUpperCase() }] },
+        select: { id: true, type: true, projectId: true },
+      });
       if (!parent) throw new NotFoundException('Parent issue not found');
-      parentType = parent.type;
     }
 
-    if (!isValidParentChild(dto.type, parentType)) {
+    // Children always live in their parent's project.
+    const project = parent
+      ? await this.prisma.project.findUniqueOrThrow({ where: { id: parent.projectId } })
+      : await resolveProject(this.prisma, dto.projectKey ?? headerProjectKey);
+
+    if ((parent || project.strictHierarchy) && !isValidParentChild(dto.type, parent?.type ?? null)) {
       throw new BadRequestException(
-        `Issue type ${dto.type} cannot be created under parent type ${parentType ?? 'none'}`,
+        `Issue type ${dto.type} cannot be created under parent type ${parent?.type ?? 'none'}`,
       );
     }
 
-    const { key, number } = await this.nextIssueKey(project.id);
-
-    const issue = await this.prisma.issue.create({
-      data: {
-        key,
-        number,
-        type: dto.type,
-        summary: dto.summary,
-        description: dto.description,
-        parentId: dto.parentId,
-        epicName: dto.epicName,
-        priority: dto.priority,
-        assigneeId: dto.assigneeId,
-        sprintId: dto.sprintId,
-        piId: dto.piId,
-        parentLinkKey: dto.parentLinkKey,
-        estimate: dto.estimate,
-        remainingEstimate: dto.remainingEstimate ?? dto.estimate,
-        reporterId: dto.reporterId ?? reporterId,
-        projectId: project.id,
-        components: dto.componentIds?.length
-          ? { create: dto.componentIds.map((componentId) => ({ componentId })) }
-          : undefined,
-        labels: dto.labelIds?.length
-          ? { create: dto.labelIds.map((labelId) => ({ labelId })) }
-          : undefined,
-      },
-      include: ISSUE_INCLUDE,
+    const issueId = await this.prisma.$transaction(async (tx) => {
+      const { key, number } = await nextIssueKey(tx, project.id);
+      const issue = await tx.issue.create({
+        data: {
+          key,
+          number,
+          type: dto.type,
+          summary: dto.summary,
+          description: dto.description,
+          parentId: parent?.id,
+          epicName: dto.epicName,
+          priority: dto.priority,
+          assigneeId: dto.assigneeId,
+          sprintId: dto.sprintId,
+          piId: dto.piId,
+          parentLinkKey: dto.parentLinkKey,
+          estimate: dto.estimate,
+          remainingEstimate: dto.remainingEstimate ?? dto.estimate,
+          reporterId: dto.reporterId ?? reporterId,
+          projectId: project.id,
+          components: dto.componentIds?.length
+            ? { create: dto.componentIds.map((componentId) => ({ componentId })) }
+            : undefined,
+          labels: dto.labelIds?.length
+            ? { create: dto.labelIds.map((labelId) => ({ labelId })) }
+            : undefined,
+          // Reporter watches their own issue by default, as in Jira.
+          watchers: { create: { userId: reporterId } },
+        },
+        select: { id: true, key: true },
+      });
+      await this.syncVersions(tx, issue.id, dto.fixVersionIds, dto.affectsVersionIds);
+      await this.recordHistory(tx, issue.id, reporterId, [{ field: 'created', to: issue.key }]);
+      return issue.id;
     });
 
-    await this.syncVersions(issue.id, dto.fixVersionIds, dto.affectsVersionIds);
     if (dto.customFields) {
-      await this.customFieldsService.setIssueValues(issue.id, dto.customFields);
+      await this.customFieldsService.setIssueValues(issueId, dto.customFields);
     }
-
-    return this.findOne(issue.id);
+    return this.findOne(issueId);
   }
 
-  async update(id: string, dto: UpdateIssueDto) {
-    await this.findOne(id);
+  async update(idOrKey: string, dto: UpdateIssueDto, userId: string) {
+    const before = await this.findOne(idOrKey);
+    const id = before.id;
 
-    if (dto.componentIds) {
-      await this.prisma.issueComponent.deleteMany({ where: { issueId: id } });
-      if (dto.componentIds.length) {
-        await this.prisma.issueComponent.createMany({
-          data: dto.componentIds.map((componentId) => ({ issueId: id, componentId })),
-        });
+    await this.prisma.$transaction(async (tx) => {
+      const changes: HistoryChange[] = [];
+
+      if (dto.componentIds) {
+        await tx.issueComponent.deleteMany({ where: { issueId: id } });
+        if (dto.componentIds.length) {
+          await tx.issueComponent.createMany({
+            data: dto.componentIds.map((componentId) => ({ issueId: id, componentId })),
+          });
+        }
+        const names = await tx.component.findMany({ where: { id: { in: dto.componentIds } }, select: { name: true } });
+        changes.push(listChange('components', before.components.map((c) => c.component.name), names.map((n) => n.name)));
       }
-    }
 
-    await this.syncLabels(id, dto.labelIds);
-    await this.syncVersions(id, dto.fixVersionIds, dto.affectsVersionIds);
+      if (dto.labelIds) {
+        await tx.issueLabel.deleteMany({ where: { issueId: id } });
+        if (dto.labelIds.length) {
+          await tx.issueLabel.createMany({ data: dto.labelIds.map((labelId) => ({ issueId: id, labelId })) });
+        }
+        const names = await tx.label.findMany({ where: { id: { in: dto.labelIds } }, select: { name: true } });
+        changes.push(listChange('labels', before.labels.map((l) => l.label.name), names.map((n) => n.name)));
+      }
 
-    const {
-      componentIds: _c, labelIds: _l, fixVersionIds: _f, affectsVersionIds: _a,
-      customFields, ...data
-    } = dto;
+      if (dto.fixVersionIds !== undefined || dto.affectsVersionIds !== undefined) {
+        // Keep whichever side the client did not send.
+        const fix = dto.fixVersionIds ?? before.versions.filter((v) => v.isFix).map((v) => v.versionId);
+        const affects = dto.affectsVersionIds ?? before.versions.filter((v) => !v.isFix).map((v) => v.versionId);
+        await this.syncVersions(tx, id, fix, affects);
+        const versionNames = async (ids: string[]) =>
+          (await tx.version.findMany({ where: { id: { in: ids } }, select: { name: true } })).map((v) => v.name);
+        if (dto.fixVersionIds !== undefined) {
+          changes.push(listChange('fixVersions', before.versions.filter((v) => v.isFix).map((v) => v.version.name), await versionNames(fix)));
+        }
+        if (dto.affectsVersionIds !== undefined) {
+          changes.push(listChange('affectsVersions', before.versions.filter((v) => !v.isFix).map((v) => v.version.name), await versionNames(affects)));
+        }
+      }
 
-    await this.prisma.issue.update({
-      where: { id },
-      data,
+      const {
+        componentIds: _c, labelIds: _l, fixVersionIds: _f, affectsVersionIds: _a,
+        customFields: _cf, ...data
+      } = dto;
+
+      for (const field of ['summary', 'description', 'priority', 'estimate', 'remainingEstimate', 'blocked', 'epicName'] as const) {
+        if (data[field] !== undefined && data[field] !== before[field]) {
+          changes.push({ field, from: str(before[field]), to: str(data[field]) });
+        }
+      }
+      if (data.assigneeId !== undefined && data.assigneeId !== before.assigneeId) {
+        changes.push({ field: 'assignee', from: before.assignee?.name ?? null, to: await this.userName(tx, data.assigneeId) });
+      }
+      if (data.reporterId !== undefined && data.reporterId !== before.reporterId) {
+        changes.push({ field: 'reporter', from: before.reporter?.name ?? null, to: await this.userName(tx, data.reporterId) });
+      }
+      if (data.sprintId !== undefined && data.sprintId !== before.sprintId) {
+        const sprint = data.sprintId ? await tx.sprint.findUnique({ where: { id: data.sprintId } }) : null;
+        changes.push({ field: 'sprint', from: before.sprint?.name ?? null, to: sprint?.name ?? null });
+      }
+
+      // Empty strings from the UI mean "clear the field".
+      const clean = Object.fromEntries(
+        Object.entries(data).map(([k, v]) => [k, v === '' && k !== 'summary' ? null : v]),
+      );
+      await tx.issue.update({ where: { id }, data: clean });
+      await this.recordHistory(tx, id, userId, changes.filter((c) => c.from !== c.to));
     });
 
-    if (customFields) {
-      await this.customFieldsService.setIssueValues(id, customFields);
+    if (dto.customFields) {
+      await this.customFieldsService.setIssueValues(id, dto.customFields);
     }
-
     return this.findOne(id);
   }
 
-  async transition(id: string, dto: TransitionDto) {
-    const issue = await this.findOne(id);
+  async remove(idOrKey: string, user: AuthUser) {
+    const issue = await this.prisma.issue.findFirst({
+      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      include: { project: true, attachments: true, _count: { select: { children: true } } },
+    });
+    if (!issue) throw new NotFoundException('Issue not found');
+    const allowed = user.role === UserRole.ADMIN
+      || user.id === issue.reporterId
+      || user.id === issue.project.leadId;
+    if (!allowed) throw new ForbiddenException('Only the reporter, the project lead or an admin can delete an issue');
+    if (issue._count.children > 0) {
+      throw new BadRequestException(`${issue.key} has ${issue._count.children} child issue(s); delete or move them first`);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.issueComponent.deleteMany({ where: { issueId: issue.id } });
+      await tx.issueVersion.deleteMany({ where: { issueId: issue.id } });
+      await tx.issue.delete({ where: { id: issue.id } });
+    });
+    for (const a of issue.attachments) {
+      fs.rm(a.storagePath, { force: true }, () => undefined);
+    }
+    return { deleted: true, key: issue.key };
+  }
+
+  async transition(idOrKey: string, dto: TransitionDto, userId: string) {
+    const issue = await this.findOne(idOrKey);
     const allowed = WORKFLOW_TRANSITIONS[issue.status] ?? [];
     if (!allowed.includes(dto.status)) {
       throw new BadRequestException(`Cannot transition from ${issue.status} to ${dto.status}`);
     }
-
     if (dto.status === 'CLOSED' && !dto.resolution) {
       throw new BadRequestException('Resolution required when closing an issue');
     }
+    // Leaving CLOSED (re-open) clears the resolution.
+    const resolution = dto.status === 'CLOSED' ? (dto.resolution as IssueResolution) : null;
 
-    await this.prisma.issue.update({
-      where: { id },
-      data: {
-        status: dto.status as IssueStatus,
-        resolution: dto.resolution as IssueResolution | undefined,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.issue.update({
+        where: { id: issue.id },
+        data: { status: dto.status as IssueStatus, resolution },
+      });
+      const changes: HistoryChange[] = [{ field: 'status', from: issue.status, to: dto.status }];
+      if ((issue.resolution ?? null) !== resolution) {
+        changes.push({ field: 'resolution', from: issue.resolution, to: resolution });
+      }
+      await this.recordHistory(tx, issue.id, userId, changes);
     });
-
-    return this.findOne(id);
+    return this.findOne(issue.id);
   }
 
-  async createLink(id: string, dto: CreateLinkDto) {
-    await this.findOne(id);
-    await this.findOne(dto.targetId);
-    return this.prisma.issueLink.create({
-      data: {
-        sourceId: id,
-        targetId: dto.targetId,
-        type: dto.type as LinkType,
-      },
-    });
+  // ─── Links ─────────────────────────────────────────────────────────────────
+
+  async createLink(idOrKey: string, dto: CreateLinkDto, userId: string) {
+    const source = await this.findOne(idOrKey);
+    const targetRef = dto.targetId ?? dto.targetKey;
+    if (!targetRef) throw new BadRequestException('targetId or targetKey is required');
+    const target = await this.findOne(targetRef);
+    if (source.id === target.id) throw new BadRequestException('An issue cannot be linked to itself');
+    if (!Object.values(LinkType).includes(dto.type as LinkType)) {
+      throw new BadRequestException(`Unknown link type ${dto.type}`);
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.issueLink.create({
+          data: { sourceId: source.id, targetId: target.id, type: dto.type as LinkType },
+        });
+        await this.recordHistory(tx, source.id, userId, [{ field: 'link', to: `${linkLabel(dto.type)} ${target.key}` }]);
+        await this.recordHistory(tx, target.id, userId, [{ field: 'link', to: `${linkLabel(dto.type, true)} ${source.key}` }]);
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException(`${source.key} already ${linkLabel(dto.type)} ${target.key}`);
+      }
+      throw e;
+    }
+    return this.findOne(source.id);
   }
 
-  async addWatcher(issueId: string, userId: string) {
-    await this.findOne(issueId);
+  async removeLink(idOrKey: string, linkId: string, userId: string) {
+    const issueId = await this.findIdOrThrow(idOrKey);
+    const link = await this.prisma.issueLink.findFirst({
+      where: { id: linkId, OR: [{ sourceId: issueId }, { targetId: issueId }] },
+      include: { source: { select: { key: true } }, target: { select: { key: true } } },
+    });
+    if (!link) throw new NotFoundException('Link not found');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.issueLink.delete({ where: { id: link.id } });
+      await this.recordHistory(tx, link.sourceId, userId, [{ field: 'link', from: `${linkLabel(link.type)} ${link.target.key}` }]);
+      await this.recordHistory(tx, link.targetId, userId, [{ field: 'link', from: `${linkLabel(link.type, true)} ${link.source.key}` }]);
+    });
+    return this.findOne(issueId);
+  }
+
+  // ─── Watchers ──────────────────────────────────────────────────────────────
+
+  async addWatcher(idOrKey: string, userId: string) {
+    const issueId = await this.findIdOrThrow(idOrKey);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -227,17 +342,114 @@ export class IssuesService {
     } catch {
       throw new ConflictException('User is already watching this issue');
     }
-
     return this.findOne(issueId);
   }
 
-  async removeWatcher(issueId: string, userId: string) {
+  async removeWatcher(idOrKey: string, userId: string) {
+    const issueId = await this.findIdOrThrow(idOrKey);
     await this.prisma.issueWatcher.deleteMany({ where: { issueId, userId } });
     return this.findOne(issueId);
   }
 
-  async createWorkLog(issueId: string, userId: string, dto: CreateWorkLogDto) {
-    await this.findOne(issueId);
+  // ─── Comments ──────────────────────────────────────────────────────────────
+
+  async getComments(idOrKey: string) {
+    const issueId = await this.findIdOrThrow(idOrKey);
+    return this.prisma.comment.findMany({
+      where: { issueId },
+      include: { author: USER_BRIEF },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async addComment(idOrKey: string, authorId: string, body: string) {
+    const issueId = await this.findIdOrThrow(idOrKey);
+    const text = body.trim();
+    if (!text) throw new BadRequestException('Comment cannot be empty');
+    return this.prisma.$transaction(async (tx) => {
+      const comment = await tx.comment.create({
+        data: { issueId, authorId, body: text },
+        include: { author: USER_BRIEF },
+      });
+      // Commenters (and anyone @mentioned by email) start watching the issue, as in Jira.
+      const mentioned = await tx.user.findMany({
+        where: { email: { in: extractMentions(text) } },
+        select: { id: true },
+      });
+      for (const userId of new Set([authorId, ...mentioned.map((u) => u.id)])) {
+        await tx.issueWatcher.upsert({
+          where: { issueId_userId: { issueId, userId } },
+          create: { issueId, userId },
+          update: {},
+        });
+      }
+      await tx.issue.update({ where: { id: issueId }, data: { updatedAt: new Date() } });
+      return comment;
+    });
+  }
+
+  async updateComment(idOrKey: string, commentId: string, user: AuthUser, body: string) {
+    const comment = await this.findComment(idOrKey, commentId);
+    if (comment.authorId !== user.id) throw new ForbiddenException('You can only edit your own comments');
+    const text = body.trim();
+    if (!text) throw new BadRequestException('Comment cannot be empty');
+    return this.prisma.comment.update({
+      where: { id: comment.id },
+      data: { body: text },
+      include: { author: USER_BRIEF },
+    });
+  }
+
+  async deleteComment(idOrKey: string, commentId: string, user: AuthUser) {
+    const comment = await this.findComment(idOrKey, commentId);
+    if (comment.authorId !== user.id && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('You can only delete your own comments');
+    }
+    await this.prisma.comment.delete({ where: { id: comment.id } });
+    return { deleted: true };
+  }
+
+  private async findComment(idOrKey: string, commentId: string) {
+    const issueId = await this.findIdOrThrow(idOrKey);
+    const comment = await this.prisma.comment.findFirst({ where: { id: commentId, issueId } });
+    if (!comment) throw new NotFoundException('Comment not found');
+    return comment;
+  }
+
+  // ─── History ───────────────────────────────────────────────────────────────
+
+  async getHistory(idOrKey: string) {
+    const issueId = await this.findIdOrThrow(idOrKey);
+    return this.prisma.issueHistory.findMany({
+      where: { issueId },
+      include: { user: USER_BRIEF },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private async recordHistory(tx: Tx, issueId: string, userId: string | null, changes: HistoryChange[]) {
+    if (!changes.length) return;
+    await tx.issueHistory.createMany({
+      data: changes.map((c) => ({
+        issueId,
+        userId,
+        field: c.field,
+        fromValue: truncate(c.from),
+        toValue: truncate(c.to),
+      })),
+    });
+  }
+
+  private async userName(tx: Tx, id: string | null | undefined) {
+    if (!id) return null;
+    const user = await tx.user.findUnique({ where: { id }, select: { name: true } });
+    return user?.name ?? id;
+  }
+
+  // ─── Work logs ─────────────────────────────────────────────────────────────
+
+  async createWorkLog(idOrKey: string, userId: string, dto: CreateWorkLogDto) {
+    const issueId = await this.findIdOrThrow(idOrKey);
     await this.prisma.workLog.create({
       data: {
         issueId,
@@ -249,8 +461,8 @@ export class IssuesService {
     return this.findOne(issueId);
   }
 
-  async getWorkLogs(issueId: string) {
-    await this.findOne(issueId);
+  async getWorkLogs(idOrKey: string) {
+    const issueId = await this.findIdOrThrow(idOrKey);
     return this.prisma.workLog.findMany({
       where: { issueId },
       include: { user: { select: { id: true, name: true } } },
@@ -258,30 +470,37 @@ export class IssuesService {
     });
   }
 
+  // ─── Attachments ───────────────────────────────────────────────────────────
+
   async addAttachment(
-    issueId: string,
+    idOrKey: string,
     userId: string,
     file: { originalname: string; mimetype: string; size: number; buffer: Buffer },
   ) {
-    await this.findOne(issueId);
+    const issueId = await this.findIdOrThrow(idOrKey);
     const safeName = `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     const storagePath = path.join(this.uploadDir, safeName);
     fs.writeFileSync(storagePath, file.buffer);
 
-    return this.prisma.attachment.create({
-      data: {
-        issueId,
-        filename: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        storagePath,
-        uploadedById: userId,
-      },
-      include: { uploadedBy: { select: { id: true, name: true } } },
+    return this.prisma.$transaction(async (tx) => {
+      const attachment = await tx.attachment.create({
+        data: {
+          issueId,
+          filename: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+          storagePath,
+          uploadedById: userId,
+        },
+        include: { uploadedBy: { select: { id: true, name: true } } },
+      });
+      await this.recordHistory(tx, issueId, userId, [{ field: 'attachment', to: file.originalname }]);
+      return attachment;
     });
   }
 
-  async getAttachment(issueId: string, attachmentId: string) {
+  async getAttachment(idOrKey: string, attachmentId: string) {
+    const issueId = await this.findIdOrThrow(idOrKey);
     const attachment = await this.prisma.attachment.findFirst({
       where: { id: attachmentId, issueId },
     });
@@ -292,10 +511,71 @@ export class IssuesService {
     return attachment;
   }
 
-  async updateCustomFields(issueId: string, customFields: Record<string, string>) {
-    await this.findOne(issueId);
+  async deleteAttachment(idOrKey: string, attachmentId: string, user: AuthUser) {
+    const attachment = await this.getAttachment(idOrKey, attachmentId).catch(async (e) => {
+      // Still allow removing the record when the file itself has gone missing.
+      const issueId = await this.findIdOrThrow(idOrKey);
+      const record = await this.prisma.attachment.findFirst({ where: { id: attachmentId, issueId } });
+      if (!record) throw e;
+      return record;
+    });
+    if (attachment.uploadedById !== user.id && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('You can only delete attachments you uploaded');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.attachment.delete({ where: { id: attachment.id } });
+      await this.recordHistory(tx, attachment.issueId, user.id, [{ field: 'attachment', from: attachment.filename }]);
+    });
+    fs.rm(attachment.storagePath, { force: true }, () => undefined);
+    return { deleted: true };
+  }
+
+  async updateCustomFields(idOrKey: string, customFields: Record<string, string>) {
+    const issueId = await this.findIdOrThrow(idOrKey);
     await this.customFieldsService.setIssueValues(issueId, customFields);
     return this.findOne(issueId);
   }
+
+  private async syncVersions(tx: Tx, issueId: string, fixVersionIds?: string[], affectsVersionIds?: string[]) {
+    if (fixVersionIds === undefined && affectsVersionIds === undefined) return;
+    await tx.issueVersion.deleteMany({ where: { issueId } });
+    const creates = [
+      ...(fixVersionIds ?? []).map((versionId) => ({ issueId, versionId, isFix: true })),
+      ...(affectsVersionIds ?? []).map((versionId) => ({ issueId, versionId, isFix: false })),
+    ];
+    if (creates.length) {
+      await tx.issueVersion.createMany({ data: creates });
+    }
+  }
 }
 
+const LINK_LABELS: Record<string, [string, string]> = {
+  BLOCKS: ['blocks', 'is blocked by'],
+  DEPENDS_ON: ['depends on', 'is depended on by'],
+  RELATES_TO: ['relates to', 'relates to'],
+  PARENT_LINK: ['is parent of', 'is child of'],
+};
+
+function linkLabel(type: string, inward = false) {
+  const labels = LINK_LABELS[type];
+  return labels ? labels[inward ? 1 : 0] : type;
+}
+
+function str(v: unknown): string | null {
+  return v === null || v === undefined || v === '' ? null : String(v);
+}
+
+function listChange(field: string, from: string[], to: string[]): HistoryChange {
+  const join = (xs: string[]) => (xs.length ? [...xs].sort().join(', ') : null);
+  return { field, from: join(from), to: join(to) };
+}
+
+function truncate(v: string | null | undefined) {
+  if (v === null || v === undefined) return null;
+  return v.length > 2000 ? `${v.slice(0, 2000)}…` : v;
+}
+
+/** "@jane.doe@example.com" → ["jane.doe@example.com"] */
+export function extractMentions(text: string): string[] {
+  return [...text.matchAll(/(?:^|\s)@([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g)].map((m) => m[1].toLowerCase());
+}

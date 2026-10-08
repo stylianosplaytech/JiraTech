@@ -127,16 +127,28 @@ model User {
   watchedIssues    IssueWatcher[]
   workLogs         WorkLog[]
   attachments      Attachment[]
+  ledProjects      Project[]         @relation("ProjectLead")
+  comments         Comment[]
+  historyEntries   IssueHistory[]
+  savedFilters     SavedFilter[]
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────
 
 model Project {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  key             String   @unique
+  name            String
+  description     String?
+  leadId          String?
+  /// Last issue number handed out; incremented atomically to generate issue keys
+  issueCounter    Int      @default(0)
+  /// When true, non-epic issues must have a parent (SPORTS hierarchy rules)
+  strictHierarchy Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lead                  User?                   @relation("ProjectLead", fields: [leadId], references: [id])
 
   components            Component[]
   versions              Version[]
@@ -319,6 +331,8 @@ model Issue {
   customFieldValues CustomFieldValue[]
   attachments       Attachment[]
   workLogs          WorkLog[]
+  comments          Comment[]
+  history           IssueHistory[]
 
   @@index([projectId, type])
   @@index([projectId, status])
@@ -429,3 +443,50 @@ model EscalationEvent {
   user  User  @relation(fields: [userId], references: [id])
 }
 
+// ─── Comments ────────────────────────────────────────────────────────────────
+
+model Comment {
+  id        String   @id @default(cuid())
+  issueId   String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  issue  Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  author User  @relation(fields: [authorId], references: [id])
+
+  @@index([issueId, createdAt])
+}
+
+// ─── Issue History (activity log) ────────────────────────────────────────────
+
+model IssueHistory {
+  id        String   @id @default(cuid())
+  issueId   String
+  userId    String?
+  field     String
+  fromValue String?
+  toValue   String?
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id])
+
+  @@index([issueId, createdAt])
+}
+
+// ─── Saved Filters ───────────────────────────────────────────────────────────
+
+model SavedFilter {
+  id          String   @id @default(cuid())
+  name        String
+  jql         String
+  description String?
+  ownerId     String
+  shared      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}

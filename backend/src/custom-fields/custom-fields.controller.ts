@@ -3,6 +3,7 @@ import { IsString, IsEnum, IsOptional, IsArray, IsBoolean, IsInt } from 'class-v
 import { CustomFieldType, UserRole } from '@prisma/client';
 import { CustomFieldsService } from './custom-fields.service';
 import { JwtAuthGuard } from '../auth/guards';
+import { ProjectKey } from '../common/project-key.decorator';
 
 class CreateCustomFieldDto {
   @IsString()
@@ -34,15 +35,16 @@ export class CustomFieldsController {
   constructor(private customFieldsService: CustomFieldsService) {}
 
   @Get()
-  getDefinitions() {
-    return this.customFieldsService.getDefinitions();
+  getDefinitions(@ProjectKey() projectKey?: string) {
+    return this.customFieldsService.getDefinitions(projectKey);
   }
 
   @Post()
   createDefinition(
     @Body() dto: CreateCustomFieldDto,
     @Request() req: { user: { role: UserRole } },
+    @ProjectKey() projectKey?: string,
   ) {
-    return this.customFieldsService.createDefinition(dto, req.user.role);
+    return this.customFieldsService.createDefinition(dto, req.user.role, projectKey);
   }
 }

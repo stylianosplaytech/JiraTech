@@ -1,14 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { CustomFieldType, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { getSportsProject } from '../common/project.util';
+import { resolveProject } from '../common/project.util';
 
 @Injectable()
 export class CustomFieldsService {
   constructor(private prisma: PrismaService) {}
 
-  async getDefinitions() {
-    const project = await getSportsProject(this.prisma);
+  async getDefinitions(projectKey?: string) {
+    const project = await resolveProject(this.prisma, projectKey);
     return this.prisma.customFieldDefinition.findMany({
       where: { projectId: project.id },
       orderBy: { order: 'asc' },
@@ -25,9 +25,10 @@ export class CustomFieldsService {
       order?: number;
     },
     role: UserRole,
+    projectKey?: string,
   ) {
-    if (role !== UserRole.ADMIN) throw new NotFoundException('Admin only');
-    const project = await getSportsProject(this.prisma);
+    if (role !== UserRole.ADMIN) throw new ForbiddenException('Admin only');
+    const project = await resolveProject(this.prisma, projectKey);
     return this.prisma.customFieldDefinition.create({
       data: {
         projectId: project.id,
@@ -42,9 +43,9 @@ export class CustomFieldsService {
   }
 
   async setIssueValues(issueId: string, values: Record<string, string>) {
-    const project = await getSportsProject(this.prisma);
+    const issue = await this.prisma.issue.findUniqueOrThrow({ where: { id: issueId }, select: { projectId: true } });
     const definitions = await this.prisma.customFieldDefinition.findMany({
-      where: { projectId: project.id },
+      where: { projectId: issue.projectId },
     });
     const defByKey = new Map(definitions.map((d) => [d.key, d]));
 
@@ -60,9 +61,9 @@ export class CustomFieldsService {
   }
 
   async incrementReopenCount(issueId: string) {
-    const project = await getSportsProject(this.prisma);
+    const issue = await this.prisma.issue.findUniqueOrThrow({ where: { id: issueId }, select: { projectId: true } });
     const field = await this.prisma.customFieldDefinition.findUnique({
-      where: { projectId_key: { projectId: project.id, key: 'reopen_count' } },
+      where: { projectId_key: { projectId: issue.projectId, key: 'reopen_count' } },
     });
     if (!field) return;
 

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 export const ISSUE_INCLUDE = {
+  project: { select: { id: true, key: true, name: true, strictHierarchy: true, leadId: true } },
   assignee: { select: { id: true, name: true, email: true } },
   reporter: { select: { id: true, name: true, email: true } },
   parent: { select: { id: true, key: true, type: true, summary: true, epicName: true } },

@@ -1,5 +1,5 @@
 import {
-  IsString, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, MinLength, IsObject,
+  IsString, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, MinLength, MaxLength, IsObject,
 } from 'class-validator';
 import { IssueType, Priority } from '@prisma/client';
 
@@ -74,6 +74,10 @@ export class CreateIssueDto {
   @IsOptional()
   @IsString()
   parentLinkKey?: string;
+
+  @IsOptional()
+  @IsString()
+  projectKey?: string;
 
   @IsOptional()
   @IsObject()
@@ -157,8 +161,13 @@ export class TransitionDto {
 }
 
 export class CreateLinkDto {
+  @IsOptional()
   @IsString()
-  targetId!: string;
+  targetId?: string;
+
+  @IsOptional()
+  @IsString()
+  targetKey?: string;
 
   @IsString()
   type!: string;
@@ -184,3 +193,10 @@ export class UpdateCustomFieldsDto {
   customFields!: Record<string, string>;
 }
 
+
+export class CommentDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(32000)
+  body!: string;
+}

@@ -71,7 +71,7 @@ export const WORKFLOW_TRANSITIONS: Record<string, string[]> = {
   BACKLOG: ['TO_DO'],
   TO_DO: ['DOING', 'BACKLOG'],
   DOING: ['CLOSED', 'TO_DO'],
-  CLOSED: [],
+  CLOSED: ['TO_DO'], // re-open
 };
 
 export const PRIORITY_ORDER = ['HIGHEST', 'HIGH', 'MEDIUM', 'LOW', 'LOWEST'] as const;

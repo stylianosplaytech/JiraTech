@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, UseGuards, Request } from '@nestjs/common'
 import { PlanningService } from './planning.service';
 import { CreatePiDto, CreateSprintDto, WorkBreakdownDto } from './dto/planning.dto';
 import { JwtAuthGuard } from '../auth/guards';
+import { ProjectKey } from '../common/project-key.decorator';
 
 @Controller('planning')
 @UseGuards(JwtAuthGuard)
@@ -9,13 +10,13 @@ export class PlanningController {
   constructor(private planningService: PlanningService) {}
 
   @Get('pis')
-  getPis() {
-    return this.planningService.getPis();
+  getPis(@ProjectKey() projectKey?: string) {
+    return this.planningService.getPis(projectKey);
   }
 
   @Post('pis')
-  createPi(@Body() dto: CreatePiDto) {
-    return this.planningService.createPi(dto);
+  createPi(@Body() dto: CreatePiDto, @ProjectKey() projectKey?: string) {
+    return this.planningService.createPi(dto, projectKey);
   }
 
   @Post('sprints')

@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { IssueStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveProject } from '../common/project.util';
 
 @Injectable()
 export class BoardService {
   constructor(private prisma: PrismaService) {}
 
-  async getBoard(sprintId?: string) {
-    const project = await this.prisma.project.findFirstOrThrow({ where: { key: 'SPORTS' } });
+  async getBoard(sprintId?: string, projectKey?: string) {
+    const project = await resolveProject(this.prisma, projectKey);
     const columns: IssueStatus[] = [IssueStatus.BACKLOG, IssueStatus.TO_DO, IssueStatus.DOING, IssueStatus.CLOSED];
     const where = {
       projectId: project.id,

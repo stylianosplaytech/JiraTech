@@ -14,6 +14,8 @@ import { UsersModule } from './users/users.module';
 import { LabelsModule } from './labels/labels.module';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { VersionsModule } from './versions/versions.module';
+import { ProjectsModule } from './projects/projects.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { VersionsModule } from './versions/versions.module';
     HealthModule,
     AuthModule,
     UsersModule,
+    ProjectsModule,
+    SearchModule,
     IssuesModule,
     ComponentsModule,
     LabelsModule,

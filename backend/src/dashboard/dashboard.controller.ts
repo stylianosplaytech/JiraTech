@@ -2,6 +2,7 @@ import { Controller, Get, Patch, Param, Body, Query, UseGuards } from '@nestjs/c
 import { RagStatus } from '@prisma/client';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/guards';
+import { ProjectKey } from '../common/project-key.decorator';
 
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard)
@@ -9,8 +10,8 @@ export class DashboardController {
   constructor(private dashboardService: DashboardService) {}
 
   @Get()
-  getDashboard(@Query('piId') piId?: string) {
-    return this.dashboardService.getDashboard(piId);
+  getDashboard(@Query('piId') piId?: string, @ProjectKey() projectKey?: string) {
+    return this.dashboardService.getDashboard(piId, projectKey);
   }
 
   @Patch('issues/:id/rag')

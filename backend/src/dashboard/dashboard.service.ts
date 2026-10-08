@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { IssueStatus, RagStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveProject } from '../common/project.util';
 
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
-  async getDashboard(piId?: string) {
-    const project = await this.prisma.project.findFirstOrThrow({ where: { key: 'SPORTS' } });
+  async getDashboard(piId?: string, projectKey?: string) {
+    const project = await resolveProject(this.prisma, projectKey);
     const where = { projectId: project.id, ...(piId && { piId }) };
 
     const [byStatus, byRag, blocked, atRisk, recentEscalations] = await Promise.all([
@@ -23,6 +24,7 @@ export class DashboardService {
         orderBy: { ragStatus: 'asc' },
       }),
       this.prisma.escalationEvent.findMany({
+        where: { issue: { projectId: project.id } },
         take: 10,
         orderBy: { createdAt: 'desc' },
         include: {

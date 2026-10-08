@@ -29,14 +29,13 @@ export class SchedulingService {
   constructor(private prisma: PrismaService) {}
 
   async runSchedule(piId: string, teamCapacity: Record<string, number> = {}): Promise<ScheduleResult> {
-    const project = await this.prisma.project.findFirstOrThrow({ where: { key: 'SPORTS' } });
     const pi = await this.prisma.programIncrement.findUniqueOrThrow({
       where: { id: piId },
       include: { sprints: { orderBy: { startDate: 'asc' } } },
     });
 
     const issues = await this.prisma.issue.findMany({
-      where: { projectId: project.id, piId },
+      where: { projectId: pi.projectId, piId },
       include: {
         components: true,
         linksFrom: { where: { type: 'DEPENDS_ON' } },

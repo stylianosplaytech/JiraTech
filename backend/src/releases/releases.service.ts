@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { IssueType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { nextIssueKey } from '../common/project.util';
 
 @Injectable()
 export class ReleasesService {
@@ -24,16 +25,9 @@ export class ReleasesService {
       throw new BadRequestException('Release Candidates must be under a Release Epic');
     }
 
-    const last = await this.prisma.issue.findFirst({
-      where: { projectId: epic.projectId },
-      orderBy: { number: 'desc' },
-    });
-    const number = (last?.number ?? 0) + 1;
-
-    return this.prisma.issue.create({
+    return this.prisma.$transaction(async (tx) => tx.issue.create({
       data: {
-        key: `SPORTS-${number}`,
-        number,
+        ...(await nextIssueKey(tx, epic.projectId)),
         type: IssueType.RELEASE_CANDIDATE,
         summary,
         parentId: releaseEpicId,
@@ -44,7 +38,7 @@ export class ReleasesService {
         },
       },
       include: { versions: { include: { version: true } } },
-    });
+    }));
   }
 
   async signOffGoldenMaster(candidateId: string) {
