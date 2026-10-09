@@ -199,6 +199,13 @@ export const api = {
     const qs = piId ? `?piId=${piId}` : '';
     return request<DashboardData>(`/dashboard${qs}`);
   },
+  getReport: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return request<ReportData>(`/reports${qs ? `?${qs}` : ''}`);
+  },
   updateRag: (id: string, ragStatus: string) =>
     request(`/dashboard/issues/${id}/rag`, {
       method: 'PATCH',
@@ -506,6 +513,39 @@ export interface ProgramIncrement {
   status: string;
   sprints: { id: string; name: string }[];
   _count?: { issues: number };
+}
+
+export type TypeGroup = 'EPIC' | 'STORY' | 'BUG' | 'TASK' | 'OTHER';
+
+export interface ReportIssueRow {
+  key: string;
+  summary: string;
+  type: string;
+  typeGroup: TypeGroup;
+  priority: string;
+  status: string;
+  statusName: string;
+  createdAt: string;
+  assignee: string | null;
+  parentKey: string | null;
+  ageDays: number;
+}
+
+export interface ReportData {
+  project: { key: string; name: string };
+  period: { from: string; to: string };
+  generatedAt: string;
+  summary: { total: number; open: number; closed: number; percentComplete: number; overallStatus: string };
+  byStatus: { name: string; category: string; count: number }[];
+  byType: { type: string; count: number }[];
+  byPriority: { priority: string; count: number }[];
+  pendingByType: { type: string; count: number }[];
+  closedByAssignee: { name: string; count: number }[];
+  unassignedClosed: number;
+  closedPerMonth: ({ month: string; total: number } & Record<TypeGroup, number>)[];
+  longestOpen: { group: TypeGroup; issues: ReportIssueRow[] }[];
+  openByPriority: { priority: string; count: number }[];
+  openIssues: ReportIssueRow[];
 }
 
 export interface DashboardData {

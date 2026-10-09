@@ -85,3 +85,9 @@ body {
     @apply text-jira-muted float-left h-0 pointer-events-none;
   }
 }
+
+/* Printed reports keep their chart and banner colours. */
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff; }
+}

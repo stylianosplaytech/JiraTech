@@ -10,6 +10,7 @@ import { SchedulingModule } from './scheduling/scheduling.module';
 import { ReleasesModule } from './releases/releases.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { ReportsModule } from './reports/reports.module';
 import { BoardModule } from './board/board.module';
 import { HealthModule } from './health/health.module';
 import { UsersModule } from './users/users.module';
@@ -41,6 +42,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ReleasesModule,
     IncidentsModule,
     DashboardModule,
+    ReportsModule,
     BoardModule,
   ],
 })

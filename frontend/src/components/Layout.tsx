@@ -18,6 +18,7 @@ const NAV = [
   { path: '/projects', label: 'Projects' },
   { path: '/planning', label: 'Planning' },
   { path: '/dashboard', label: 'Dashboards' },
+  { path: '/reports', label: 'Reports' },
   { path: '/users', label: 'People' },
 ];
 
@@ -131,7 +132,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="sticky top-0 z-40 bg-white border-b border-jira-border">
+      <header className="sticky top-0 z-40 bg-white border-b border-jira-border print:hidden">
         <div className="h-14 px-4 flex items-center gap-2">
           <Logo />
           <ProjectSwitcher />
@@ -190,7 +191,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
         </div>
       </header>
 
-      <main className="flex-1 w-full px-6 py-6">{children}</main>
+      <main className="flex-1 w-full px-6 py-6 print:p-0">{children}</main>
 
       {creating && (
         <Modal title="Create issue" onClose={() => !createPending && setCreating(false)} width="max-w-2xl">

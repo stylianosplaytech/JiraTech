@@ -9,6 +9,7 @@ import BoardPage from './pages/BoardPage';
 import SearchPage from './pages/SearchPage';
 import IssueDetailPage from './pages/IssueDetailPage';
 import DashboardPage from './pages/DashboardPage';
+import ReportsPage from './pages/ReportsPage';
 import PlanningPage from './pages/PlanningPage';
 import CreateIssuePage from './pages/CreateIssuePage';
 import UsersPage from './pages/UsersPage';
@@ -48,6 +49,7 @@ export default function App() {
                   <Route path="/projects" element={<ProjectsPage />} />
                   <Route path="/projects/:key" element={<ProjectPage />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/planning" element={<PlanningPage />} />
                   <Route path="/users" element={<UsersPage />} />
                   <Route path="*" element={<EmptyState title="Page not found" action={<Link to="/" className="btn btn-default">Go to the board</Link>}>The page you're looking for doesn't exist.</EmptyState>} />
