@@ -4,7 +4,7 @@ A Jira-style ALM platform: multiple projects, issues, comments, links, JQL searc
 
 ## Stack
 
-- **Backend:** NestJS + Prisma + SQLite (dev)
+- **Backend:** NestJS + Prisma + SQLite (default) or PostgreSQL
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS
 - **Auth:** JWT (extensible to OIDC)
 
@@ -15,17 +15,35 @@ A Jira-style ALM platform: multiple projects, issues, comments, links, JQL searc
 npm install
 
 # Set up database (SQLite — no Docker required).
-# Re-run "prisma db push" after pulling schema changes.
-cd backend
-npx prisma db push
+# Re-run "db:push" after pulling schema changes.
+npm run db:push -w backend
 npm run db:seed
-cd ..
 
 # Start dev servers (API :3000, UI :5173)
 npm run dev
 ```
 
-For PostgreSQL, change `provider` in `backend/prisma/schema.prisma` to `postgresql`, start Docker (`npm run db:up`), set `DATABASE_URL` in `backend/.env` to the Postgres connection string, then run `npx prisma db push`.
+### PostgreSQL
+
+The database is picked from `DATABASE_URL` in `backend/.env`: a `file:` URL uses SQLite, a `postgresql://` URL uses PostgreSQL.
+
+```bash
+# Start PostgreSQL in Docker (or use your own server)
+npm run db:up
+
+# In backend/.env, switch DATABASE_URL to the commented-out PostgreSQL line:
+#   DATABASE_URL="postgresql://jiratech:jiratech@localhost:5432/jiratech"
+
+npm run db:push -w backend
+npm run db:seed
+npm run dev
+```
+
+`prisma/schema.prisma` stays the only schema to edit. Always run Prisma through the backend scripts
+(`db:push`, `db:generate`, `db:migrate`) or `node scripts/prisma.js <args>` rather than `npx prisma`:
+for PostgreSQL they generate `prisma/postgres/schema.prisma` (git-ignored) with the right provider and point Prisma at it.
+`npm run dev` and `npm run build` regenerate the Prisma client for the current database first.
+After switching databases, run `db:push` (or `db:generate`) once.
 
 Default login: `admin@jiratech.local` / `admin123`
 

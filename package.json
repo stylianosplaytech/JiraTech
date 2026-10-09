@@ -13,7 +13,7 @@
     "db:down": "docker compose down",
     "db:migrate": "npm run db:migrate -w backend",
     "db:seed": "npm run db:seed -w backend",
-    "setup": "npm install && npm run db:up && npm run db:migrate && npm run db:seed",
+    "setup": "npm install && npm run db:push -w backend && npm run db:seed",
     "db:seed:demo": "npm run db:seed:demo -w backend"
   },
   "devDependencies": {

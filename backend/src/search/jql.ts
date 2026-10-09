@@ -1,4 +1,5 @@
 import { IssueResolution, IssueStatus, IssueType, Priority, Prisma } from '@prisma/client';
+import { contains } from '../common/text-match';
 
 /**
  * A small JQL (Jira Query Language) implementation.
@@ -444,18 +445,18 @@ class Compiler {
       case 'blocked':
         return this.equality(c, (v) => ({ blocked: ['true', 'yes', '1'].includes(v.toLowerCase()) }));
       case 'summary':
-        return this.text(c, (v) => ({ summary: { contains: v } }));
+        return this.text(c, (v) => ({ summary: contains(v) }));
       case 'description':
-        return this.text(c, (v) => ({ description: { contains: v } }), { description: null });
+        return this.text(c, (v) => ({ description: contains(v) }), { description: null });
       case 'comment':
-        return this.text(c, (v) => ({ comments: { some: { body: { contains: v } } } }));
+        return this.text(c, (v) => ({ comments: { some: { body: contains(v) } } }));
       case 'text':
         return this.text(c, (v) => ({
           OR: [
-            { summary: { contains: v } },
-            { description: { contains: v } },
-            { key: { contains: v.toUpperCase() } },
-            { comments: { some: { body: { contains: v } } } },
+            { summary: contains(v) },
+            { description: contains(v) },
+            { key: contains(v.toUpperCase()) },
+            { comments: { some: { body: contains(v) } } },
           ],
         }));
       case 'created':

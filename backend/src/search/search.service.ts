@@ -7,6 +7,7 @@ import { AuthUser } from '../common/auth-user';
 import { PRIORITY_ORDER } from '../common/issue-rules';
 import { compileJql, JqlError, JqlSort } from './jql';
 import { AccessService } from '../access/access.service';
+import { contains } from '../common/text-match';
 
 export const SEARCH_INCLUDE = {
   workflowStatus: { select: { id: true, name: true, category: true } },
@@ -86,13 +87,13 @@ export class SearchService {
         ? this.prisma.issue.findFirst({ where: { key: upper, ...inProjects }, include: SEARCH_INCLUDE })
         : null,
       this.prisma.issue.findMany({
-        where: { ...inProjects, OR: [{ key: { contains: upper } }, { summary: { contains: term } }] },
+        where: { ...inProjects, OR: [{ key: contains(upper) }, { summary: contains(term) }] },
         include: SEARCH_INCLUDE,
         orderBy: { updatedAt: 'desc' },
         take: 8,
       }),
       this.prisma.project.findMany({
-        where: { ...(ids === null ? {} : { id: { in: ids } }), OR: [{ key: { contains: upper } }, { name: { contains: term } }] },
+        where: { ...(ids === null ? {} : { id: { in: ids } }), OR: [{ key: contains(upper) }, { name: contains(term) }] },
         select: { id: true, key: true, name: true },
         take: 5,
       }),

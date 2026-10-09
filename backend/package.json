@@ -3,13 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prebuild": "node scripts/prisma.js generate",
     "build": "nest build",
+    "predev": "node scripts/prisma.js generate",
     "dev": "nest start --watch",
     "start": "node dist/main",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
+    "db:migrate": "node scripts/prisma.js migrate dev",
+    "db:push": "node scripts/prisma.js db push",
     "db:seed": "ts-node prisma/seed.ts",
-    "db:generate": "prisma generate",
+    "db:generate": "node scripts/prisma.js generate",
     "db:seed:demo": "ts-node prisma/seed-demo.ts"
   },
   "dependencies": {

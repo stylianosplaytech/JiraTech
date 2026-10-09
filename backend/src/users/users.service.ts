@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
+import { contains } from '../common/text-match';
 
 const USER_SELECT = {
   id: true,
@@ -21,8 +22,8 @@ export class UsersService {
     const where = search
       ? {
           OR: [
-            { name: { contains: search } },
-            { email: { contains: search } },
+            { name: contains(search) },
+            { email: contains(search) },
           ],
         }
       : undefined;

@@ -10,6 +10,7 @@ import { AuthUser } from '../common/auth-user';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { extractMentions, sanitizeRich, toPlainText } from '../common/rich-text';
+import { contains } from '../common/text-match';
 import { AccessService } from '../access/access.service';
 import { WorkflowService, CATEGORY_NAMES } from '../workflow/workflow.service';
 import {
@@ -70,8 +71,8 @@ export class IssuesService {
     if (filters.epicName) where.epicName = filters.epicName;
     if (filters.search) {
       where.OR = [
-        { summary: { contains: filters.search } },
-        { key: { contains: filters.search.toUpperCase() } },
+        { summary: contains(filters.search) },
+        { key: contains(filters.search.toUpperCase()) },
       ];
     }
     return this.prisma.issue.findMany({
