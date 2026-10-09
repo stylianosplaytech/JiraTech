@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
     "build": "npm run build -w backend && npm run build -w frontend",
-    "start": "npm run db:push -w backend && npm run db:seed && npm run start -w backend",
+    "start": "npm run db:push -w backend && npm run db:seed && npm run db:seed:demo && npm run start -w backend",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "npm run db:migrate -w backend",
