@@ -1,0 +1,14 @@
+.git
+.gitignore
+.claude
+.vscode
+node_modules
+**/node_modules
+**/dist
+**/*.log
+backend/.env
+backend/uploads
+backend/mail-outbox
+backend/prisma/dev.db*
+backend/prisma/postgres
+docs

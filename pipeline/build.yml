@@ -1,0 +1,118 @@
+version: '1.0'
+
+# Builds and pushes both application images with the same immutable commit tag.
+# Required Codefresh configuration:
+#   git_integration  - Stash integration
+#   PUSH_REGISTRY   - registry integration (defaults to nexus_pbs_one)
+#   npmToken        - read token for nexus.pbs.one/repository/npm-all
+# Optional:
+#   IMAGE_TAG       - defaults to CF_REVISION
+#   NEXUS_SERVER    - defaults to nexus.pbs.one
+
+stages:
+  - Prepare
+  - Clone
+  - Build
+  - Push
+
+steps:
+  configure:
+    title: Resolve image tag and registry
+    image: alpine:3.19
+    stage: Prepare
+    environment:
+      - IMAGE_TAG=${{IMAGE_TAG}}
+      - CF_REVISION=${{CF_REVISION}}
+      - PUSH_REGISTRY=${{PUSH_REGISTRY}}
+      - NEXUS_SERVER=${{NEXUS_SERVER}}
+    commands:
+      - |
+        set -eu
+        TAG="${IMAGE_TAG:-${CF_REVISION:-}}"
+        case "$TAG" in *'${{'*|'') echo "IMAGE_TAG or CF_REVISION is required" >&2; exit 1 ;; esac
+        case "$TAG" in v[0-9]*) TAG="${TAG#v}" ;; esac
+        cf_export "RESOLVED_IMAGE_TAG=${TAG}"
+        cf_export "PUSH_REGISTRY=${PUSH_REGISTRY:-nexus_pbs_one}"
+        cf_export "NEXUS_SERVER=${NEXUS_SERVER:-nexus.pbs.one}"
+        echo "Building digital-ticketing images with tag ${TAG}"
+
+  main_clone:
+    title: Clone digital-ticketing
+    type: git-clone
+    stage: Clone
+    repo: '${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}'
+    revision: '${{CF_REVISION}}'
+    git: ${{git_integration}}
+    working_directory: /codefresh/volume
+    when:
+      condition:
+        all:
+          configured: steps.configure.result == 'success'
+
+  build_backend:
+    title: Build backend image
+    type: build
+    stage: Build
+    registry: ${{PUSH_REGISTRY}}
+    working_directory: /codefresh/volume/${{CF_REPO_NAME}}
+    dockerfile: docker/backend.Dockerfile
+    image_name: digital/devops/digital-ticketing-backend
+    tag: ${{RESOLVED_IMAGE_TAG}}
+    buildkit: true
+    build_arguments:
+      - NEXUS_SERVER=${{NEXUS_SERVER}}
+      - npmToken=${{npmToken}}
+      - http_proxy=${{BUILD_ARG_HTTP_PROXY}}
+      - https_proxy=${{BUILD_ARG_HTTP_PROXY}}
+      - no_proxy=${{BUILD_ARG_NO_PROXY}}
+    when:
+      condition:
+        all:
+          cloned: steps.main_clone.result == 'success'
+
+  build_frontend:
+    title: Build frontend image
+    type: build
+    stage: Build
+    registry: ${{PUSH_REGISTRY}}
+    working_directory: /codefresh/volume/${{CF_REPO_NAME}}
+    dockerfile: docker/frontend.Dockerfile
+    image_name: digital/devops/digital-ticketing-frontend
+    tag: ${{RESOLVED_IMAGE_TAG}}
+    buildkit: true
+    build_arguments:
+      - NEXUS_SERVER=${{NEXUS_SERVER}}
+      - npmToken=${{npmToken}}
+      - http_proxy=${{BUILD_ARG_HTTP_PROXY}}
+      - https_proxy=${{BUILD_ARG_HTTP_PROXY}}
+      - no_proxy=${{BUILD_ARG_NO_PROXY}}
+    when:
+      condition:
+        all:
+          cloned: steps.main_clone.result == 'success'
+
+  push_backend:
+    title: Push backend image
+    type: push
+    stage: Push
+    registry: ${{PUSH_REGISTRY}}
+    candidate: ${{build_backend}}
+    image_name: digital/devops/digital-ticketing-backend
+    tag: ${{RESOLVED_IMAGE_TAG}}
+    when:
+      condition:
+        all:
+          built: steps.build_backend.result == 'success'
+
+  push_frontend:
+    title: Push frontend image
+    type: push
+    stage: Push
+    registry: ${{PUSH_REGISTRY}}
+    candidate: ${{build_frontend}}
+    image_name: digital/devops/digital-ticketing-frontend
+    tag: ${{RESOLVED_IMAGE_TAG}}
+    when:
+      condition:
+        all:
+          built: steps.build_frontend.result == 'success'

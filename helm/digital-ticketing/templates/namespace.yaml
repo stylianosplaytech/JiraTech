@@ -1,0 +1,13 @@
+{{- if .Values.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "digital-ticketing.namespace" . }}
+  labels:
+    {{- include "digital-ticketing.bartenderLabels" . | nindent 4 }}
+  {{- $annotations := include "digital-ticketing.bartenderAnnotations" . }}
+  {{- if $annotations }}
+  annotations:
+    {{- $annotations | nindent 4 }}
+  {{- end }}
+{{- end }}

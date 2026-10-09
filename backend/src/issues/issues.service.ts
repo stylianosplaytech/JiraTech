@@ -31,7 +31,9 @@ const USER_BRIEF = { select: { id: true, name: true, email: true } };
 
 @Injectable()
 export class IssuesService {
-  private readonly uploadDir = path.resolve(__dirname, '../../uploads');
+  private readonly uploadDir = process.env.UPLOAD_DIR
+    ? path.resolve(process.env.UPLOAD_DIR)
+    : path.resolve(__dirname, '../../uploads');
 
   constructor(
     private prisma: PrismaService,
