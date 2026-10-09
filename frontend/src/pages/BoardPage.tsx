@@ -1,25 +1,114 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
+import type { BoardData, Issue } from '../api';
 import { useProject } from '../project';
 import { PriorityIcon, RagDot, TypeBadge } from '../components/Badges';
 import { SearchIcon } from '../components/Icons';
 import Avatar from '../components/Avatar';
-import { PageHeader, Spinner } from '../components/ui';
+import { Modal, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
+
+type Column = BoardData['columns'][number];
+
+interface MoveRequest { issue: Issue; to: Column; resolution?: string }
+
+const transitionsKey = (issue: Issue) => ['transitions', issue.id, issue.workflowStatus?.id];
+
+/** The board with `issue` moved to the top of `to`, as the server will have it after the transition. */
+function withMove(board: BoardData, { issue, to, resolution }: MoveRequest): BoardData {
+  const moved: Issue = {
+    ...issue,
+    status: to.status,
+    workflowStatus: { id: to.statusId, name: to.name, category: to.status },
+    resolution: to.status === 'CLOSED' ? resolution : undefined,
+  };
+  return {
+    columns: board.columns.map((c) => {
+      const rest = c.issues.filter((i) => i.id !== issue.id);
+      return c.statusId === to.statusId ? { ...c, issues: [moved, ...rest] } : { ...c, issues: rest };
+    }),
+  };
+}
 
 export default function BoardPage() {
   const { project } = useProject();
+  const queryClient = useQueryClient();
+  const toast = useToast();
   const [filter, setFilter] = useState('');
   const [onlyMine, setOnlyMine] = useState(false);
+  const [dragging, setDragging] = useState<{ issue: Issue; from: string } | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const [pendingDone, setPendingDone] = useState<{ issue: Issue; to: Column } | null>(null);
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const { data, isLoading } = useQuery({ queryKey: ['board'], queryFn: () => api.getBoard() });
 
+  // Where the dragged card may go, per the project's workflow (usually already prefetched on hover).
+  const { data: allowed } = useQuery({
+    queryKey: dragging ? transitionsKey(dragging.issue) : ['transitions', 'none'],
+    queryFn: () => api.getTransitions(dragging!.issue.id),
+    enabled: !!dragging,
+    staleTime: 60_000,
+  });
+  const prefetchTransitions = (issue: Issue) =>
+    queryClient.prefetchQuery({ queryKey: transitionsKey(issue), queryFn: () => api.getTransitions(issue.id), staleTime: 60_000 });
+
+  const move = useMutation({
+    mutationFn: ({ issue, to, resolution }: MoveRequest) => api.transitionIssue(issue.id, { statusId: to.statusId }, resolution),
+    // Move the card straight away; put it back if the server refuses.
+    onMutate: async (req) => {
+      await queryClient.cancelQueries({ queryKey: ['board'] });
+      const previous = queryClient.getQueryData<BoardData>(['board']);
+      if (previous) queryClient.setQueryData(['board'], withMove(previous, req));
+      return { previous };
+    },
+    onError: (e, req, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(['board'], ctx.previous);
+      toast(`${req.issue.key} was not moved: ${errorMessage(e)}`, 'error');
+    },
+    onSuccess: (_issue, req) => toast(`${req.issue.key} moved to ${req.to.name}`),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['board'] });
+      queryClient.invalidateQueries({ queryKey: ['transitions'] });
+      queryClient.invalidateQueries({ queryKey: ['issue'] });
+      queryClient.invalidateQueries({ queryKey: ['history'] });
+      queryClient.invalidateQueries({ queryKey: ['search'] });
+    },
+  });
+
   const q = filter.trim().toLowerCase();
-  const visible = (issues: NonNullable<typeof data>['columns'][number]['issues']) =>
+  const visible = (issues: Issue[]) =>
     issues.filter((i) =>
       (!q || i.summary.toLowerCase().includes(q) || i.key.toLowerCase().includes(q))
       && (!onlyMine || i.assignee?.id === me?.id));
+
+  /** null while the allowed moves are still loading: the server checks the move anyway. */
+  const canDropOn = (col: Column) => {
+    if (!dragging || col.statusId === dragging.from) return false;
+    return allowed ? allowed.some((s) => s.id === col.statusId) : null;
+  };
+
+  const endDrag = () => { setDragging(null); setOver(null); };
+
+  const drop = (col: Column) => {
+    if (!dragging) return;
+    const { issue, from } = dragging;
+    endDrag();
+    if (col.statusId === from) return;
+    if (canDropOn(col) === false) {
+      toast(`${issue.key} can't move from ${issue.workflowStatus?.name ?? 'its status'} to ${col.name}`, 'error');
+      return;
+    }
+    // Done statuses need a resolution.
+    if (col.status === 'CLOSED') setPendingDone({ issue, to: col });
+    else move.mutate({ issue, to: col });
+  };
+
+  const finishDone = (resolution: string) => {
+    if (!pendingDone) return;
+    move.mutate({ ...pendingDone, resolution });
+    setPendingDone(null);
+  };
 
   return (
     <div>
@@ -47,6 +136,7 @@ export default function BoardPage() {
               <Avatar name={me.name} size="xs" /> Only my issues
             </button>
           )}
+          <span className="text-xs text-jira-muted ml-auto">Drag a card to another column to change its status</span>
         </div>
       </PageHeader>
 
@@ -55,17 +145,50 @@ export default function BoardPage() {
           {data?.columns.map((col) => {
             const doneColumn = col.status === 'CLOSED';
             const issues = visible(col.issues);
+            const droppable = canDropOn(col);
+            const isSource = dragging?.from === col.statusId;
+            const isOver = over === col.statusId && droppable !== false && !isSource;
+            const state = !dragging || isSource
+              ? 'bg-jira-gray border-transparent'
+              : droppable === false
+                ? 'bg-jira-gray border-transparent opacity-50'
+                : isOver
+                  ? 'bg-jira-blue-light border-jira-blue'
+                  : 'bg-jira-gray border-jira-focus border-dashed';
             return (
-              <div key={col.statusId} className="bg-jira-gray rounded-[3px] min-h-[300px]">
+              <div
+                key={col.statusId}
+                className={`rounded-[3px] min-h-[300px] border-2 transition-colors ${state}`}
+                onDragOver={(e) => {
+                  if (!dragging || isSource || droppable === false) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (over !== col.statusId) setOver(col.statusId);
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null) && over === col.statusId) setOver(null);
+                }}
+                onDrop={(e) => { e.preventDefault(); drop(col); }}
+              >
                 <div className="px-3 pt-3 pb-2 text-xs font-semibold uppercase text-jira-subtle">
                   {col.name} <span className="ml-1 font-normal">{issues.length}</span>
+                  {dragging && droppable === false && !isSource && <span className="block normal-case font-normal mt-0.5">Not allowed by the workflow</span>}
                 </div>
                 <div className="px-2 pb-2 space-y-1.5">
                   {issues.map((issue) => (
                     <Link
                       key={issue.id}
                       to={`/browse/${issue.key}`}
-                      className="block bg-white rounded-[3px] shadow-card p-3 hover:bg-[#FAFBFC] transition-colors"
+                      draggable
+                      onMouseEnter={() => prefetchTransitions(issue)}
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', issue.key);
+                        setDragging({ issue, from: col.statusId });
+                      }}
+                      onDragEnd={endDrag}
+                      className={`block bg-white rounded-[3px] shadow-card p-3 hover:bg-[#FAFBFC] transition-colors cursor-grab active:cursor-grabbing ${
+                        dragging?.issue.id === issue.id ? 'opacity-40' : ''}`}
                     >
                       <p className="leading-snug text-jira-navy mb-2 line-clamp-3">{issue.summary}</p>
                       {issue.components && issue.components.length > 0 && (
@@ -89,12 +212,33 @@ export default function BoardPage() {
                       </div>
                     </Link>
                   ))}
-                  {issues.length === 0 && <p className="text-xs text-jira-muted text-center py-6">{doneColumn ? 'Nothing done in the last 14 days' : 'No issues'}</p>}
+                  {issues.length === 0 && (
+                    <p className="text-xs text-jira-muted text-center py-6">
+                      {dragging && droppable !== false && !isSource ? 'Drop here' : doneColumn ? 'Nothing done in the last 14 days' : 'No issues'}
+                    </p>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {pendingDone && (
+        <Modal
+          title={`Move ${pendingDone.issue.key} to ${pendingDone.to.name}`}
+          onClose={() => setPendingDone(null)}
+          footer={
+            <>
+              <button type="button" className="btn btn-subtle" onClick={() => setPendingDone(null)}>Cancel</button>
+              <button type="button" className="btn btn-default" onClick={() => finishDone('REJECTED')}>Won't do</button>
+              <button type="button" className="btn btn-primary" onClick={() => finishDone('COMPLETED')} autoFocus>Done</button>
+            </>
+          }
+        >
+          <p className="text-sm text-jira-navy">{pendingDone.issue.summary}</p>
+          <p className="text-sm text-jira-muted mt-2">Choose a resolution: was the work completed, or was it rejected?</p>
+        </Modal>
       )}
     </div>
   );
