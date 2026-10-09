@@ -4,7 +4,7 @@ A Jira-style ALM platform: multiple projects, issues, comments, links, JQL searc
 
 ## Stack
 
-- **Backend:** NestJS + Prisma + SQLite (default) or PostgreSQL
+- **Backend:** NestJS + Prisma+SQLite (default) or PostgreSQL
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS
 - **Auth:** JWT (extensible to OIDC)
 
