@@ -1,0 +1,27 @@
+# Render Blueprint: one Node web service (API + built UI) backed by Render PostgreSQL.
+# In Render: New → Blueprint → pick this repo.
+services:
+  - type: web
+    name: jiratech
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    # Sync the schema and seed the base users/project (idempotent) before starting.
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jiratech-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+
+databases:
+  - name: jiratech-db
+    plan: free
+    databaseName: jiratech
+    user: jiratech
