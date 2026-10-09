@@ -13,3 +13,4 @@ backend/prisma/dev.db-journal
 backend/uploads/
 mail-outbox/
 backend/prisma/postgres/
+backend/.env

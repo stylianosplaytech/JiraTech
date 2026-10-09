@@ -14,6 +14,9 @@ A Jira-style ALM platform: multiple projects, issues, comments, links, JQL searc
 # Install dependencies
 npm install
 
+# Create your local env file (then set JWT_SECRET)
+cp backend/.env.example backend/.env
+
 # Set up database (SQLite — no Docker required).
 # Re-run "db:push" after pulling schema changes.
 npm run db:push -w backend
