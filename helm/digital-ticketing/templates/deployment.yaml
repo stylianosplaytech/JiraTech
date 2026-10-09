@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "digital-ticketing.fullname" . }}
+  namespace: {{ include "digital-ticketing.namespace" . }}
+  labels:
+    {{- include "digital-ticketing.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    {{- toYaml .Values.deploymentStrategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "digital-ticketing.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "digital-ticketing.selectorLabels" . | nindent 8 }}
+      {{- with .Values.rolloutRevision }}
+      annotations:
+        deploy/rollout-revision: {{ . | quote }}
+      {{- end }}
+    spec:
+      {{- if .Values.persistence.enabled }}
+      securityContext:
+        fsGroup: {{ .Values.persistence.fsGroup }}
+      {{- end }}
+      {{- with .Values.imagePullSecret | toString | trim }}
+      imagePullSecrets:
+        - name: {{ . | quote }}
+      {{- end }}
+      {{- $worker := .Values.nodeSelectorWorker | toString | trim }}
+      {{- if and $worker (ne $worker "none") }}
+      nodeSelector:
+        node-role.pbs.sw/worker: {{ $worker | quote }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: "{{ .Values.images.backend.repository }}:{{ default .Chart.AppVersion .Values.images.backend.tag }}"
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          ports:
+            - name: backend
+              containerPort: {{ .Values.backend.port }}
+          env:
+            {{- range $key, $value := .Values.backend.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            - name: APP_URL
+              value: {{ printf "http://%s" (include "digital-ticketing.hostname" .) | quote }}
+          {{- if .Values.appSecret.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.appSecret.name }}
+          {{- end }}
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: backend
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: backend
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: backend
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.resources.backend | nindent 12 }}
+
+        - name: frontend
+          image: "{{ .Values.images.frontend.repository }}:{{ default .Chart.AppVersion .Values.images.frontend.tag }}"
+          imagePullPolicy: {{ .Values.images.frontend.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.resources.frontend | nindent 12 }}
+      {{- if .Values.persistence.enabled }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "digital-ticketing.fullname" . }}-data
+      {{- end }}

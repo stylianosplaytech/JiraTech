@@ -1,0 +1,85 @@
+namespace: ""
+createNamespace: true
+environmentNumber: "1"
+ingressDomain: preproduction02.pbs-master.com
+
+replicaCount: 1
+deploymentStrategy:
+  type: Recreate
+
+images:
+  backend:
+    repository: pcr.pbs.one/digital/devops/digital-ticketing-backend
+    tag: ""
+    pullPolicy: IfNotPresent
+  frontend:
+    repository: pcr.pbs.one/digital/devops/digital-ticketing-frontend
+    tag: ""
+    pullPolicy: IfNotPresent
+
+# Empty intentionally: esto-dev supplies registry authentication at node level.
+imagePullSecret: ""
+rolloutRevision: ""
+
+nodeSelectorWorker: general
+tolerations:
+  - key: cattle.io/os
+    operator: Equal
+    value: linux
+    effect: NoSchedule
+
+service:
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+
+backend:
+  port: 3000
+  env:
+    NODE_ENV: production
+    PORT: "3000"
+    DATABASE_URL: file:/data/digital-ticketing.db
+    UPLOAD_DIR: /data/uploads
+    RUN_PRISMA_GENERATE: "true"
+    RUN_DB_PUSH: "true"
+    SEED_DATABASE_ON_STARTUP: "false"
+    JWT_EXPIRES_IN: 7d
+
+appSecret:
+  enabled: true
+  name: digital-ticketing-app-secrets
+
+persistence:
+  enabled: true
+  size: 5Gi
+  accessMode: ReadWriteOnce
+  storageClassName: ""
+  mountPath: /data
+  fsGroup: 1000
+
+resources:
+  backend:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  frontend:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+bartenderSelector: devops
+bartenderRepo: digital-ticketing
+prId: ""
+branch: ""
+xUser: ""
+xUsername: ""

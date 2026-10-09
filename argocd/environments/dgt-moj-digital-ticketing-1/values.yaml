@@ -1,0 +1,49 @@
+# Geneity esto-dev-mojito — environment 1.
+namespace: dgt-moj-digital-ticketing-1
+createNamespace: false
+
+environmentNumber: "1"
+ingressDomain: estspdev1.estodev.ptec
+
+images:
+  backend:
+    repository: pcr.pbs.one/digital/devops/digital-ticketing-backend
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  frontend:
+    repository: pcr.pbs.one/digital/devops/digital-ticketing-frontend
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+# The esto-dev cluster supplies registry credentials at node level.
+imagePullSecret: ""
+
+nodeSelectorWorker: none
+tolerations: []
+
+ingress:
+  enabled: true
+  className: nginx
+
+persistence:
+  enabled: true
+  size: 5Gi
+  accessMode: ReadWriteOnce
+  storageClassName: longhorn-one-replica-autotrim-local
+  mountPath: /data
+  fsGroup: 1000
+
+backend:
+  env:
+    NODE_ENV: production
+    PORT: "3000"
+    DATABASE_URL: file:/data/digital-ticketing.db
+    UPLOAD_DIR: /data/uploads
+    RUN_PRISMA_GENERATE: "true"
+    RUN_DB_PUSH: "true"
+    SEED_DATABASE_ON_STARTUP: "false"
+    JWT_EXPIRES_IN: 7d
+
+appSecret:
+  enabled: true
+  name: digital-ticketing-app-secrets
