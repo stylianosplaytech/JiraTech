@@ -21,7 +21,8 @@ export const PlusIcon = (p: IconProps) => <svg {...base(p)}><path d="M12 5v14M5 
 export const SearchIcon = (p: IconProps) => <svg {...base(p)}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>;
 export const ChevronDownIcon = (p: IconProps) => <svg {...base(p)}><path d="m6 9 6 6 6-6" /></svg>;
 export const ChevronRightIcon = (p: IconProps) => <svg {...base(p)}><path d="m9 6 6 6-6 6" /></svg>;
-export const XIcon = (p: IconProps) => <svg {...base(p)}><path d="M18 6 6 18M6 6l12 12" /></svg>;
+export const MenuIcon = (p: IconProps) => <svg {...base(p)}><path d="M4 6h16M4 12h16M4 18h16" /></svg>;
+export const XIcon =(p: IconProps) => <svg {...base(p)}><path d="M18 6 6 18M6 6l12 12" /></svg>;
 export const CheckIcon = (p: IconProps) => <svg {...base(p)}><path d="M20 6 9 17l-5-5" /></svg>;
 export const MoreIcon = (p: IconProps) => <svg {...base(p)}><circle cx="5" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="19" cy="12" r="1.2" fill="currentColor" /></svg>;
 export const LinkIcon = (p: IconProps) => <svg {...base(p)}><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>;

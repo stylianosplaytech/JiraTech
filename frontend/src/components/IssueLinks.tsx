@@ -122,7 +122,7 @@ export default function IssueLinks({ issue, adding, onAddingChange, readOnly }: 
                 {!readOnly && <button
                   type="button"
                   onClick={() => remove.mutate(linkId)}
-                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-jira-muted hover:text-jira-navy"
+                  className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 focus:opacity-100 text-jira-muted hover:text-jira-navy"
                   title="Remove link"
                   aria-label={`Remove link to ${other.key}`}
                 >

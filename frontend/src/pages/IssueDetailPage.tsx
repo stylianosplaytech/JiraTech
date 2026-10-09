@@ -217,13 +217,13 @@ export default function IssueDetailPage() {
           {issue.parent && (
             <>
               <span>/</span>
-              <Link to={`/browse/${issue.parent.key}`} className="inline-flex items-center gap-1 hover:underline">
+              <Link to={`/browse/${issue.parent.key}`} className="inline-flex items-center gap-1 whitespace-nowrap hover:underline">
                 {issue.parent.type && <TypeBadge type={issue.parent.type} />}{issue.parent.key}
               </Link>
             </>
           )}
           <span>/</span>
-          <span className="inline-flex items-center gap-1 text-jira-navy">
+          <span className="inline-flex items-center gap-1 whitespace-nowrap text-jira-navy">
             <TypeBadge type={issue.type} />
             <span>{issue.key}</span>
           </span>
@@ -351,7 +351,7 @@ export default function IssueDetailPage() {
                             deleteAttachment.mutate(a.id);
                           }
                         }}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 btn btn-subtle btn-sm btn-icon"
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 btn btn-subtle btn-sm btn-icon"
                         aria-label={`Delete ${a.filename}`}
                       >
                         <TrashIcon size={14} />
@@ -620,7 +620,7 @@ export default function IssueDetailPage() {
                   {(canEdit || w.userId === currentUser?.id) && <button
                     type="button"
                     onClick={() => removeWatcher.mutate(w.userId)}
-                    className="opacity-0 group-hover:opacity-100 text-jira-muted hover:text-jira-navy"
+                    className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-jira-muted hover:text-jira-navy"
                     aria-label={`Remove ${w.user.name}`}
                   >
                     <XIcon size={14} />

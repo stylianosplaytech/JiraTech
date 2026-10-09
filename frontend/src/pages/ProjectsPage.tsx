@@ -131,52 +131,54 @@ export default function ProjectsPage() {
 
       {isLoading ? <Spinner /> : (
         <>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Key</th>
-                <th>Type</th>
-                <th>Access</th>
-                <th>Your role</th>
-                <th>Lead</th>
-                <th className="text-right">Issues</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {visible?.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <Link to={`/projects/${p.key}`} className="flex items-center gap-3 group">
-                      <span className="flex items-center justify-center w-6 h-6 rounded-[3px] bg-jira-blue-light text-jira-blue shrink-0"><FolderIcon size={14} /></span>
-                      <span className="min-w-0">
-                        <span className="block font-medium text-jira-blue group-hover:underline">{p.name}</span>
-                        {p.description && <span className="block text-xs text-jira-muted truncate max-w-md">{p.description}</span>}
-                      </span>
-                    </Link>
-                  </td>
-                  <td className="font-mono text-xs">{p.key}</td>
-                  <td className="text-jira-subtle">{p.strictHierarchy ? 'SPORTS conventions' : 'Standard'}</td>
-                  <td>
-                    <span className={`lozenge ${p.defaultAccess === 'NONE' ? 'bg-[#FFEBE6] text-[#BF2600]' : p.defaultAccess === 'VIEWER' ? 'bg-[#FFFAE6] text-[#974F0C]' : 'bg-[#E3FCEF] text-[#006644]'}`} title={ACCESS_INFO[p.defaultAccess].help}>
-                      {ACCESS_INFO[p.defaultAccess].label}
-                    </span>
-                  </td>
-                  <td className="text-jira-subtle">{p.myRole && p.myRole !== 'NONE' ? p.myRole.charAt(0) + p.myRole.slice(1).toLowerCase() : '—'}</td>
-                  <td>
-                    {p.lead ? <span className="flex items-center gap-2"><Avatar name={p.lead.name} size="xs" />{p.lead.name}</span> : <span className="text-jira-muted">—</span>}
-                  </td>
-                  <td className="text-right">{p._count?.issues ?? 0}</td>
-                  <td className="text-right w-28">
-                    {p.key === projectKey
-                      ? <span className="lozenge bg-jira-blue-light text-jira-blue">Current</span>
-                      : <button type="button" onClick={() => setProjectKey(p.key)} className="btn btn-subtle btn-sm">Switch to</button>}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Key</th>
+                  <th>Type</th>
+                  <th>Access</th>
+                  <th>Your role</th>
+                  <th>Lead</th>
+                  <th className="text-right">Issues</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {visible?.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <Link to={`/projects/${p.key}`} className="flex items-center gap-3 group">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-[3px] bg-jira-blue-light text-jira-blue shrink-0"><FolderIcon size={14} /></span>
+                        <span className="min-w-0">
+                          <span className="block font-medium text-jira-blue group-hover:underline">{p.name}</span>
+                          {p.description && <span className="block text-xs text-jira-muted truncate max-w-md">{p.description}</span>}
+                        </span>
+                      </Link>
+                    </td>
+                    <td className="font-mono text-xs">{p.key}</td>
+                    <td className="text-jira-subtle">{p.strictHierarchy ? 'SPORTS conventions' : 'Standard'}</td>
+                    <td>
+                      <span className={`lozenge ${p.defaultAccess === 'NONE' ? 'bg-[#FFEBE6] text-[#BF2600]' : p.defaultAccess === 'VIEWER' ? 'bg-[#FFFAE6] text-[#974F0C]' : 'bg-[#E3FCEF] text-[#006644]'}`} title={ACCESS_INFO[p.defaultAccess].help}>
+                        {ACCESS_INFO[p.defaultAccess].label}
+                      </span>
+                    </td>
+                    <td className="text-jira-subtle">{p.myRole && p.myRole !== 'NONE' ? p.myRole.charAt(0) + p.myRole.slice(1).toLowerCase() : '—'}</td>
+                    <td>
+                      {p.lead ? <span className="flex items-center gap-2"><Avatar name={p.lead.name} size="xs" />{p.lead.name}</span> : <span className="text-jira-muted">—</span>}
+                    </td>
+                    <td className="text-right">{p._count?.issues ?? 0}</td>
+                    <td className="text-right w-28">
+                      {p.key === projectKey
+                        ? <span className="lozenge bg-jira-blue-light text-jira-blue">Current</span>
+                        : <button type="button" onClick={() => setProjectKey(p.key)} className="btn btn-subtle btn-sm">Switch to</button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {visible?.length === 0 && <EmptyState title="No projects match your search">Check the spelling or try another keyword.</EmptyState>}
         </>
       )}

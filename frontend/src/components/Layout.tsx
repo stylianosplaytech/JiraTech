@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import type { User } from '../api';
@@ -9,7 +9,7 @@ import QuickSearch from './QuickSearch';
 import NotificationBell from './NotificationBell';
 import Avatar from './Avatar';
 import { Dropdown, Modal, useToast } from './ui';
-import { ChevronDownIcon, LogoutIcon, PlusIcon } from './Icons';
+import { ChevronDownIcon, LogoutIcon, MenuIcon, PlusIcon, XIcon } from './Icons';
 import CreateIssueForm from './CreateIssueForm';
 
 const NAV = [
@@ -35,7 +35,7 @@ function Logo() {
         <path d="M12 2 22 12 12 22 2 12Z" fill="url(#jt-g)" />
         <path d="M12 7.5 16.5 12 12 16.5 7.5 12Z" fill="white" />
       </svg>
-      <span className="font-semibold text-[17px] text-jira-navy tracking-tight">JiraTech</span>
+      <span className="hidden sm:inline font-semibold text-[17px] text-jira-navy tracking-tight">JiraTech</span>
     </Link>
   );
 }
@@ -49,7 +49,7 @@ function ProjectSwitcher() {
       trigger={({ toggle, open }) => (
         <button type="button" onClick={toggle} className={`btn ${open ? 'bg-jira-blue-light text-jira-blue' : 'btn-subtle text-jira-navy'}`} title="Switch project">
           <span className="font-mono text-[11px] bg-jira-gray-hover text-jira-subtle rounded-[3px] px-1.5 py-0.5">{project?.key ?? '—'}</span>
-          <span className="max-w-[150px] truncate">{project?.name ?? 'Select project'}</span>
+          <span className="hidden sm:inline max-w-[150px] truncate">{project?.name ?? 'Select project'}</span>
           <ChevronDownIcon size={14} />
         </button>
       )}
@@ -123,6 +123,10 @@ export default function Layout({ children, user, loading }: { children: React.Re
   const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [createPending, setCreatePending] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname } = useLocation();
+
+  useEffect(() => setMenuOpen(false), [pathname]);
 
   const logout = () => {
     localStorage.removeItem('token');
@@ -133,10 +137,20 @@ export default function Layout({ children, user, loading }: { children: React.Re
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-40 bg-white border-b border-jira-border print:hidden">
-        <div className="h-14 px-4 flex items-center gap-2">
+        <div className="h-14 px-2 sm:px-4 flex items-center gap-1 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((o) => !o)}
+            className="btn btn-subtle btn-icon lg:hidden"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-nav"
+          >
+            {menuOpen ? <XIcon /> : <MenuIcon />}
+          </button>
           <Logo />
           <ProjectSwitcher />
-          <nav className="flex items-stretch h-14 ml-1" aria-label="Main">
+          <nav className="hidden lg:flex items-stretch h-14 ml-1" aria-label="Main">
             {NAV.map((item) => (
               <NavLink
                 key={item.path}
@@ -153,10 +167,10 @@ export default function Layout({ children, user, loading }: { children: React.Re
               </NavLink>
             ))}
           </nav>
-          <button type="button" onClick={() => setCreating(true)} className="btn btn-primary ml-2">
-            <PlusIcon size={14} /> Create
+          <button type="button" onClick={() => setCreating(true)} className="btn btn-primary max-sm:w-8 max-sm:px-0 sm:ml-2" aria-label="Create issue">
+            <PlusIcon size={14} /> <span className="hidden sm:inline">Create</span>
           </button>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1 sm:gap-2">
             <QuickSearch />
             <NotificationBell />
             {!loading && user && (
@@ -189,9 +203,26 @@ export default function Layout({ children, user, loading }: { children: React.Re
             )}
           </div>
         </div>
+        {menuOpen && (
+          <nav id="mobile-nav" className="lg:hidden border-t border-jira-border py-2" aria-label="Main">
+            {NAV.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.end}
+                className={({ isActive }) =>
+                  `block px-4 py-2.5 text-sm font-medium border-l-[3px] ${
+                    isActive ? 'border-jira-blue bg-jira-blue-light/60 text-jira-blue' : 'border-transparent text-jira-navy hover:bg-jira-gray'
+                  }`}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+        )}
       </header>
 
-      <main className="flex-1 w-full px-6 py-6 print:p-0">{children}</main>
+      <main className="flex-1 w-full min-w-0 px-4 py-4 sm:px-6 sm:py-6 print:p-0">{children}</main>
 
       {creating && (
         <Modal title="Create issue" onClose={() => !createPending && setCreating(false)} width="max-w-2xl">

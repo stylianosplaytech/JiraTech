@@ -118,7 +118,7 @@ export default function ProjectPage() {
                 return n ? <div key={s} style={{ width: `${(n / Math.max(total, 1)) * 100}%`, background: STATUS_BAR[s] }} title={`${STATUS_LABELS[s]}: ${n}`} /> : null;
               })}
             </div>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {STATUSES.map((s) => (
                 <Link key={s} to={searchLink(project.key, `status = ${s}`)} className="card p-4 hover:bg-jira-gray transition-colors">
                   <div className="text-2xl font-semibold mb-1">{project.issueCountsByStatus[s] ?? 0}</div>
@@ -133,29 +133,31 @@ export default function ProjectPage() {
               <h2 className="text-base font-semibold">Versions</h2>
             </div>
             {project.versions.length > 0 && (
-              <table className="data-table mb-3">
-                <thead><tr><th>Version</th><th>Status</th><th>Release date</th><th /></tr></thead>
-                <tbody>
-                  {project.versions.map((v) => (
-                    <tr key={v.id}>
-                      <td><Link to={searchLink(project.key, `fixVersion = ${jqlValue(v.name)}`)} className="link font-medium">{v.name}</Link></td>
-                      <td>
-                        <span className={`lozenge ${v.released ? 'bg-[#E3FCEF] text-[#006644]' : 'bg-jira-gray-hover text-[#42526E]'}`}>
-                          {v.released ? 'Released' : 'Unreleased'}
-                        </span>
-                      </td>
-                      <td className="text-jira-subtle">{v.releaseDate ? new Date(v.releaseDate).toLocaleDateString() : '—'}</td>
-                      <td className="text-right">
-                        {canManageVersions && (
-                          <button type="button" onClick={() => toggleRelease.mutate({ id: v.id, released: !v.released })} className="btn btn-subtle btn-sm">
-                            {v.released ? 'Unrelease' : 'Release'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto">
+                <table className="data-table mb-3">
+                  <thead><tr><th>Version</th><th>Status</th><th>Release date</th><th /></tr></thead>
+                  <tbody>
+                    {project.versions.map((v) => (
+                      <tr key={v.id}>
+                        <td><Link to={searchLink(project.key, `fixVersion = ${jqlValue(v.name)}`)} className="link font-medium">{v.name}</Link></td>
+                        <td>
+                          <span className={`lozenge ${v.released ? 'bg-[#E3FCEF] text-[#006644]' : 'bg-jira-gray-hover text-[#42526E]'}`}>
+                            {v.released ? 'Released' : 'Unreleased'}
+                          </span>
+                        </td>
+                        <td className="text-jira-subtle">{v.releaseDate ? new Date(v.releaseDate).toLocaleDateString() : '—'}</td>
+                        <td className="text-right">
+                          {canManageVersions && (
+                            <button type="button" onClick={() => toggleRelease.mutate({ id: v.id, released: !v.released })} className="btn btn-subtle btn-sm">
+                              {v.released ? 'Unrelease' : 'Release'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
             {project.versions.length === 0 && <p className="text-jira-muted mb-3">No versions yet.</p>}
             {canManageVersions && (
@@ -170,18 +172,20 @@ export default function ProjectPage() {
           <section>
             <h2 className="text-base font-semibold mb-3">Components</h2>
             {project.components.length > 0 && (
-              <table className="data-table mb-3">
-                <thead><tr><th>Component</th><th>Type</th><th>Lead</th></tr></thead>
-                <tbody>
-                  {project.components.map((c) => (
-                    <tr key={c.id}>
-                      <td><Link to={searchLink(project.key, `component = ${jqlValue(c.name)}`)} className="link font-medium">{c.name}</Link></td>
-                      <td className="text-jira-subtle">{typeLabel(c.type)}</td>
-                      <td>{c.lead ? <span className="flex items-center gap-2"><Avatar name={c.lead.name} size="xs" />{c.lead.name}</span> : <span className="text-jira-muted">—</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto">
+                <table className="data-table mb-3">
+                  <thead><tr><th>Component</th><th>Type</th><th>Lead</th></tr></thead>
+                  <tbody>
+                    {project.components.map((c) => (
+                      <tr key={c.id}>
+                        <td><Link to={searchLink(project.key, `component = ${jqlValue(c.name)}`)} className="link font-medium">{c.name}</Link></td>
+                        <td className="text-jira-subtle">{typeLabel(c.type)}</td>
+                        <td>{c.lead ? <span className="flex items-center gap-2"><Avatar name={c.lead.name} size="xs" />{c.lead.name}</span> : <span className="text-jira-muted">—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
             {project.components.length === 0 && <p className="text-jira-muted mb-3">No components yet.</p>}
             {canAdmin && (

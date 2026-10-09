@@ -86,7 +86,7 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="popover absolute right-0 top-full mt-2 w-[440px] py-0 overflow-hidden" role="dialog" aria-label="Notifications">
+        <div className="popover absolute right-0 top-full mt-2 w-[440px] max-sm:fixed max-sm:inset-x-2 max-sm:top-[3.75rem] max-sm:w-auto py-0 overflow-hidden" role="dialog" aria-label="Notifications">
           <div className="flex items-center justify-between px-4 pt-4 pb-2">
             <h2 className="text-lg font-medium">Notifications</h2>
             <label className="flex items-center gap-2 text-xs text-jira-subtle cursor-pointer select-none">
@@ -154,7 +154,7 @@ export default function NotificationBell() {
                     title={n.readAt ? 'Mark as unread' : 'Mark as read'}
                     aria-label={n.readAt ? 'Mark as unread' : 'Mark as read'}
                   >
-                    <span className={`block w-2.5 h-2.5 rounded-full ${n.readAt ? 'border-2 border-jira-border opacity-0 group-hover:opacity-100' : 'bg-jira-blue'}`} />
+                    <span className={`block w-2.5 h-2.5 rounded-full ${n.readAt ? 'border-2 border-jira-border opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100' : 'bg-jira-blue'}`} />
                   </button>
                 </div>
               );

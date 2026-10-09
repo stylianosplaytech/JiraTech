@@ -114,7 +114,7 @@ export function MultiPicker({
             </span>
           );
         })}
-        {!disabled && <ChevronDownIcon size={14} className="ml-auto text-jira-muted opacity-0 group-hover:opacity-100" />}
+        {!disabled && <ChevronDownIcon size={14} className="ml-auto text-jira-muted opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100" />}
       </div>
 
       {open && (

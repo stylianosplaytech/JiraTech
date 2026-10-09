@@ -41,7 +41,7 @@ export function Dropdown({
     <div className="relative inline-block" ref={ref}>
       {trigger({ open, toggle: () => setOpen((o) => !o) })}
       {open && (
-        <div className={`popover absolute top-full mt-1 ${align === 'right' ? 'right-0' : 'left-0'} ${width}`}>
+        <div className={`popover absolute top-full mt-1 ${align === 'right' ? 'right-0' : 'left-0'} ${width} max-w-[calc(100vw-1rem)]`}>
           {children(close)}
         </div>
       )}
@@ -67,21 +67,21 @@ export function Modal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[#091E427A] p-4 pt-[10vh] overflow-y-auto" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[#091E427A] p-2 pt-4 sm:p-4 sm:pt-[10vh] overflow-y-auto" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         className={`w-full ${width} bg-white rounded-[3px] shadow-modal`}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 pt-5 pb-3">
+        <div className="flex items-center justify-between gap-2 px-4 sm:px-6 pt-5 pb-3">
           <h2 className="text-xl font-medium text-jira-navy">{title}</h2>
           <button type="button" onClick={onClose} className="btn btn-subtle btn-icon" aria-label="Close">
             <XIcon />
           </button>
         </div>
-        <div className="px-6 pb-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 px-6 py-4 border-t border-jira-border">{footer}</div>}
+        <div className="px-4 sm:px-6 pb-4">{children}</div>
+        {footer && <div className="flex flex-wrap justify-end gap-2 px-4 sm:px-6 py-4 border-t border-jira-border">{footer}</div>}
       </div>
     </div>
   );
@@ -205,9 +205,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={show}>
       {children}
-      <div className="fixed bottom-6 left-6 z-[60] flex flex-col gap-2">
+      <div className="fixed bottom-4 inset-x-4 sm:bottom-6 sm:left-6 sm:right-auto z-[60] flex flex-col gap-2">
         {toasts.map((t) => (
-          <div key={t.id} className="flex items-start gap-2 bg-white shadow-modal rounded-[3px] px-4 py-3 w-80 text-sm">
+          <div key={t.id} className="flex items-start gap-2 bg-white shadow-modal rounded-[3px] px-4 py-3 w-full sm:w-80 text-sm">
             <span className={t.tone === 'error' ? 'text-[#DE350B]' : 'text-[#36B37E]'}>
               {t.tone === 'error' ? <AlertIcon /> : <CheckIcon />}
             </span>
@@ -256,9 +256,9 @@ export function PageHeader({ breadcrumbs, title, actions, children }: {
   return (
     <div className="mb-6">
       {breadcrumbs && <div className="text-sm text-jira-subtle mb-2">{breadcrumbs}</div>}
-      <div className="flex items-start justify-between gap-4">
-        <h1 className="page-title">{title}</h1>
-        {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <h1 className="page-title min-w-0 break-words">{title}</h1>
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
       {children}
     </div>

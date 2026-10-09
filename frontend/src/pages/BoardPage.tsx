@@ -136,12 +136,12 @@ export default function BoardPage() {
               <Avatar name={me.name} size="xs" /> Only my issues
             </button>
           )}
-          <span className="text-xs text-jira-muted ml-auto">Drag a card to another column to change its status</span>
+          <span className="hidden md:inline text-xs text-jira-muted ml-auto">Drag a card to another column to change its status</span>
         </div>
       </PageHeader>
 
       {isLoading ? <Spinner /> : (
-        <div className="grid gap-2 items-start" style={{ gridTemplateColumns: `repeat(${Math.max(data?.columns.length ?? 4, 1)}, minmax(200px, 1fr))` }}>
+        <div className="grid gap-2 items-start overflow-x-auto pb-2 max-sm:snap-x max-sm:snap-mandatory" style={{ gridTemplateColumns: `repeat(${Math.max(data?.columns.length ?? 4, 1)}, minmax(200px, 1fr))` }}>
           {data?.columns.map((col) => {
             const doneColumn = col.status === 'CLOSED';
             const issues = visible(col.issues);
@@ -158,7 +158,7 @@ export default function BoardPage() {
             return (
               <div
                 key={col.statusId}
-                className={`rounded-[3px] min-h-[300px] border-2 transition-colors ${state}`}
+                className={`rounded-[3px] min-h-[300px] border-2 transition-colors snap-start ${state}`}
                 onDragOver={(e) => {
                   if (!dragging || isSource || droppable === false) return;
                   e.preventDefault();

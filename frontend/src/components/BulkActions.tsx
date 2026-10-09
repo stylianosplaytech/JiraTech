@@ -186,7 +186,7 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
             </div>
             {singleProject ? (
               <>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <span className="field-label">Add labels</span>
                     <div className="rounded-[3px] border-2 border-jira-border bg-jira-input">
@@ -200,7 +200,7 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <span className="field-label">Add components</span>
                     <div className="rounded-[3px] border-2 border-jira-border bg-jira-input">

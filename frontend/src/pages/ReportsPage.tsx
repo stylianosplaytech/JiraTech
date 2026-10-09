@@ -238,39 +238,41 @@ function ReportBanner({ title, subtitle, pdf }: { title: string; subtitle: strin
 
 function IssueTable({ rows, showStatus = true }: { rows: ReportIssueRow[]; showStatus?: boolean }) {
   return (
-    <table className="data-table text-xs bg-white">
-      <thead>
-        <tr>
-          <th>Parent</th>
-          <th>Key</th>
-          <th>Summary</th>
-          <th>Type</th>
-          <th>Priority</th>
-          {showStatus && <th>Status</th>}
-          <th>Created</th>
-          <th>Assignee</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.key}>
-            <td className="whitespace-nowrap">{r.parentKey ? <Link to={`/browse/${r.parentKey}`} className="link">{r.parentKey}</Link> : ''}</td>
-            <td className="whitespace-nowrap"><Link to={`/browse/${r.key}`} className="link">{r.key}</Link></td>
-            <td className="min-w-[240px]">{r.summary}</td>
-            <td className="whitespace-nowrap">{typeLabel(r.type)}</td>
-            <td className="whitespace-nowrap">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ background: PRIORITY_COLORS[r.priority] }} />
-                {priorityLabel(r.priority)}
-              </span>
-            </td>
-            {showStatus && <td className="whitespace-nowrap">{r.statusName}</td>}
-            <td className="whitespace-nowrap">{fmtDate(r.createdAt)}</td>
-            <td className="whitespace-nowrap">{r.assignee ?? <span className="text-jira-muted">Unassigned</span>}</td>
+    <div className="overflow-x-auto">
+      <table className="data-table text-xs bg-white">
+        <thead>
+          <tr>
+            <th>Parent</th>
+            <th>Key</th>
+            <th>Summary</th>
+            <th>Type</th>
+            <th>Priority</th>
+            {showStatus && <th>Status</th>}
+            <th>Created</th>
+            <th>Assignee</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key}>
+              <td className="whitespace-nowrap">{r.parentKey ? <Link to={`/browse/${r.parentKey}`} className="link">{r.parentKey}</Link> : ''}</td>
+              <td className="whitespace-nowrap"><Link to={`/browse/${r.key}`} className="link">{r.key}</Link></td>
+              <td className="min-w-[240px]">{r.summary}</td>
+              <td className="whitespace-nowrap">{typeLabel(r.type)}</td>
+              <td className="whitespace-nowrap">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: PRIORITY_COLORS[r.priority] }} />
+                  {priorityLabel(r.priority)}
+                </span>
+              </td>
+              {showStatus && <td className="whitespace-nowrap">{r.statusName}</td>}
+              <td className="whitespace-nowrap">{fmtDate(r.createdAt)}</td>
+              <td className="whitespace-nowrap">{r.assignee ?? <span className="text-jira-muted">Unassigned</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -558,7 +560,7 @@ export default function ReportsPage() {
           ))}
         </div>
       </PageHeader>
-      <div className="flex gap-1 border-b border-jira-border mb-5" role="tablist">
+      <div className="flex gap-1 border-b border-jira-border mb-5 overflow-x-auto [scrollbar-width:none]" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -566,7 +568,7 @@ export default function ReportsPage() {
             role="tab"
             aria-selected={tab === t.id}
             onClick={() => update({ tab: t.id === 'status' ? '' : t.id })}
-            className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t.id ? 'border-[#2E8B57] text-[#1F4E3D]' : 'border-transparent text-jira-subtle hover:text-jira-navy'}`}
+            className={`px-3 py-2 text-sm font-medium whitespace-nowrap -mb-px border-b-2 ${tab === t.id ? 'border-[#2E8B57] text-[#1F4E3D]' : 'border-transparent text-jira-subtle hover:text-jira-navy'}`}
           >
             {t.label}
           </button>
@@ -576,7 +578,7 @@ export default function ReportsPage() {
       {isLoading ? <Spinner label="Building reports…" /> : error ? (
         <EmptyState title="Reports unavailable">{errorMessage(error)}</EmptyState>
       ) : data && (
-        <div className="bg-[#F3F6F1] -mx-6 px-6 py-5">
+        <div className="bg-[#F3F6F1] -mx-4 px-4 sm:-mx-6 sm:px-6 py-5">
           <Active data={data} />
         </div>
       )}

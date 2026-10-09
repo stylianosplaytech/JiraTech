@@ -66,25 +66,27 @@ export default function UsersPage() {
 
       {isLoading ? <Spinner /> : (
         <>
-          <table className="data-table">
-            <thead>
-              <tr><th>Name</th><th>Email</th><th>Role</th>{isAdmin && <th className="w-24" />}</tr>
-            </thead>
-            <tbody>
-              {users?.map((user) => (
-                <tr key={user.id}>
-                  <td><span className="flex items-center gap-3"><Avatar name={user.name} size="md" /><span className="font-medium">{user.name}</span></span></td>
-                  <td className="text-jira-subtle">{user.email}</td>
-                  <td><span className="lozenge bg-jira-gray-hover text-[#42526E]">{humanize(user.role)}</span></td>
-                  {isAdmin && (
-                    <td className="text-right">
-                      <button type="button" onClick={() => open({ mode: 'edit', user })} className="btn btn-subtle btn-sm"><EditIcon size={13} /> Edit</button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr><th>Name</th><th>Email</th><th>Role</th>{isAdmin && <th className="w-24" />}</tr>
+              </thead>
+              <tbody>
+                {users?.map((user) => (
+                  <tr key={user.id}>
+                    <td><span className="flex items-center gap-3"><Avatar name={user.name} size="md" /><span className="font-medium">{user.name}</span></span></td>
+                    <td className="text-jira-subtle">{user.email}</td>
+                    <td><span className="lozenge bg-jira-gray-hover text-[#42526E]">{humanize(user.role)}</span></td>
+                    {isAdmin && (
+                      <td className="text-right">
+                        <button type="button" onClick={() => open({ mode: 'edit', user })} className="btn btn-subtle btn-sm"><EditIcon size={13} /> Edit</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {users?.length === 0 && <EmptyState title="No people found">Try a different name or email.</EmptyState>}
         </>
       )}

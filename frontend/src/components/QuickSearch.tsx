@@ -13,6 +13,7 @@ export default function QuickSearch() {
   const [q, setQ] = useState('');
   const [debounced, setDebounced] = useState('');
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q.trim()), 200);
@@ -24,7 +25,8 @@ export default function QuickSearch() {
       const target = e.target as HTMLElement;
       if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) && !target.isContentEditable) {
         e.preventDefault();
-        inputRef.current?.focus();
+        setExpanded(true);
+        setTimeout(() => inputRef.current?.focus());
       }
     };
     window.addEventListener('keydown', onKey);
@@ -54,73 +56,84 @@ export default function QuickSearch() {
 
   const showResults = open && debounced.length >= 2 && data;
 
+  // Below md the box collapses to an icon; tapping it drops a full-width search bar under the header.
   return (
-    <div className="relative">
-      <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-jira-muted pointer-events-none" />
-      <input
-        ref={inputRef}
-        value={q}
-        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') submit();
-          if (e.key === 'Escape') close();
-        }}
-        placeholder="Search"
-        aria-label="Search issues and projects (press /)"
-        className="input h-8 w-56 focus:w-80 pl-8 transition-[width]"
-      />
-      {showResults && (
-        <div className="popover absolute right-0 top-full mt-1 w-96 overflow-hidden">
-          {data.issues.length === 0 && data.projects.length === 0 && (
-            <div className="px-3 py-2 text-jira-muted">No matches. Press Enter to search all text.</div>
-          )}
-          {data.issues.length > 0 && (
-            <>
-              <div className="menu-heading">Issues</div>
-              {data.issues.map((i) => (
-                <button
-                  key={i.id}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => { navigate(`/browse/${i.key}`); close(); }}
-                  className="menu-item"
-                >
-                  <TypeBadge type={i.type} />
-                  <span className="text-jira-subtle shrink-0">{i.key}</span>
-                  <span className="truncate">{i.summary}</span>
-                </button>
-              ))}
-            </>
-          )}
-          {data.projects.length > 0 && (
-            <>
-              <div className="menu-heading">Projects</div>
-              {data.projects.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => { navigate(`/projects/${p.key}`); close(); }}
-                  className="menu-item"
-                >
-                  <span className="font-mono text-[11px] bg-jira-gray-hover rounded-[3px] px-1.5 py-0.5">{p.key}</span>
-                  <span className="truncate">{p.name}</span>
-                </button>
-              ))}
-            </>
-          )}
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={submit}
-            className="menu-item border-t border-jira-border text-jira-blue"
-          >
-            Search all issues for “{q.trim()}”
-          </button>
-        </div>
-      )}
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => { setExpanded(true); setTimeout(() => inputRef.current?.focus()); }}
+        className={`btn btn-subtle btn-icon md:hidden ${expanded ? 'invisible' : ''}`}
+        aria-label="Search issues and projects"
+      >
+        <SearchIcon />
+      </button>
+      <div className={expanded ? 'max-md:absolute max-md:inset-x-0 max-md:top-full max-md:bg-white max-md:border-b max-md:border-jira-border max-md:p-2 md:relative' : 'relative max-md:hidden'}>
+        <SearchIcon size={14} className={`absolute left-2.5 top-1/2 -translate-y-1/2 text-jira-muted pointer-events-none ${expanded ? 'max-md:left-4' : ''}`} />
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => { setOpen(false); setExpanded(false); }, 150)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+            if (e.key === 'Escape') close();
+          }}
+          placeholder="Search"
+          aria-label="Search issues and projects (press /)"
+          className="input h-8 w-full md:w-56 md:focus:w-80 pl-8 transition-[width]"
+        />
+        {showResults && (
+          <div className="popover absolute right-0 top-full mt-1 w-96 max-md:left-0 max-md:w-auto overflow-hidden">
+            {data.issues.length === 0 && data.projects.length === 0 && (
+              <div className="px-3 py-2 text-jira-muted">No matches. Press Enter to search all text.</div>
+            )}
+            {data.issues.length > 0 && (
+              <>
+                <div className="menu-heading">Issues</div>
+                {data.issues.map((i) => (
+                  <button
+                    key={i.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => { navigate(`/browse/${i.key}`); close(); }}
+                    className="menu-item"
+                  >
+                    <TypeBadge type={i.type} />
+                    <span className="text-jira-subtle shrink-0">{i.key}</span>
+                    <span className="truncate">{i.summary}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            {data.projects.length > 0 && (
+              <>
+                <div className="menu-heading">Projects</div>
+                {data.projects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => { navigate(`/projects/${p.key}`); close(); }}
+                    className="menu-item"
+                  >
+                    <span className="font-mono text-[11px] bg-jira-gray-hover rounded-[3px] px-1.5 py-0.5">{p.key}</span>
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={submit}
+              className="menu-item border-t border-jira-border text-jira-blue"
+            >
+              Search all issues for “{q.trim()}”
+            </button>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

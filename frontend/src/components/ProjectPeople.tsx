@@ -78,61 +78,63 @@ export default function ProjectPeople({ projectKey, canAdmin }: { projectKey: st
         </div>
       </div>
 
-      <table className="data-table mb-3">
-        <thead><tr><th>Name</th><th>Email</th><th className="w-48">Role</th>{canAdmin && <th className="w-12" />}</tr></thead>
-        <tbody>
-          {data.members.map((m) => {
-            const isLead = m.userId === data.leadId;
-            return (
-              <tr key={m.userId}>
-                <td>
-                  <span className="flex items-center gap-2">
-                    <Avatar name={m.user.name} size="xs" />{m.user.name}
-                    {isLead && <span className="lozenge bg-jira-blue-light text-jira-blue">Lead</span>}
-                  </span>
-                </td>
-                <td className="text-jira-subtle">{m.user.email}</td>
-                <td>
-                  {canAdmin && !isLead ? (
-                    <SelectPicker
-                      searchable={false}
-                      value={m.role}
-                      onChange={(role) => role && role !== m.role && setRole.mutate({ userId: m.userId, role: role as ProjectRole })}
-                      options={ROLE_OPTIONS}
-                    />
-                  ) : (
-                    <span className="px-2" title={isLead ? 'The project lead is always an administrator' : undefined}>{ROLE_INFO[m.role].label}</span>
-                  )}
-                </td>
-                {canAdmin && (
-                  <td className="text-right">
-                    {!isLead && (
-                      <button
-                        type="button"
-                        className="btn btn-subtle btn-sm btn-icon"
-                        aria-label={`Remove ${m.user.name}`}
-                        onClick={async () => {
-                          const ok = await confirm({
-                            title: `Remove ${m.user.name}?`,
-                            message: data.defaultAccess === 'NONE'
-                              ? 'They will lose access to this private project.'
-                              : `They will fall back to the project's general access (${ACCESS_INFO[data.defaultAccess].label.toLowerCase()}).`,
-                            confirmLabel: 'Remove',
-                            danger: true,
-                          });
-                          if (ok) remove.mutate(m.userId);
-                        }}
-                      >
-                        <TrashIcon size={14} />
-                      </button>
+      <div className="overflow-x-auto">
+        <table className="data-table mb-3">
+          <thead><tr><th>Name</th><th>Email</th><th className="w-48">Role</th>{canAdmin && <th className="w-12" />}</tr></thead>
+          <tbody>
+            {data.members.map((m) => {
+              const isLead = m.userId === data.leadId;
+              return (
+                <tr key={m.userId}>
+                  <td>
+                    <span className="flex items-center gap-2">
+                      <Avatar name={m.user.name} size="xs" />{m.user.name}
+                      {isLead && <span className="lozenge bg-jira-blue-light text-jira-blue">Lead</span>}
+                    </span>
+                  </td>
+                  <td className="text-jira-subtle">{m.user.email}</td>
+                  <td>
+                    {canAdmin && !isLead ? (
+                      <SelectPicker
+                        searchable={false}
+                        value={m.role}
+                        onChange={(role) => role && role !== m.role && setRole.mutate({ userId: m.userId, role: role as ProjectRole })}
+                        options={ROLE_OPTIONS}
+                      />
+                    ) : (
+                      <span className="px-2" title={isLead ? 'The project lead is always an administrator' : undefined}>{ROLE_INFO[m.role].label}</span>
                     )}
                   </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                  {canAdmin && (
+                    <td className="text-right">
+                      {!isLead && (
+                        <button
+                          type="button"
+                          className="btn btn-subtle btn-sm btn-icon"
+                          aria-label={`Remove ${m.user.name}`}
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: `Remove ${m.user.name}?`,
+                              message: data.defaultAccess === 'NONE'
+                                ? 'They will lose access to this private project.'
+                                : `They will fall back to the project's general access (${ACCESS_INFO[data.defaultAccess].label.toLowerCase()}).`,
+                              confirmLabel: 'Remove',
+                              danger: true,
+                            });
+                            if (ok) remove.mutate(m.userId);
+                          }}
+                        >
+                          <TrashIcon size={14} />
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       {data.members.length === 0 && <p className="text-jira-muted mb-3">No members yet — everyone uses the general access.</p>}
 
       {canAdmin && (
