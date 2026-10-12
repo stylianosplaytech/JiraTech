@@ -81,7 +81,7 @@ export default function QuickSearch() {
           }}
           placeholder="Search"
           aria-label="Search issues and projects (press /)"
-          className="input h-8 w-full md:w-56 md:focus:w-80 pl-8 transition-[width]"
+          className="input h-8 w-full md:w-44 2xl:w-56 md:focus:w-80 pl-8 transition-[width]"
         />
         {showResults && (
           <div className="popover absolute right-0 top-full mt-1 w-96 max-md:left-0 max-md:w-auto overflow-hidden">

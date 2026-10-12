@@ -144,7 +144,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
           <button
             type="button"
             onClick={() => setMenuOpen((o) => !o)}
-            className="btn btn-subtle btn-icon lg:hidden"
+            className="btn btn-subtle btn-icon xl:hidden"
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
             aria-controls="mobile-nav"
@@ -153,14 +153,14 @@ export default function Layout({ children, user, loading }: { children: React.Re
           </button>
           <Logo />
           <ProjectSwitcher />
-          <nav className="hidden lg:flex items-stretch h-14 ml-1" aria-label="Main">
+          <nav className="hidden xl:flex items-stretch h-14 ml-1" aria-label="Main">
             {nav.map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
                 end={item.end}
                 className={({ isActive }) =>
-                  `relative flex items-center px-3 text-sm font-medium transition-colors ${
+                  `relative flex items-center px-2 2xl:px-3 text-sm font-medium transition-colors ${
                     isActive
                       ? 'text-jira-blue after:absolute after:left-2 after:right-2 after:bottom-0 after:h-[3px] after:rounded-t after:bg-jira-blue'
                       : 'text-jira-subtle hover:text-jira-navy'
@@ -178,11 +178,11 @@ export default function Layout({ children, user, loading }: { children: React.Re
               href="/portal"
               target="_blank"
               rel="noopener noreferrer"
-              className="btn btn-subtle max-xl:w-8 max-xl:px-0"
+              className="btn btn-subtle max-2xl:w-8 max-2xl:px-0"
               title="Open the help center in a new window"
               aria-label="Open the help center in a new window"
             >
-              <MessageIcon size={16} /> <span className="hidden xl:inline">Help center</span>
+              <MessageIcon size={16} /> <span className="hidden 2xl:inline">Help center</span>
             </a>
             <QuickSearch />
             <NotificationBell />
@@ -218,7 +218,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
           </div>
         </div>
         {menuOpen && (
-          <nav id="mobile-nav" className="lg:hidden border-t border-jira-border py-2" aria-label="Main">
+          <nav id="mobile-nav" className="xl:hidden border-t border-jira-border py-2" aria-label="Main">
             {nav.map((item) => (
               <NavLink
                 key={item.path}
