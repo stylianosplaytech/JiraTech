@@ -531,8 +531,8 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
       ['Report a bug', 'os', false], ['Report a bug', 'affected_url', false],
       ['Request access', 'manager', true],
     ],
-    // Internal IT: one portal, open to every customer.
-    portals: [{ slug: 'help', name: 'IT Help Desk', open: true, organizations: [acme.id, globex.id] }],
+    // Internal IT: one portal, open to every customer and tied to no client company.
+    portals: [{ slug: 'help', name: 'IT Help Desk', open: true }],
   });
 
   // One request in each SLA situation: breached, on track, paused, at risk, met, brand new.
@@ -558,7 +558,7 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     summary: 'Access to the Finance shared drive',
     description: "<p>I've joined the budgeting working group and need read access to the <code>budget-2026</code> folder on the Finance drive.</p>",
     type: 'Request access', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for customer', assignee: sofia,
-    createdMinutesAgo: 6 * 60, respondedAfter: 50, pausedMinutesAgo: 5 * 60 - 10, fields: { manager: 'Katerina Antoniou' }, organization: acme.id,
+    createdMinutesAgo: 6 * 60, respondedAfter: 50, pausedMinutesAgo: 5 * 60 - 10, fields: { manager: 'Katerina Antoniou' },
     replies: [
       { author: sofia, body: '<p>Finance drives need written approval. Could you ask Katerina to reply here confirming the access, please?</p>', minutesAgo: 5 * 60 - 10 },
       { author: sofia, body: '<p>Checked AD: the group is <code>FIN-Budget-RO</code>. Will add Anna as soon as approval lands.</p>', minutesAgo: 5 * 60 - 12, internal: true },
@@ -594,8 +594,9 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     summary: 'New starter needs a laptop and accounts',
     description: '<p>Maria Lopez starts on Monday in Customer Success. She needs a laptop, email, Slack and CRM accounts.</p>',
     type: 'Get IT help', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for support', assignee: elena,
-    createdMinutesAgo: 5 * 60 + 20, fields: { os: 'Windows' }, organization: acme.id,
+    createdMinutesAgo: 5 * 60 + 20, fields: { os: 'Windows' },
   });
+  await unlinkCompaniesFromHelp([acme.id, globex.id]);
 
   await removeLegacyAcmeDesk();
 
@@ -670,6 +671,22 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     description: '<p>Our finance team would like to export the order history to CSV.</p>',
     type: 'Suggest an improvement', reporter: george, priority: Priority.LOW, status: 'Waiting for support',
     createdMinutesAgo: 90, organization: globex.id,
+  });
+}
+
+/**
+ * Earlier versions of this seed linked the client companies to the internal IT portal and shared two of its
+ * demo requests with Acme. Client companies belong to the Client Services portals only: undo exactly that.
+ */
+async function unlinkCompaniesFromHelp(organizationIds: string[]) {
+  await prisma.portalOrganization.deleteMany({ where: { portal: { slug: 'help' }, organizationId: { in: organizationIds } } });
+  await prisma.issue.updateMany({
+    where: {
+      project: { key: 'HELP' },
+      organizationId: { in: organizationIds },
+      summary: { in: ['Access to the Finance shared drive', 'New starter needs a laptop and accounts'] },
+    },
+    data: { organizationId: null },
   });
 }
 
