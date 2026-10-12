@@ -19,3 +19,9 @@ export class SetPasswordDto {
   @MaxLength(200)
   password!: string;
 }
+
+export class ForgotPasswordDto {
+  @IsEmail({}, { message: 'Enter your email address' })
+  @MaxLength(254)
+  email!: string;
+}

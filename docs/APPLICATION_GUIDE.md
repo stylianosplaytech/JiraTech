@@ -84,6 +84,14 @@ Parent rules are enforced by the server — for example, a *Release Candidate* c
 
 Sign in with email and password. A successful login stores a JWT in the browser; signing out (account menu) clears it. Accounts are created by an administrator on the **People** page — there is no self-registration. New people get a welcome email with a link to choose their own password (section 15).
 
+**Forgot password?** (next to the password field) opens `/forgot-password`. Enter your email and, if it has an account, you get a
+*Reset your JiraTech password* email with a link to choose a new one on the same page as welcome links:
+
+- The link works for **60 minutes** and **once**; asking again within a minute sends nothing more. A new link cancels the previous one.
+- The page always answers *Check your email*, whether or not the address has an account, so it can't be used to find out who has one.
+- Your old password keeps working until you save the new one; saving logs you in.
+- An expired or used link offers *Get a new link*.
+
 Default administrator: `admin@jiratech.local` / `admin123`. Demo users (after `db:seed:demo`) share the same password, e.g. `elena@` (team lead), `nikos@` (developer), `sofia@` (QA), `daniel@` (release manager), `katerina@` (product owner).
 
 ---
@@ -358,10 +366,11 @@ Everyone who can sign in and be an assignee, reporter or watcher. Search by name
 
 - The link opens **Choose your password** (`/set-password`), which greets them by name. Passwords need at least 8 characters. Saving logs
   them straight in: staff land on the board, customers in the help center.
-- A link works for **7 days** and **once**; sending a new one cancels the previous one. An expired or used link says so and asks them to
-  contact an administrator.
+- A link works for **7 days** and **once**; sending a new one cancels the previous one. An expired or used link says so and offers
+  *Get a new link* (the *Forgot password?* page, section 3).
 - Until they choose a password nobody can log in as them, and the list shows them as **Invited** with **Resend** (a new link).
 - **Edit → Email them a link to choose a new password** sends the same kind of link to anyone, e.g. someone who forgot their password.
+  People can also do this themselves with *Forgot password?* on the login page.
 - Untick *Send a welcome email* to type a password for them instead (at least 6 characters).
 - The email goes out through the **Email settings** (section 16). If it can't be sent, the person is still added and you're told to check
   the settings and use *Resend*.
@@ -483,7 +492,8 @@ The full endpoint list is in the project [README](../README.md#api).
 | 17 | Reports | `/reports` | [22](screenshots/22-reports-status.png) · [23](screenshots/23-reports-timeline.png) · [24](screenshots/24-reports-priority.png) · [25](screenshots/25-reports-open.png) |
 | 18 | People | `/users` | [26-people](screenshots/26-people.png) |
 | 18a | Email settings (admins) | `/settings/email` | — |
-| 18b | Choose your password (welcome link, no login) | `/set-password?token=…` | — |
+| 18b | Choose your password (welcome or reset link, no login) | `/set-password?token=…` | — |
+| 18c | Forgot password (no login) | `/forgot-password` | — |
 | 19 | Page not found | any unknown route | [27-not-found](screenshots/27-not-found.png) |
 | 20 | Queues | `/queues` | — |
 | 21 | Help center | `/portal`, `/portal/:slug`, `/portal/requests`, `/portal/requests/:key` | — |

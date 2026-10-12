@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 
@@ -52,7 +52,10 @@ export default function LoginPage() {
           <input type="email" autoComplete="username" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@company.com" />
         </label>
         <label className="block mb-6">
-          <span className="field-label">Password</span>
+          <span className="flex items-baseline justify-between">
+            <span className="field-label">Password</span>
+            <Link to="/forgot-password" state={{ email }} className="link text-xs">Forgot password?</Link>
+          </span>
           <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
         </label>
 

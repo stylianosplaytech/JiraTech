@@ -66,9 +66,13 @@ export const api = {
     request<User & { invitation: Invitation | null }>('/users', { method: 'POST', body: JSON.stringify(data) }),
   /** Emails a new welcome link to choose a password. */
   inviteUser: (id: string) => request<Invitation>(`/users/${id}/invite`, { method: 'POST' }),
-  // ─── Welcome links (no login needed) ───────────────────────────────────────
+  // ─── Welcome and reset links (no login needed) ─────────────────────────────
+  /** Emails a link to choose a new password; answers the same whether or not the address has an account. */
+  forgotPassword: (email: string) =>
+    request<{ requested: boolean }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  /** welcome: choosing a first password (rather than resetting one) */
   getPasswordLink: (token: string) =>
-    request<{ name: string; email: string; customer: boolean }>(`/auth/password-links/${encodeURIComponent(token)}`),
+    request<{ name: string; email: string; customer: boolean; welcome: boolean }>(`/auth/password-links/${encodeURIComponent(token)}`),
   setPassword: (token: string, password: string) =>
     request<{ accessToken: string; user: User }>('/auth/set-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
   // ─── Outgoing email for the whole application (global admins) ─────────────

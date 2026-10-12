@@ -6,6 +6,7 @@ import { EmptyState, Spinner } from './components/ui';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import SetPasswordPage from './pages/SetPasswordPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import EmailSettingsPage from './pages/EmailSettingsPage';
 import BoardPage from './pages/BoardPage';
 import SearchPage from './pages/SearchPage';
@@ -68,6 +69,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/set-password" element={<SetPasswordPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/portal/*" element={<ProtectedRoute>{deciding ? <Spinner /> : <Portal user={user} />}</ProtectedRoute>} />
       <Route
         path="/*"

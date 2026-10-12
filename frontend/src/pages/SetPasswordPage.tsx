@@ -7,7 +7,7 @@ import { AuthShell } from './LoginPage';
 
 const MIN_PASSWORD = 8;
 
-/** /set-password?token=… — the link in the welcome email: the new person chooses their password and is logged in. */
+/** /set-password?token=… — the link in a welcome or "forgot password" email: the person chooses a password and is logged in. */
 export default function SetPasswordPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -47,9 +47,10 @@ export default function SetPasswordPage() {
         <div className={card}>
           <h1 className="text-base font-semibold text-center mb-3">This link doesn't work</h1>
           <p className="text-jira-subtle text-center mb-6">
-            {token ? errorMessage(link.error) : 'The link is incomplete. Open it straight from the welcome email.'}
+            {token ? errorMessage(link.error) : 'The link is incomplete. Open it straight from the email.'}
           </p>
-          <Link to="/login" className="btn btn-default w-full h-10">Go to log in</Link>
+          <Link to="/forgot-password" className="btn btn-primary w-full h-10 mb-2">Get a new link</Link>
+          <Link to="/login" className="btn btn-subtle w-full h-10">Go to log in</Link>
         </div>
       </AuthShell>
     );
@@ -59,8 +60,10 @@ export default function SetPasswordPage() {
   return (
     <AuthShell>
       <form onSubmit={handleSubmit} className={card}>
-        <h1 className="text-base font-semibold text-center mb-1">Welcome, {link.data.name}</h1>
-        <p className="text-jira-subtle text-center mb-6">Choose a password for <strong className="text-jira-navy">{link.data.email}</strong></p>
+        <h1 className="text-base font-semibold text-center mb-1">{link.data.welcome ? `Welcome, ${link.data.name}` : 'Choose a new password'}</h1>
+        <p className="text-jira-subtle text-center mb-6">
+          {link.data.welcome ? 'Choose a password for' : 'For'} <strong className="text-jira-navy">{link.data.email}</strong>
+        </p>
 
         {error && <div role="alert" className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2 mb-4">{error}</div>}
 

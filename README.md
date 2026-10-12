@@ -187,6 +187,10 @@ Without either, emails are written as `.eml` files to `backend/mail-outbox/` so 
 *Resend*; *Edit* has *Email them a link to choose a new password* for anyone who forgot theirs. Untick *Send a welcome email* to set a
 password for them instead.
 
+**Forgot password?** The login page links to `/forgot-password`: enter your email and, if it has an account, you get a link to choose a
+new password (valid for 60 minutes, usable once; at most one email a minute). The page answers the same either way, so it doesn't reveal
+which addresses have accounts. The old password keeps working until the new one is saved.
+
 **Incoming email (service desks).** Each service desk can have its own address, read over IMAP: new emails become requests and replies
 (subject containing the key, e.g. `(HELP-12)`) become comments. Configure it on the project page under *Service desk → Email*. Optional settings:
 
