@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, Link, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, useLocation, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, isCustomer, type User } from './api';
 import { ProjectProvider } from './project';
@@ -50,6 +50,8 @@ function Portal({ user }: { user?: User }) {
 }
 
 export default function App() {
+  // Re-render on every navigation: logging in or out changes the token, and the query below must notice.
+  useLocation();
   const { data: user, isLoading, isPending } = useQuery({
     queryKey: ['me'],
     queryFn: api.me,

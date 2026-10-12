@@ -16,9 +16,11 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      const { accessToken } = await api.login(email, password);
+      const { accessToken, user } = await api.login(email, password);
       localStorage.setItem('token', accessToken);
       queryClient.clear();
+      // We already know who signed in: show their profile menu straight away.
+      queryClient.setQueryData(['me'], user);
       navigate('/');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Login failed';
