@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type User } from '../api';
 import { humanize } from '../utils';
 import Avatar from '../components/Avatar';
 import { SelectPicker } from '../components/Pickers';
+import OrganizationsPanel from '../components/OrganizationsPanel';
 import { EditIcon, PlusIcon, SearchIcon } from '../components/Icons';
 import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
 
@@ -21,6 +23,8 @@ export default function UsersPage() {
   const [search, setSearch] = useState('');
   const [dialog, setDialog] = useState<{ mode: 'create' } | { mode: 'edit'; user: User } | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'organizations' ? 'organizations' : 'people';
 
   const { data: currentUser } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -55,16 +59,34 @@ export default function UsersPage() {
     <div>
       <PageHeader
         title="People"
-        actions={isAdmin && <button type="button" onClick={() => open({ mode: 'create' })} className="btn btn-primary"><PlusIcon size={14} /> Add person</button>}
+        actions={isAdmin && tab === 'people' && <button type="button" onClick={() => open({ mode: 'create' })} className="btn btn-primary"><PlusIcon size={14} /> Add person</button>}
       >
-        <p className="text-jira-subtle mt-2">Everyone who can sign in. Customers only use the help center to raise and follow service desk requests.</p>
-        <div className="relative w-72 mt-4">
-          <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-jira-muted pointer-events-none" />
-          <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or email" className="input h-8 pl-8" />
+        <div className="flex gap-1 mt-3 border-b border-jira-border" role="tablist">
+          {([['people', 'People'], ['organizations', 'Organizations']] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              onClick={() => setParams(value === 'people' ? {} : { tab: value })}
+              className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 ${tab === value ? 'border-jira-blue text-jira-blue' : 'border-transparent text-jira-subtle hover:text-jira-navy'}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+        {tab === 'people' && (
+          <>
+            <p className="text-jira-subtle mt-3">Everyone who can sign in. Customers only use the help center to raise and follow service desk requests.</p>
+            <div className="relative w-72 mt-4">
+              <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-jira-muted pointer-events-none" />
+              <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or email" className="input h-8 pl-8" />
+            </div>
+          </>
+        )}
       </PageHeader>
 
-      {isLoading ? <Spinner /> : (
+      {tab === 'organizations' ? <OrganizationsPanel isAdmin={isAdmin} /> : isLoading ? <Spinner /> : (
         <>
           <div className="overflow-x-auto">
             <table className="data-table">

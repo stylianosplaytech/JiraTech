@@ -7,6 +7,8 @@ import { StatusBadge } from '../components/Badges';
 import { RichTextEditor, RichTextView } from '../components/RichText';
 import Avatar from '../components/Avatar';
 import { EmptyState, Spinner, errorMessage, useToast } from '../components/ui';
+import { SelectPicker } from '../components/Pickers';
+import { usePortalBrand } from './PortalLayout';
 
 /** The customer's view of a request: public conversation only. */
 export default function PortalRequestPage() {
@@ -30,6 +32,26 @@ export default function PortalRequestPage() {
       .then((r) => queryClient.setQueryData(['notifications', 'count'], r))
       .catch(() => undefined);
   }, [requestId, queryClient]);
+
+  // Take on the look of the help center the request belongs to (if this person can open it).
+  const projectKey = request?.project.key;
+  const { data: desk } = useQuery({
+    queryKey: ['portal-desk', projectKey],
+    queryFn: () => api.getPortalDesk(projectKey!),
+    enabled: !!projectKey,
+    retry: false,
+  });
+  usePortalBrand(desk && { key: desk.key, name: desk.name, branding: desk.branding });
+
+  const share = useMutation({
+    mutationFn: (organizationId: string | null) => api.shareRequest(key, organizationId),
+    onSuccess: (r) => {
+      queryClient.setQueryData(['portal-request', key], r);
+      queryClient.invalidateQueries({ queryKey: ['portal-requests'] });
+      toast(r.organization ? `Shared with ${r.organization.name}` : 'Only you and the support team can see this request now');
+    },
+    onError: (e) => toast(errorMessage(e), 'error'),
+  });
 
   const send = useMutation({
     mutationFn: () => api.replyToRequest(key, reply),
@@ -125,6 +147,27 @@ export default function PortalRequestPage() {
             <div><div className="text-xs font-semibold text-jira-muted">Reference</div><span className="font-mono">{request.key}</span></div>
             {request.requestType && <div><div className="text-xs font-semibold text-jira-muted">Request type</div>{request.requestType.name}</div>}
             <div><div className="text-xs font-semibold text-jira-muted">Raised by</div>{request.reporter?.name ?? '—'}</div>
+            {request.shareWith && (request.shareWith.length > 0 || request.organization) ? (
+              <div>
+                <div className="text-xs font-semibold text-jira-muted mb-1">Shared with</div>
+                <SelectPicker
+                  variant="field"
+                  searchable={false}
+                  disabled={share.isPending}
+                  value={request.organization?.id ?? 'private'}
+                  onChange={(v) => {
+                    const next = !v || v === 'private' ? null : v;
+                    if (next !== (request.organization?.id ?? null)) share.mutate(next);
+                  }}
+                  options={[
+                    ...request.shareWith.map((o) => ({ id: o.id, label: o.name, hint: 'Your colleagues can see it' })),
+                    { id: 'private', label: 'No one', hint: 'Only you and the support team' },
+                  ]}
+                />
+              </div>
+            ) : request.organization && (
+              <div><div className="text-xs font-semibold text-jira-muted">Shared with</div>{request.organization.name}</div>
+            )}
             {request.participants.length > 0 && (
               <div>
                 <div className="text-xs font-semibold text-jira-muted mb-1">Shared with</div>

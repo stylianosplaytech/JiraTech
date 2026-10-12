@@ -24,6 +24,15 @@ export default function RequestPanel({ issue, canEdit }: { issue: Issue; canEdit
   const onError = (e: unknown) => toast(errorMessage(e), 'error');
   const add = useMutation({ mutationFn: (userId: string) => api.addWatcher(issue.id, userId), onSuccess: refresh, onError });
   const remove = useMutation({ mutationFn: (userId: string) => api.removeWatcher(issue.id, userId), onSuccess: refresh, onError });
+  const setOrganization = useMutation({
+    mutationFn: (organizationId: string | null) => api.setRequestOrganization(issue.id, organizationId),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ['request-info', issue.id] });
+      queryClient.invalidateQueries({ queryKey: ['history', issue.id] });
+      toast(r.organization ? `Shared with ${r.organization.name}` : 'No longer shared with an organization');
+    },
+    onError,
+  });
 
   const reporterIsCustomer = !!issue.reporter && customerIds.has(issue.reporter.id);
   const shared = new Set([issue.reporter?.id, ...participants.map((p) => p.userId)]);
@@ -35,7 +44,7 @@ export default function RequestPanel({ issue, canEdit }: { issue: Issue; canEdit
         <Link to={`/portal/requests/${issue.key}`} className="btn btn-link btn-sm">View in help center</Link>
       </div>
       <div className="px-4 py-2 divide-y divide-jira-border">
-        <div className="py-1.5 grid grid-cols-[120px_1fr] gap-2 text-[13px]">
+        <div className="py-1.5 grid grid-cols-[120px_1fr] gap-x-2 gap-y-1 items-start text-[13px]">
           <span className="text-jira-subtle font-medium">Request type</span>
           <span>{issue.requestType?.name ?? <span className="text-jira-muted">None (raised outside the portal)</span>}</span>
           <span className="text-jira-subtle font-medium">Customer</span>
@@ -43,6 +52,19 @@ export default function RequestPanel({ issue, canEdit }: { issue: Issue; canEdit
             {issue.reporter ? <><Avatar name={issue.reporter.name} size="xs" /><span className="truncate">{issue.reporter.name}</span></> : '—'}
             {issue.reporter && !reporterIsCustomer && <span className="lozenge bg-jira-gray-hover text-[#42526E]">Staff</span>}
           </span>
+          <span className="text-jira-subtle font-medium pt-[7px]">Organization</span>
+          <div className="-mx-2">
+            <SelectPicker
+              disabled={!canEdit || setOrganization.isPending}
+              searchable={false}
+              value={info?.organization?.id ?? null}
+              onChange={(id) => id !== (info?.organization?.id ?? null) && setOrganization.mutate(id)}
+              allowClear
+              placeholder="Not shared"
+              clearLabel="Not shared"
+              options={(info?.organizations ?? []).map((o) => ({ id: o.id, label: o.name, hint: 'Members can see it' }))}
+            />
+          </div>
         </div>
         <div className="py-1">
           <SlaRow label="Time to first response" clock={info?.sla?.firstResponse} />

@@ -1,5 +1,5 @@
 import {
-  BadRequestException, ConflictException, Injectable, NotFoundException,
+  BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException,
 } from '@nestjs/common';
 import {
   CustomFieldDefinition, CustomFieldType, IssueStatus, Prisma, Priority, Project, ProjectType, UserRole,
@@ -14,7 +14,7 @@ import { CATEGORY_NAMES } from '../workflow/workflow.service';
 import { compileJql, JqlError } from '../search/jql';
 import { compareRows } from '../search/search.service';
 import {
-  PortalRequestDto, QueueDto, RequestTypeDto, SlaTargetDto, UpdateQueueDto, UpdateRequestTypeDto,
+  PortalRequestDto, PortalSettingsDto, QueueDto, RequestTypeDto, SlaTargetDto, UpdateQueueDto, UpdateRequestTypeDto,
 } from './dto/service-desk.dto';
 
 const USER_BRIEF = { select: { id: true, name: true, email: true } } as const;
@@ -28,6 +28,7 @@ const QUEUE_INCLUDE = {
   assignee: USER_BRIEF,
   reporter: USER_BRIEF,
   requestType: { select: { id: true, name: true } },
+  organization: { select: { id: true, name: true } },
 } satisfies Prisma.IssueInclude;
 
 type SlaIssue = Parameters<typeof computeSla>[0] & { projectId: string; priority: Priority };
@@ -149,20 +150,72 @@ export class ServiceDeskService {
 
   // ─── Portal access ─────────────────────────────────────────────────────────
 
+  /** Who can use the help center, and how it looks. */
   async customers(key: string) {
     const project = await this.desk(key);
-    const customers = await this.prisma.projectCustomer.findMany({
-      where: { projectId: project.id },
-      include: { user: USER_BRIEF },
-      orderBy: { user: { name: 'asc' } },
-    });
-    return { portalOpen: project.portalOpen, customers: customers.map((c) => c.user) };
+    const [customers, organizations] = await Promise.all([
+      this.prisma.projectCustomer.findMany({
+        where: { projectId: project.id },
+        include: { user: USER_BRIEF },
+        orderBy: { user: { name: 'asc' } },
+      }),
+      this.prisma.projectOrganization.findMany({
+        where: { projectId: project.id },
+        include: { organization: { select: { id: true, name: true, _count: { select: { members: true } } } } },
+        orderBy: { organization: { name: 'asc' } },
+      }),
+    ]);
+    return {
+      portalOpen: project.portalOpen,
+      customers: customers.map((c) => c.user),
+      organizations: organizations.map((o) => ({ id: o.organization.id, name: o.organization.name, members: o.organization._count.members })),
+      branding: brandingOf(project),
+    };
   }
 
-  async setPortalOpen(key: string, portalOpen: boolean) {
+  async updatePortal(key: string, dto: PortalSettingsDto) {
     const project = await this.desk(key);
-    await this.prisma.project.update({ where: { id: project.id }, data: { portalOpen } });
+    await this.prisma.project.update({
+      where: { id: project.id },
+      data: {
+        portalOpen: dto.portalOpen,
+        portalWelcome: dto.welcome === undefined ? undefined : dto.welcome.trim() || null,
+        portalColor: dto.color === undefined ? undefined : dto.color || null,
+        portalLogo: dto.logo === undefined ? undefined : dto.logo || null,
+      },
+    });
     return this.customers(key);
+  }
+
+  async addOrganization(key: string, organizationId: string) {
+    const project = await this.desk(key);
+    if (!(await this.prisma.organization.findUnique({ where: { id: organizationId } }))) throw new NotFoundException('Organization not found');
+    await this.prisma.projectOrganization.upsert({
+      where: { projectId_organizationId: { projectId: project.id, organizationId } },
+      create: { projectId: project.id, organizationId },
+      update: {},
+    });
+    return this.customers(key);
+  }
+
+  async removeOrganization(key: string, organizationId: string) {
+    const project = await this.desk(key);
+    await this.prisma.projectOrganization.deleteMany({ where: { projectId: project.id, organizationId } });
+    return this.customers(key);
+  }
+
+  /** Agents share a request with one of the organizations the desk serves, or make it private (null). */
+  async setRequestOrganization(idOrKey: string, organizationId: string | null, userId: string) {
+    const issue = await this.prisma.issue.findFirst({
+      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      include: { project: { select: { type: true } } },
+    });
+    if (!issue || issue.project.type !== ProjectType.SERVICE_DESK) throw new NotFoundException('Request not found');
+    if (organizationId && !(await this.prisma.projectOrganization.findUnique({
+      where: { projectId_organizationId: { projectId: issue.projectId, organizationId } },
+    }))) throw new BadRequestException('Share requests only with organizations this service desk serves');
+    await this.recordOrganization(issue.id, issue.organizationId, organizationId, userId);
+    return this.requestInfo(issue.id);
   }
 
   async addCustomer(key: string, userId: string) {
@@ -235,6 +288,7 @@ export class ServiceDeskService {
         status: issue.status,
         workflowStatus: issue.workflowStatus,
         requestType: issue.requestType,
+        organization: issue.organization,
         reporter: issue.reporter,
         assignee: issue.assignee,
         createdAt: issue.createdAt,
@@ -244,16 +298,36 @@ export class ServiceDeskService {
     };
   }
 
-  /** Request type and SLAs of one issue, for the agent's issue view. */
+  /** Request type, organization and SLAs of one issue, for the agent's issue view. */
   async requestInfo(idOrKey: string) {
     const issue = await this.prisma.issue.findFirst({
       where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
-      include: { project: { select: { type: true } }, requestType: { select: { id: true, name: true } } },
+      include: {
+        project: { select: { type: true } },
+        requestType: { select: { id: true, name: true } },
+        organization: { select: { id: true, name: true } },
+      },
     });
     if (!issue) throw new NotFoundException('Issue not found');
-    if (issue.project.type !== ProjectType.SERVICE_DESK) return { serviceDesk: false, requestType: null, sla: null };
-    const goals = await this.goals([issue.projectId]);
-    return { serviceDesk: true, requestType: issue.requestType, sla: computeSla(issue, goals.get(`${issue.projectId}:${issue.priority}`)) };
+    if (issue.project.type !== ProjectType.SERVICE_DESK) {
+      return { serviceDesk: false, requestType: null, organization: null, organizations: [], sla: null };
+    }
+    const [goals, organizations] = await Promise.all([
+      this.goals([issue.projectId]),
+      this.prisma.organization.findMany({
+        where: { projects: { some: { projectId: issue.projectId } } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+    return {
+      serviceDesk: true,
+      requestType: issue.requestType,
+      organization: issue.organization,
+      // What agents can share it with: the organizations the desk serves.
+      organizations,
+      sla: computeSla(issue, goals.get(`${issue.projectId}:${issue.priority}`)),
+    };
   }
 
   // ─── Help center portal (customers and staff) ──────────────────────────────
@@ -262,25 +336,38 @@ export class ServiceDeskService {
   async portalDesks(user: AuthUser) {
     const where: Prisma.ProjectWhereInput = { type: ProjectType.SERVICE_DESK };
     if (user.role === UserRole.CUSTOMER) {
-      where.OR = [{ portalOpen: true }, { customers: { some: { userId: user.id } } }];
+      where.OR = [
+        { portalOpen: true },
+        { customers: { some: { userId: user.id } } },
+        { organizations: { some: { organization: { members: { some: { userId: user.id } } } } } },
+      ];
     } else {
       const ids = await this.access.browsableProjectIds(user);
       if (ids !== null) where.id = { in: ids };
     }
-    return this.prisma.project.findMany({
+    const desks = await this.prisma.project.findMany({
       where,
-      select: { id: true, key: true, name: true, description: true, _count: { select: { requestTypes: true } } },
+      select: {
+        id: true, key: true, name: true, description: true, portalWelcome: true, portalColor: true, portalLogo: true,
+        _count: { select: { requestTypes: true } },
+      },
       orderBy: { name: 'asc' },
     });
+    return desks.map(({ portalWelcome, portalColor, portalLogo, ...d }) => ({
+      ...d, branding: brandingOf({ portalWelcome, portalColor, portalLogo }),
+    }));
   }
 
   async portalDesk(key: string, user: AuthUser) {
     const project = await this.raisable(key, user);
-    const requestTypes = await this.requestTypes(project.id);
+    const [requestTypes, shareWith] = await Promise.all([this.requestTypes(project.id), this.shareOptions(project.id, user.id)]);
     return {
       key: project.key,
       name: project.name,
       description: project.description,
+      branding: brandingOf(project),
+      // The raiser's organizations this desk serves: they may share the request with one of them.
+      shareWith,
       // Agents can raise a request for a customer (e.g. one who phoned in).
       canRaiseOnBehalf: user.role !== UserRole.CUSTOMER && (await this.access.can(user, project.id, 'edit')),
       requestTypes: requestTypes.map((t) => ({
@@ -328,6 +415,17 @@ export class ServiceDeskService {
       customFields[f.field.key] = checkFieldValue(f.field, value);
     }
 
+    // Sharing: an explicit organization must be one of the requester's that this desk serves;
+    // otherwise (unless they opted out) share with the first such organization.
+    const options = await this.shareOptions(project.id, reporterId);
+    let organizationId: string | null = null;
+    if (dto.organizationId) {
+      if (!options.some((o) => o.id === dto.organizationId)) throw new BadRequestException('You can only share with your own organization');
+      organizationId = dto.organizationId;
+    } else if (dto.shareWithOrganization !== false) {
+      organizationId = options[0]?.id ?? null;
+    }
+
     const issue = await this.issues.create(
       {
         type: type.issueType,
@@ -338,15 +436,31 @@ export class ServiceDeskService {
       },
       user,
       undefined,
-      { requestTypeId: type.id, reporterId },
+      { requestTypeId: type.id, reporterId, organizationId },
     );
     return { key: issue.key };
   }
 
-  /** Requests the user raised or (customers) was added to. */
+  /** The requester changes who a request is shared with: one of their organizations the desk serves, or nobody. */
+  async shareRequest(key: string, user: AuthUser, organizationId: string | null) {
+    const issue = await this.prisma.issue.findUnique({ where: { key: key.toUpperCase() }, include: { project: { select: { type: true } } } });
+    if (!issue || issue.project.type !== ProjectType.SERVICE_DESK) throw new NotFoundException('Request not found');
+    if (issue.reporterId !== user.id) throw new ForbiddenException('Only the person who raised a request can change who it is shared with');
+    if (organizationId && !(await this.shareOptions(issue.projectId, user.id)).some((o) => o.id === organizationId)) {
+      throw new BadRequestException('You can only share with your own organization');
+    }
+    await this.recordOrganization(issue.id, issue.organizationId, organizationId, user.id);
+    return this.request(key, user);
+  }
+
+  /** Requests the user raised, was added to, or (customers) that are shared with their organizations. */
   async myRequests(user: AuthUser, opts: { status?: string; q?: string }) {
     const mine: Prisma.IssueWhereInput[] = [{ reporterId: user.id }];
-    if (user.role === UserRole.CUSTOMER) mine.push({ watchers: { some: { userId: user.id } } });
+    if (user.role === UserRole.CUSTOMER) {
+      mine.push({ watchers: { some: { userId: user.id } } });
+      const orgs = await this.myOrganizationIds(user.id);
+      if (orgs.length) mine.push({ organizationId: { in: orgs } });
+    }
     const where: Prisma.IssueWhereInput = { project: { type: ProjectType.SERVICE_DESK }, OR: mine };
     if (opts.status === 'open') where.status = { not: IssueStatus.CLOSED };
     if (opts.status === 'closed') where.status = IssueStatus.CLOSED;
@@ -359,6 +473,7 @@ export class ServiceDeskService {
         workflowStatus: { select: { name: true, category: true } },
         requestType: { select: { id: true, name: true } },
         reporter: { select: { id: true, name: true } },
+        organization: { select: { id: true, name: true } },
       },
       orderBy: { updatedAt: 'desc' },
       take: 200,
@@ -370,6 +485,7 @@ export class ServiceDeskService {
       requestType: i.requestType,
       project: i.project,
       reporter: i.reporter,
+      organization: i.organization,
       createdAt: i.createdAt,
       updatedAt: i.updatedAt,
     }));
@@ -384,6 +500,7 @@ export class ServiceDeskService {
         workflowStatus: { select: { name: true, category: true } },
         requestType: { select: { id: true, name: true, fields: { include: { field: true }, orderBy: { position: 'asc' } } } },
         reporter: { select: { id: true, name: true, role: true } },
+        organization: { select: { id: true, name: true } },
         watchers: { include: { user: { select: { id: true, name: true, role: true } } } },
         comments: {
           where: { internal: false },
@@ -397,7 +514,11 @@ export class ServiceDeskService {
 
     const values = new Map(issue.customFieldValues.map((v) => [v.fieldId, v.value]));
     const isAgent = (u: { id: string; role: UserRole }) => u.role !== UserRole.CUSTOMER && u.id !== issue.reporterId;
+    // Only the requester decides who else in their company sees it.
+    const shareWith = issue.reporterId === user.id ? await this.shareOptions(issue.projectId, user.id) : null;
     return {
+      organization: issue.organization,
+      shareWith,
       id: issue.id,
       key: issue.key,
       summary: issue.summary,
@@ -462,12 +583,44 @@ export class ServiceDeskService {
     return project;
   }
 
-  /** Customers need an open portal (or to be listed); staff need access to the project. */
+  /** Customers need an open portal, or to be listed (themselves or through an organization); staff need access to the project. */
   private async canRaise(user: AuthUser, project: Project) {
     if (project.type !== ProjectType.SERVICE_DESK) return false;
     if (user.role !== UserRole.CUSTOMER) return this.access.can(user, project.id, 'browse');
     if (project.portalOpen) return true;
-    return !!(await this.prisma.projectCustomer.findUnique({ where: { projectId_userId: { projectId: project.id, userId: user.id } } }));
+    const [listed, viaOrganization] = await Promise.all([
+      this.prisma.projectCustomer.findUnique({ where: { projectId_userId: { projectId: project.id, userId: user.id } } }),
+      this.prisma.projectOrganization.findFirst({ where: { projectId: project.id, organization: { members: { some: { userId: user.id } } } } }),
+    ]);
+    return !!(listed || viaOrganization);
+  }
+
+  /** Organizations a request raised by this person in this desk can be shared with: theirs that the desk serves. */
+  private shareOptions(projectId: string, userId: string) {
+    return this.prisma.organization.findMany({
+      where: { members: { some: { userId } }, projects: { some: { projectId } } },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /** Change who a request is shared with, keeping a record in its history. */
+  private async recordOrganization(issueId: string, fromId: string | null, toId: string | null, userId?: string) {
+    if (fromId === toId) return;
+    const names = new Map((await this.prisma.organization.findMany({
+      where: { id: { in: [fromId, toId].filter((x): x is string => !!x) } },
+      select: { id: true, name: true },
+    })).map((o) => [o.id, o.name]));
+    await this.prisma.$transaction([
+      this.prisma.issue.update({ where: { id: issueId }, data: { organizationId: toId } }),
+      this.prisma.issueHistory.create({
+        data: { issueId, userId: userId ?? null, field: 'organization', fromValue: fromId ? names.get(fromId) ?? null : null, toValue: toId ? names.get(toId) ?? null : null },
+      }),
+    ]);
+  }
+
+  private async myOrganizationIds(userId: string) {
+    return (await this.prisma.organizationMember.findMany({ where: { userId }, select: { organizationId: true } })).map((m) => m.organizationId);
   }
 
   /** 404 rather than 403, so customers can't discover service desks they don't belong to. */
@@ -477,13 +630,22 @@ export class ServiceDeskService {
     return project;
   }
 
-  /** The reporter and participants see a request; so do staff who can browse its project. */
+  /**
+   * The reporter, participants and (when it's shared) members of its organization see a request;
+   * so do staff who can browse its project.
+   */
   private async canView(
     user: AuthUser,
-    issue: { projectId: string; reporterId: string | null; project: { type: ProjectType }; watchers: { userId: string }[] },
+    issue: {
+      projectId: string; reporterId: string | null; organizationId: string | null;
+      project: { type: ProjectType }; watchers: { userId: string }[];
+    },
   ) {
     if (issue.project.type !== ProjectType.SERVICE_DESK) return false;
     if (issue.reporterId === user.id || issue.watchers.some((w) => w.userId === user.id)) return true;
+    if (issue.organizationId && (await this.prisma.organizationMember.findUnique({
+      where: { organizationId_userId: { organizationId: issue.organizationId, userId: user.id } },
+    }))) return true;
     return user.role !== UserRole.CUSTOMER && this.access.can(user, issue.projectId, 'browse');
   }
 
@@ -540,6 +702,11 @@ export class ServiceDeskService {
       throw e;
     }
   }
+}
+
+/** A help center's look; null colour/logo means the default JiraTech style. */
+function brandingOf(p: { portalWelcome: string | null; portalColor: string | null; portalLogo: string | null }) {
+  return { welcome: p.portalWelcome, color: p.portalColor, logo: p.portalLogo };
 }
 
 /** Minutes left on the most pressing running clock; finished or paused ones sort last. */

@@ -113,7 +113,7 @@ export class IssuesService {
     dto: CreateIssueDto,
     user: AuthUser,
     headerProjectKey?: string,
-    portal?: { requestTypeId: string; reporterId?: string },
+    portal?: { requestTypeId: string; reporterId?: string; organizationId?: string | null },
   ) {
     const reporterId = user.id;
     let parent: { id: string; type: IssueType; projectId: string } | null = null;
@@ -161,6 +161,7 @@ export class IssuesService {
           reporterId: portal ? (portal.reporterId ?? reporterId) : (dto.reporterId ?? reporterId),
           projectId: project.id,
           requestTypeId: portal?.requestTypeId,
+          organizationId: portal?.organizationId ?? undefined,
           components: dto.componentIds?.length
             ? { create: dto.componentIds.map((componentId) => ({ componentId })) }
             : undefined,

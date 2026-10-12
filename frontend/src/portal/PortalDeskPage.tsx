@@ -7,6 +7,9 @@ import { SelectPicker } from '../components/Pickers';
 import Avatar from '../components/Avatar';
 import { ChevronRightIcon } from '../components/Icons';
 import { EmptyState, Spinner, errorMessage, useToast } from '../components/ui';
+import { PortalHero } from './Branding';
+import { usePortalBrand, usePortalHome } from './PortalLayout';
+import { RequestList } from './PortalHomePage';
 
 function FieldInput({ field, value, onChange }: { field: PortalField; value: string; onChange: (v: string) => void }) {
   const id = `field-${field.key}`;
@@ -56,6 +59,9 @@ function RequestForm({ desk, typeId }: { desk: PortalDesk; typeId: string }) {
   const [description, setDescription] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
   const [onBehalfOf, setOnBehalfOf] = useState<string | undefined>();
+  // Shared with the first of the requester's organizations by default; '' keeps it private.
+  const [shareWith, setShareWith] = useState<string>(desk.shareWith[0]?.id ?? '');
+  const [shareForCustomer, setShareForCustomer] = useState(true);
   const { data: customers } = useQuery({
     queryKey: ['users', 'customers'],
     queryFn: () => api.getUsers(undefined, 'customers'),
@@ -69,6 +75,10 @@ function RequestForm({ desk, typeId }: { desk: PortalDesk; typeId: string }) {
       description: description || undefined,
       fields,
       onBehalfOfId: onBehalfOf,
+      // For someone else, the server picks the customer's organization; for yourself, the one chosen here.
+      ...(onBehalfOf
+        ? { shareWithOrganization: shareForCustomer }
+        : shareWith ? { organizationId: shareWith } : { shareWithOrganization: false }),
     }),
     onSuccess: ({ key }) => {
       queryClient.invalidateQueries({ queryKey: ['portal-requests'] });
@@ -115,6 +125,26 @@ function RequestForm({ desk, typeId }: { desk: PortalDesk; typeId: string }) {
       {type.fields.map((f) => (
         <FieldInput key={f.key} field={f} value={fields[f.key] ?? ''} onChange={(v) => setFields((all) => ({ ...all, [f.key]: v }))} />
       ))}
+      {onBehalfOf ? (
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" className="mt-1" checked={shareForCustomer} onChange={(e) => setShareForCustomer(e.target.checked)} />
+          <span>Share with the customer's organization<span className="field-help mt-0">Their colleagues can follow it in the help center.</span></span>
+        </label>
+      ) : desk.shareWith.length > 0 && (
+        <div>
+          <span className="field-label">Share with</span>
+          <SelectPicker
+            variant="field"
+            searchable={false}
+            value={shareWith || 'private'}
+            onChange={(v) => setShareWith(!v || v === 'private' ? '' : v)}
+            options={[
+              ...desk.shareWith.map((o) => ({ id: o.id, label: o.name, hint: 'Your colleagues can see and follow it' })),
+              { id: 'private', label: 'No one', hint: 'Only you and the support team' },
+            ]}
+          />
+        </div>
+      )}
       {raise.isError && <div role="alert" className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2">{errorMessage(raise.error)}</div>}
       <div className="flex flex-wrap gap-2">
         <button type="submit" className="btn btn-primary" disabled={summary.trim().length < 3 || missing || raise.isPending}>
@@ -128,41 +158,58 @@ function RequestForm({ desk, typeId }: { desk: PortalDesk; typeId: string }) {
 
 export default function PortalDeskPage() {
   const { key = '', typeId } = useParams<{ key: string; typeId?: string }>();
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const { data: desk, isLoading, error } = useQuery({ queryKey: ['portal-desk', key], queryFn: () => api.getPortalDesk(key), retry: false });
+  const { data: open } = useQuery({ queryKey: ['portal-requests', 'open', ''], queryFn: () => api.getMyRequests('open') });
+  const home = usePortalHome(me);
+  usePortalBrand(desk && { key: desk.key, name: desk.name, branding: desk.branding });
 
   if (isLoading) return <Spinner />;
   if (!desk) {
     return (
-      <EmptyState title="Help center not found" action={<Link to="/portal" className="btn btn-default">All service desks</Link>}>
+      <EmptyState title="Help center not found" action={<Link to="/portal" className="btn btn-default">All help centers</Link>}>
         {errorMessage(error)}
       </EmptyState>
     );
   }
+  const accent = desk.branding.color ?? undefined;
+  const mine = open?.filter((r) => r.project.key === desk.key) ?? [];
 
   return (
     <div>
-      <nav className="text-sm text-jira-subtle mb-2" aria-label="Breadcrumb">
-        <Link to="/portal" className="hover:underline">Help center</Link>
-        {typeId && <> / <Link to={`/portal/${desk.key}`} className="hover:underline">{desk.name}</Link></>}
-      </nav>
-      <h1 className="page-title mb-1">{desk.name}</h1>
-      {desk.description && <p className="text-jira-subtle mb-6 max-w-3xl">{desk.description}</p>}
+      {(home === '/portal' || typeId) && (
+        <nav className="text-sm text-jira-subtle mb-2" aria-label="Breadcrumb">
+          {home === '/portal' && <Link to="/portal" className="hover:underline">Help centers</Link>}
+          {home === '/portal' && typeId && ' / '}
+          {typeId && <Link to={`/portal/${desk.key}`} className="hover:underline">{desk.name}</Link>}
+        </nav>
+      )}
+      {!typeId && <div className="mb-6"><PortalHero branding={desk.branding} title={desk.name} subtitle={desk.description} /></div>}
 
       {typeId ? <RequestForm key={typeId} desk={desk} typeId={typeId} /> : (
         <>
-          <h2 className="text-base font-semibold mt-6 mb-3">What can we help you with?</h2>
-          {desk.requestTypes.length === 0 && <EmptyState title="Nothing to request yet">This service desk hasn't set up any request types.</EmptyState>}
+          <h2 className="text-base font-semibold mb-3">What can we help you with?</h2>
+          {desk.requestTypes.length === 0 && <EmptyState title="Nothing to request yet">This help center hasn't set up any request types.</EmptyState>}
           <div className="card bg-white divide-y divide-jira-border max-w-2xl">
             {desk.requestTypes.map((t) => (
               <Link key={t.id} to={`/portal/${desk.key}/${t.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-jira-gray">
                 <span className="min-w-0 flex-1">
-                  <span className="block font-medium text-jira-blue">{t.name}</span>
+                  <span className="block font-medium text-jira-blue" style={accent ? { color: accent } : undefined}>{t.name}</span>
                   {t.description && <span className="block text-sm text-jira-subtle">{t.description}</span>}
                 </span>
                 <ChevronRightIcon size={16} className="text-jira-muted" />
               </Link>
             ))}
           </div>
+          {mine.length > 0 && (
+            <section className="mt-8 max-w-2xl">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-semibold">Open requests</h2>
+                <Link to="/portal/requests" className="link text-sm">View all</Link>
+              </div>
+              <RequestList requests={mine.slice(0, 5)} />
+            </section>
+          )}
         </>
       )}
     </div>

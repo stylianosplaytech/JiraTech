@@ -43,13 +43,13 @@ export default function MyRequestsPage() {
 
       {isLoading ? <Spinner /> : error ? <EmptyState title="Couldn't load your requests">{errorMessage(error)}</EmptyState> : !requests?.length ? (
         <EmptyState title={term ? 'No requests match your search' : status === 'open' ? 'You have no open requests' : 'No requests here'} action={<Link to="/portal" className="btn btn-primary">Raise a request</Link>}>
-          Requests you raise, or that others share with you, appear here.
+          Requests you raise, that others add you to, or that colleagues share with your organization appear here.
         </EmptyState>
       ) : (
         <div className="overflow-x-auto card bg-white">
           <table className="data-table">
             <thead>
-              <tr><th>Reference</th><th>Summary</th><th>Status</th><th>Service desk</th><th>Requester</th><th>Updated</th></tr>
+              <tr><th>Reference</th><th>Summary</th><th>Status</th><th>Help center</th><th>Requester</th><th>Shared with</th><th>Updated</th></tr>
             </thead>
             <tbody>
               {requests.map((r) => (
@@ -62,6 +62,7 @@ export default function MyRequestsPage() {
                   <td><StatusBadge status={r.status.category} name={r.status.name} /></td>
                   <td className="text-jira-subtle whitespace-nowrap">{r.project.name}</td>
                   <td className="whitespace-nowrap">{r.reporter?.name ?? '—'}</td>
+                  <td className="text-jira-subtle whitespace-nowrap">{r.organization?.name ?? '—'}</td>
                   <td className="text-jira-subtle whitespace-nowrap" title={new Date(r.updatedAt).toLocaleString()}>{timeAgo(r.updatedAt)}</td>
                 </tr>
               ))}

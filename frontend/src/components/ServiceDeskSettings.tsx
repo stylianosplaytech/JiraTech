@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, formatDuration, type Queue, type RequestType, type SlaTarget } from '../api';
+import { api, formatDuration, type DeskCustomers, type Queue, type RequestType, type SlaTarget } from '../api';
+import { PortalHero, PortalLogo } from '../portal/Branding';
 import { PriorityIcon, typeLabel } from './Badges';
 import { SelectPicker } from './Pickers';
 import Avatar from './Avatar';
-import { EditIcon, PlusIcon, TrashIcon, XIcon } from './Icons';
+import { EditIcon, PlusIcon, TrashIcon, UsersIcon, XIcon } from './Icons';
 import { Modal, Spinner, errorMessage, useDialogs, useToast } from './ui';
 
 const ISSUE_TYPES = ['TASK', 'DEFECT', 'STORY', 'ANALYSIS', 'CONFIGURATION', 'DEPLOYMENT', 'DOCUMENTATION'];
@@ -369,51 +370,146 @@ function QueueEditor({ projectKey, queues, canAdmin }: { projectKey: string; que
   );
 }
 
-// ─── Portal access ───────────────────────────────────────────────────────────
+// ─── Portal access and branding ──────────────────────────────────────────────
 
-function PortalAccess({ projectKey, canAdmin }: { projectKey: string; canAdmin: boolean }) {
+const MAX_LOGO_BYTES = 256 * 1024;
+const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+
+function readAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function Branding({ projectKey, projectName, data, canAdmin }: {
+  projectKey: string; projectName: string; data: DeskCustomers; canAdmin: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const { onError, toast } = useSd(projectKey);
+  const [welcome, setWelcome] = useState(data.branding.welcome ?? '');
+  const [color, setColor] = useState(data.branding.color ?? '');
+  useEffect(() => { setWelcome(data.branding.welcome ?? ''); setColor(data.branding.color ?? ''); }, [data.branding.welcome, data.branding.color]);
+  const save = useMutation({
+    mutationFn: (patch: { welcome?: string; color?: string; logo?: string }) => api.updatePortal(projectKey, patch),
+    onSuccess: (d) => {
+      queryClient.setQueryData(['desk-customers', projectKey], d);
+      queryClient.invalidateQueries({ queryKey: ['portal-desk', projectKey] });
+      queryClient.invalidateQueries({ queryKey: ['portal-desks'] });
+      toast('Help center updated');
+    },
+    onError,
+  });
+  const dirty = welcome !== (data.branding.welcome ?? '') || color !== (data.branding.color ?? '');
+
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    if (!LOGO_TYPES.includes(file.type)) { toast('Use a PNG, JPEG, GIF, WebP or SVG image', 'error'); return; }
+    if (file.size > MAX_LOGO_BYTES) { toast('The logo must be smaller than 256 KB', 'error'); return; }
+    save.mutate({ logo: await readAsDataUrl(file) });
+  };
+
+  return (
+    <div className="mt-6">
+      <h4 className="font-semibold text-sm mb-2">Look and feel</h4>
+      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_280px] gap-4">
+        <div className="space-y-3">
+          <div>
+            <span className="field-label">Logo</span>
+            <div className="flex items-center gap-3">
+              <PortalLogo branding={data.branding} name={projectName} size={40} />
+              {canAdmin && (
+                <>
+                  <label className="btn btn-default btn-sm cursor-pointer">
+                    Upload…
+                    <input type="file" accept={LOGO_TYPES.join(',')} className="sr-only" onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
+                  </label>
+                  {data.branding.logo && <button type="button" className="btn btn-subtle btn-sm" onClick={() => save.mutate({ logo: '' })}>Remove</button>}
+                </>
+              )}
+            </div>
+            <span className="field-help">Square images work best; up to 256 KB.</span>
+          </div>
+          <div>
+            <label className="field-label" htmlFor="portal-color">Accent colour</label>
+            <div className="flex items-center gap-2">
+              <input
+                id="portal-color"
+                type="color"
+                disabled={!canAdmin}
+                value={color || '#0052CC'}
+                onChange={(e) => setColor(e.target.value.toUpperCase())}
+                className="h-8 w-12 rounded-[3px] border border-jira-border cursor-pointer disabled:cursor-default"
+              />
+              <span className="font-mono text-xs text-jira-subtle">{color || 'Default'}</span>
+              {canAdmin && color && <button type="button" className="btn btn-subtle btn-sm" onClick={() => setColor('')}>Use default</button>}
+            </div>
+          </div>
+          <label className="block">
+            <span className="field-label">Welcome message</span>
+            <textarea className="input" rows={3} maxLength={1000} disabled={!canAdmin} value={welcome} onChange={(e) => setWelcome(e.target.value)} placeholder="Shown at the top of this help center" />
+          </label>
+          {canAdmin && (
+            <button type="button" className="btn btn-default" disabled={!dirty || save.isPending} onClick={() => save.mutate({ welcome, color })}>
+              Save look and feel
+            </button>
+          )}
+        </div>
+        <div>
+          <span className="field-label">Preview</span>
+          <div className="rounded-[3px] overflow-hidden border border-jira-border">
+            <PortalHero branding={{ ...data.branding, welcome: welcome || null, color: color || null }} title={projectName} compact />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PortalAccess({ projectKey, projectName, canAdmin }: { projectKey: string; projectName: string; canAdmin: boolean }) {
   const queryClient = useQueryClient();
   const { onError, toast } = useSd(projectKey);
   const { data } = useQuery({ queryKey: ['desk-customers', projectKey], queryFn: () => api.getDeskCustomers(projectKey) });
   const { data: allCustomers = [] } = useQuery({ queryKey: ['users', 'customers'], queryFn: () => api.getUsers(undefined, 'customers'), enabled: canAdmin });
-  const done = (d: Awaited<ReturnType<typeof api.getDeskCustomers>>) => queryClient.setQueryData(['desk-customers', projectKey], d);
+  const { data: allOrganizations = [] } = useQuery({ queryKey: ['organizations'], queryFn: api.getOrganizations, enabled: canAdmin });
+  const done = (d: DeskCustomers) => queryClient.setQueryData(['desk-customers', projectKey], d);
   const setOpen = useMutation({
-    mutationFn: (open: boolean) => api.setPortalOpen(projectKey, open),
-    onSuccess: (d) => { done(d); toast(d.portalOpen ? 'Any customer can now raise requests' : 'Only the customers listed can raise requests'); },
+    mutationFn: (portalOpen: boolean) => api.updatePortal(projectKey, { portalOpen }),
+    onSuccess: (d) => { done(d); toast(d.portalOpen ? 'Any customer can now raise requests' : 'Only the customers and organizations listed can raise requests'); },
     onError,
   });
   const add = useMutation({ mutationFn: (id: string) => api.addDeskCustomer(projectKey, id), onSuccess: done, onError });
   const remove = useMutation({ mutationFn: (id: string) => api.removeDeskCustomer(projectKey, id), onSuccess: done, onError });
+  const addOrg = useMutation({ mutationFn: (id: string) => api.addDeskOrganization(projectKey, id), onSuccess: done, onError });
+  const removeOrg = useMutation({ mutationFn: (id: string) => api.removeDeskOrganization(projectKey, id), onSuccess: done, onError });
   if (!data) return <Spinner />;
   const listed = new Set(data.customers.map((c) => c.id));
+  const linked = new Set(data.organizations.map((o) => o.id));
   const portalUrl = `${window.location.origin}/portal/${projectKey}`;
 
   return (
     <div>
-      <h3 className="font-semibold mb-1">Help center access</h3>
+      <h3 className="font-semibold mb-1">Help center</h3>
       <p className="text-jira-subtle text-sm mb-3">
-        Customers raise and follow requests at <a href={portalUrl} className="link">{portalUrl}</a>. Customer accounts are created on the
-        People page. Agents are the project's members; anyone who can browse the project can also raise requests.
+        This service desk's own help center is at <a href={portalUrl} target="_blank" rel="noopener noreferrer" className="link">{portalUrl}</a>.
+        Customer accounts and organizations are managed on the <Link to="/users?tab=organizations" className="link">People</Link> page.
+        Agents are the project's members; anyone who can browse the project can also raise requests.
       </p>
-      <div className="space-y-2 mb-3" role="radiogroup" aria-label="Who can raise requests">
-        {[[true, 'Any customer', 'Every customer account can use this help center.'], [false, 'Only customers I add', 'Customers need to be on the list below.']].map(([value, label, help]) => (
-          <label key={String(value)} className="flex items-start gap-2 cursor-pointer">
-            <input type="radio" name="portal-open" className="mt-1" disabled={!canAdmin || setOpen.isPending} checked={data.portalOpen === value} onChange={() => setOpen.mutate(value as boolean)} />
-            <span>{label as string}<span className="field-help mt-0">{help as string}</span></span>
-          </label>
-        ))}
-      </div>
-      {!data.portalOpen && (
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card">
-          <div className="card-header"><span className="card-title">Customers ({data.customers.length})</span></div>
+          <div className="card-header"><span className="card-title">Organizations ({data.organizations.length})</span></div>
           <div className="px-4 py-2">
-            {data.customers.length === 0 && <p className="text-jira-muted text-sm py-1">No customers yet: nobody outside the team can raise requests.</p>}
-            {data.customers.map((c) => (
-              <div key={c.id} className="group flex items-center gap-2 py-1">
-                <Avatar name={c.name} size="xs" />
-                <span className="flex-1 truncate">{c.name} <span className="text-jira-muted text-xs">{c.email}</span></span>
+            <p className="text-xs text-jira-muted mb-1">Their members can use this help center, and requests can be shared with the whole organization.</p>
+            {data.organizations.length === 0 && <p className="text-jira-muted text-sm py-1">No organizations yet.</p>}
+            {data.organizations.map((o) => (
+              <div key={o.id} className="group flex items-center gap-2 py-1">
+                <UsersIcon size={14} className="text-jira-muted" />
+                <span className="flex-1 truncate">{o.name} <span className="text-jira-muted text-xs">{o.members} {o.members === 1 ? 'member' : 'members'}</span></span>
                 {canAdmin && (
-                  <button type="button" onClick={() => remove.mutate(c.id)} className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-jira-muted hover:text-jira-navy" aria-label={`Remove ${c.name}`}>
+                  <button type="button" onClick={() => removeOrg.mutate(o.id)} className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-jira-muted hover:text-jira-navy" aria-label={`Remove ${o.name}`}>
                     <XIcon size={14} />
                   </button>
                 )}
@@ -422,14 +518,54 @@ function PortalAccess({ projectKey, canAdmin }: { projectKey: string; canAdmin: 
             {canAdmin && (
               <SelectPicker
                 value={undefined}
-                onChange={(id) => id && add.mutate(id)}
-                placeholder="+ Add customer"
-                options={allCustomers.filter((c) => !listed.has(c.id)).map((c) => ({ id: c.id, label: c.name, hint: c.email, icon: <Avatar name={c.name} size="xs" /> }))}
+                onChange={(id) => id && addOrg.mutate(id)}
+                placeholder="+ Add organization"
+                options={allOrganizations.filter((o) => !linked.has(o.id)).map((o) => ({ id: o.id, label: o.name, hint: `${o.members.length} members` }))}
               />
             )}
           </div>
         </div>
-      )}
+
+        <div className="card">
+          <div className="card-header"><span className="card-title">Who else can raise requests</span></div>
+          <div className="px-4 py-2">
+            <div className="space-y-2 mb-2" role="radiogroup" aria-label="Who can raise requests">
+              {([[true, 'Any customer', 'Every customer account can use this help center.'], [false, 'Only the organizations and customers listed', 'Use this for a portal that belongs to specific clients.']] as const).map(([value, label, help]) => (
+                <label key={String(value)} className="flex items-start gap-2 cursor-pointer">
+                  <input type="radio" name={`portal-open-${projectKey}`} className="mt-1" disabled={!canAdmin || setOpen.isPending} checked={data.portalOpen === value} onChange={() => setOpen.mutate(value)} />
+                  <span>{label}<span className="field-help mt-0">{help}</span></span>
+                </label>
+              ))}
+            </div>
+            {!data.portalOpen && (
+              <>
+                <div className="text-xs font-semibold text-jira-muted mt-3 mb-1">Individual customers ({data.customers.length})</div>
+                {data.customers.map((c) => (
+                  <div key={c.id} className="group flex items-center gap-2 py-1">
+                    <Avatar name={c.name} size="xs" />
+                    <span className="flex-1 truncate">{c.name} <span className="text-jira-muted text-xs">{c.email}</span></span>
+                    {canAdmin && (
+                      <button type="button" onClick={() => remove.mutate(c.id)} className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-jira-muted hover:text-jira-navy" aria-label={`Remove ${c.name}`}>
+                        <XIcon size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {canAdmin && (
+                  <SelectPicker
+                    value={undefined}
+                    onChange={(id) => id && add.mutate(id)}
+                    placeholder="+ Add customer"
+                    options={allCustomers.filter((c) => !listed.has(c.id)).map((c) => ({ id: c.id, label: c.name, hint: c.email, icon: <Avatar name={c.name} size="xs" /> }))}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <Branding projectKey={projectKey} projectName={projectName} data={data} canAdmin={canAdmin} />
     </div>
   );
 }
@@ -450,7 +586,7 @@ export default function ServiceDeskSettings({ projectKey, canAdmin }: { projectK
           <RequestTypes projectKey={projectKey} types={data.requestTypes} canAdmin={canAdmin} />
           <SlaGoals projectKey={projectKey} targets={data.slaTargets} canAdmin={canAdmin} />
           <QueueEditor projectKey={projectKey} queues={data.queues} canAdmin={canAdmin} />
-          <PortalAccess projectKey={projectKey} canAdmin={canAdmin} />
+          <PortalAccess projectKey={projectKey} projectName={data.project.name} canAdmin={canAdmin} />
         </div>
       )}
     </section>

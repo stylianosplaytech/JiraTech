@@ -58,14 +58,16 @@ To try every feature with realistic content, load the demo data on top of the ba
 npm run db:seed:demo
 ```
 
-It adds 7 more people, two standard projects — **PAY** (Payments Platform) and **MOB** (Mobile App) — an IT service desk (**HELP**)
-with two customers, and more SPORTS work.
+It adds 7 more people, two standard projects — **PAY** (Payments Platform) and **MOB** (Mobile App) — two service desks, and more SPORTS work:
+the IT Help Desk (**HELP**, open to every customer) and **Acme Support** (**ACME**, a branded help center only for the *Acme Retail* organization).
 The new issues cover every status, priority and type, with epics and child issues, blocked and at-risk items,
 comments with @mentions, links (also across projects), watchers, work logs, history and shared saved filters.
 It is safe to run more than once. Every demo user logs in with the same password as the admin account, e.g.
 `elena@jiratech.local` (team lead), `nikos@jiratech.local` (developer), `sofia@jiratech.local` (QA),
 `daniel@jiratech.local` (release manager), `katerina@jiratech.local` (product owner). HELP's agents are Elena (admin), Andreas, Sofia and Lina;
-its customers `anna@customer.local` and `george@customer.local` only see the help center at `/portal`.
+ACME's are Lina (admin), Nikos and Andreas. The customers only see the help center at `/portal`: `anna@customer.local` and
+`peter@customer.local` (Acme Retail — they see both help centers and each other's shared requests) and `george@customer.local`
+(Globex — he lands straight in the IT Help Desk).
 
 ## Modules
 
@@ -115,6 +117,13 @@ work requests from **Queues** (JQL filters sorted by SLA urgency), reply to the 
 and track two **SLAs** per request: time to first response and time to resolution (goals per priority; the clock pauses in statuses marked
 *Pauses SLA*, e.g. *Waiting for customer*, and runs around the clock). A customer replying to a request that's waiting for them sends it
 back to the agents. Admins configure request types (with portal fields), SLA goals, queues and who may use the help center on the project page.
+
+**Several help centers.** Every service desk project is its own help center at `/portal/KEY`, with its own logo, accent colour and
+welcome message (project page → *Help center → Look and feel*). A help center is open to every customer, or only to the
+**organizations** and customers you list. Organizations group customers by company (People → *Organizations*, managed by global admins);
+link them to a service desk on its project page. A customer with a single help center lands straight in it; others choose from a list.
+When raising a request, customers can **share it with their organization** (the default) so colleagues can follow it, or keep it private;
+the requester can change this later and agents can too. JQL: `organization = "Acme Retail"`.
 
 ### Workflows
 
@@ -173,7 +182,7 @@ text ~ "login" AND updated >= -7d
 labels IS EMPTY AND (priority = Highest OR priority = High)
 ```
 
-Fields: project, key, type, status (workflow status name), statusCategory, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, requestType, summary, description, comment, text, created, updated, blocked.
+Fields: project, key, type, status (workflow status name), statusCategory, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, requestType, organization, summary, description, comment, text, created, updated, blocked.
 Operators: `= != ~ !~ > >= < <= IN, NOT IN, IS [NOT] EMPTY`, combined with `AND / OR / NOT` and parentheses.
 Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMonth()`. Dates: `2026-01-31`, `"2026-01-31 14:00"` or relative `-7d`, `-2w`, `-4h`.
 
@@ -204,6 +213,11 @@ Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMo
 - Help center (customers and staff): `GET /api/portal/desks`, `GET /api/portal/desks/:key`, `POST /api/portal/desks/:key/requests`,
   `GET /api/portal/requests?status=open|closed|all&q=`, `GET /api/portal/requests/:key`, `POST /api/portal/requests/:key/comments`
 - `GET /api/users?kind=staff|customers|all` (staff by default)
+- Organizations: `GET /api/organizations` (staff); global admins: `POST /api/organizations`, `PATCH|DELETE /api/organizations/:id`,
+  `PUT|DELETE /api/organizations/:id/members/:userId`
+- Help center access and branding: `PATCH /api/service-desk/:key/portal` (`{ portalOpen, welcome, color, logo }`),
+  `PUT|DELETE /api/service-desk/:key/organizations/:organizationId`; sharing: `PATCH /api/service-desk/requests/:issue/organization` (agents),
+  `POST /api/portal/requests/:key/share` (the requester), `organizationId` / `shareWithOrganization` when raising
 
 Project-scoped endpoints (issues list, board, labels, versions, components, custom fields, dashboard, planning) use the `X-Project-Key` header or `?project=KEY`, defaulting to SPORTS.
 - `GET /api/board` — kanban board data

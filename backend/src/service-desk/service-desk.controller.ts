@@ -6,7 +6,7 @@ import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { AuthRequest } from '../common/auth-user';
 import { ServiceDeskService } from './service-desk.service';
 import {
-  PortalCommentDto, PortalRequestDto, PortalSettingsDto, QueueDto, RequestTypeDto, SlaTargetsDto,
+  PortalCommentDto, PortalRequestDto, PortalSettingsDto, QueueDto, RequestOrganizationDto, RequestTypeDto, SlaTargetsDto,
   UpdateQueueDto, UpdateRequestTypeDto,
 } from './dto/service-desk.dto';
 
@@ -23,6 +23,12 @@ export class ServiceDeskController {
   @RequireAccess('browse', ISSUE)
   requestInfo(@Param('id') id: string) {
     return this.serviceDesk.requestInfo(id);
+  }
+
+  @Patch('requests/:id/organization')
+  @RequireAccess('edit', ISSUE)
+  setRequestOrganization(@Param('id') id: string, @Body() dto: RequestOrganizationDto, @Request() req: AuthRequest) {
+    return this.serviceDesk.setRequestOrganization(id, dto.organizationId ?? null, req.user.id);
   }
 
   @Get(':key')
@@ -100,7 +106,19 @@ export class ServiceDeskController {
   @Patch(':key/portal')
   @RequireAccess('admin', PROJECT)
   setPortal(@Param('key') key: string, @Body() dto: PortalSettingsDto) {
-    return this.serviceDesk.setPortalOpen(key, dto.portalOpen);
+    return this.serviceDesk.updatePortal(key, dto);
+  }
+
+  @Put(':key/organizations/:organizationId')
+  @RequireAccess('admin', PROJECT)
+  addOrganization(@Param('key') key: string, @Param('organizationId') organizationId: string) {
+    return this.serviceDesk.addOrganization(key, organizationId);
+  }
+
+  @Delete(':key/organizations/:organizationId')
+  @RequireAccess('admin', PROJECT)
+  removeOrganization(@Param('key') key: string, @Param('organizationId') organizationId: string) {
+    return this.serviceDesk.removeOrganization(key, organizationId);
   }
 
   @Put(':key/customers/:userId')
@@ -146,6 +164,11 @@ export class PortalController {
   @Get('requests/:key')
   request(@Param('key') key: string, @Request() req: AuthRequest) {
     return this.serviceDesk.request(key, req.user);
+  }
+
+  @Post('requests/:key/share')
+  share(@Param('key') key: string, @Body() dto: RequestOrganizationDto, @Request() req: AuthRequest) {
+    return this.serviceDesk.shareRequest(key, req.user, dto.organizationId ?? null);
   }
 
   @Post('requests/:key/comments')

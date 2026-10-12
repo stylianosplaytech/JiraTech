@@ -144,6 +144,7 @@ model User {
   projectMemberships ProjectMember[]
   notificationsSent Notification[]   @relation("NotificationActor")
   customerOf       ProjectCustomer[]
+  organizations    OrganizationMember[]
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────
@@ -161,8 +162,12 @@ model Project {
   /// What people who aren't project members can do
   defaultAccess   ProjectAccess @default(MEMBER)
   type            ProjectType   @default(SOFTWARE)
-  /// Service desks: any customer may raise requests (otherwise only the listed customers)
+  /// Service desks: any customer may raise requests (otherwise only listed customers and organizations)
   portalOpen      Boolean       @default(true)
+  /// Help center branding: welcome text, accent colour (#RRGGBB) and logo (image data URL)
+  portalWelcome   String?
+  portalColor     String?
+  portalLogo      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -181,6 +186,7 @@ model Project {
   slaTargets            SlaTarget[]
   queues                Queue[]
   customers             ProjectCustomer[]
+  organizations         ProjectOrganization[]
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -342,6 +348,8 @@ model Issue {
   piId              String?
   /// Service desk request type (null for ordinary issues)
   requestTypeId     String?
+  /// Service desks: the customer organization this request is shared with
+  organizationId    String?
   /// SLA clocks: first public reply by an agent, when it was resolved, and time spent paused
   firstRespondedAt  DateTime?
   resolvedAt        DateTime?
@@ -359,6 +367,7 @@ model Issue {
   sprint            Sprint?            @relation(fields: [sprintId], references: [id])
   pi                ProgramIncrement?  @relation(fields: [piId], references: [id])
   requestType       RequestType?       @relation(fields: [requestTypeId], references: [id], onDelete: SetNull)
+  organization      Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   components        IssueComponent[]
   versions          IssueVersion[]
   linksFrom         IssueLink[]        @relation("LinkSource")
@@ -701,4 +710,41 @@ model ProjectCustomer {
 
   @@id([projectId, userId])
   @@index([userId])
+}
+
+/** A customer company. Members see requests shared with it; service desks can grant their help center to it. */
+model Organization {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members  OrganizationMember[]
+  projects ProjectOrganization[]
+  issues   Issue[]
+}
+
+model OrganizationMember {
+  organizationId String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, userId])
+  @@index([userId])
+}
+
+/** Organizations whose members may use a service desk's help center. */
+model ProjectOrganization {
+  projectId      String
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, organizationId])
+  @@index([organizationId])
 }

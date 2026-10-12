@@ -251,8 +251,27 @@ export const api = {
   setSlaTargets: (key: string, targets: SlaTarget[]) =>
     request<SlaTarget[]>(`/service-desk/${key}/sla`, { method: 'PUT', body: JSON.stringify({ targets }) }),
   getDeskCustomers: (key: string) => request<DeskCustomers>(`/service-desk/${key}/customers`),
-  setPortalOpen: (key: string, portalOpen: boolean) =>
-    request<DeskCustomers>(`/service-desk/${key}/portal`, { method: 'PATCH', body: JSON.stringify({ portalOpen }) }),
+  /** Who may use the help center and how it looks; '' clears welcome, colour or logo. */
+  updatePortal: (key: string, data: { portalOpen?: boolean; welcome?: string; color?: string; logo?: string }) =>
+    request<DeskCustomers>(`/service-desk/${key}/portal`, { method: 'PATCH', body: JSON.stringify(data) }),
+  addDeskOrganization: (key: string, organizationId: string) =>
+    request<DeskCustomers>(`/service-desk/${key}/organizations/${organizationId}`, { method: 'PUT' }),
+  removeDeskOrganization: (key: string, organizationId: string) =>
+    request<DeskCustomers>(`/service-desk/${key}/organizations/${organizationId}`, { method: 'DELETE' }),
+  setRequestOrganization: (issueId: string, organizationId: string | null) =>
+    request<RequestInfo>(`/service-desk/requests/${issueId}/organization`, { method: 'PATCH', body: JSON.stringify({ organizationId }) }),
+
+  // ─── Customer organizations (global admins change them) ────────────────────
+  getOrganizations: () => request<Organization[]>('/organizations'),
+  createOrganization: (name: string) =>
+    request<Organization>('/organizations', { method: 'POST', body: JSON.stringify({ name }) }),
+  renameOrganization: (id: string, name: string) =>
+    request<Organization>(`/organizations/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteOrganization: (id: string) => request(`/organizations/${id}`, { method: 'DELETE' }),
+  addOrganizationMember: (id: string, userId: string) =>
+    request<Organization>(`/organizations/${id}/members/${userId}`, { method: 'PUT' }),
+  removeOrganizationMember: (id: string, userId: string) =>
+    request<Organization>(`/organizations/${id}/members/${userId}`, { method: 'DELETE' }),
   addDeskCustomer: (key: string, userId: string) =>
     request<DeskCustomers>(`/service-desk/${key}/customers/${userId}`, { method: 'PUT' }),
   removeDeskCustomer: (key: string, userId: string) =>
@@ -262,11 +281,17 @@ export const api = {
   // ─── Help center portal (customers and staff) ──────────────────────────────
   getPortalDesks: () => request<PortalDeskSummary[]>('/portal/desks'),
   getPortalDesk: (key: string) => request<PortalDesk>(`/portal/desks/${key}`),
-  raiseRequest: (key: string, data: { requestTypeId: string; summary: string; description?: string; fields?: Record<string, string>; onBehalfOfId?: string }) =>
+  raiseRequest: (key: string, data: {
+    requestTypeId: string; summary: string; description?: string; fields?: Record<string, string>; onBehalfOfId?: string;
+    organizationId?: string; shareWithOrganization?: boolean;
+  }) =>
     request<{ key: string }>(`/portal/desks/${key}/requests`, { method: 'POST', body: JSON.stringify(data) }),
   getMyRequests: (status: 'open' | 'closed' | 'all', q?: string) =>
     request<PortalRequestSummary[]>(`/portal/requests?status=${status}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
   getPortalRequest: (key: string) => request<PortalRequest>(`/portal/requests/${key}`),
+  /** The requester shares their request with one of their organizations, or makes it private (null). */
+  shareRequest: (key: string, organizationId: string | null) =>
+    request<PortalRequest>(`/portal/requests/${key}/share`, { method: 'POST', body: JSON.stringify({ organizationId }) }),
   replyToRequest: (key: string, body: string) =>
     request<PortalRequest>(`/portal/requests/${key}/comments`, { method: 'POST', body: JSON.stringify({ body }) }),
 };
@@ -696,6 +721,7 @@ export interface QueueRow {
   status: string;
   workflowStatus: WorkflowStatusRef | null;
   requestType: { id: string; name: string } | null;
+  organization: Named | null;
   reporter: { id: string; name: string; email: string } | null;
   assignee: { id: string; name: string; email: string } | null;
   createdAt: string;
@@ -718,14 +744,37 @@ export interface ServiceDeskSettings {
   queues: Queue[];
 }
 
+export interface Named {
+  id: string;
+  name: string;
+}
+
+/** A help center's look; null colour/logo means the default style. */
+export interface PortalBranding {
+  welcome: string | null;
+  color: string | null;
+  logo: string | null;
+}
+
 export interface DeskCustomers {
   portalOpen: boolean;
   customers: { id: string; name: string; email: string }[];
+  organizations: (Named & { members: number })[];
+  branding: PortalBranding;
+}
+
+export interface Organization extends Named {
+  members: { userId: string; user: { id: string; name: string; email: string } }[];
+  projects: { projectId: string; project: { id: string; key: string; name: string } }[];
+  _count: { issues: number };
 }
 
 export interface RequestInfo {
   serviceDesk: boolean;
   requestType: { id: string; name: string } | null;
+  organization: Named | null;
+  /** Organizations the desk serves (what agents can share the request with) */
+  organizations: Named[];
   sla: Sla | null;
 }
 
@@ -734,6 +783,7 @@ export interface PortalDeskSummary {
   key: string;
   name: string;
   description: string | null;
+  branding: PortalBranding;
   _count: { requestTypes: number };
 }
 
@@ -749,6 +799,9 @@ export interface PortalDesk {
   key: string;
   name: string;
   description: string | null;
+  branding: PortalBranding;
+  /** The raiser's organizations this desk serves */
+  shareWith: Named[];
   canRaiseOnBehalf: boolean;
   requestTypes: { id: string; name: string; description: string | null; fields: PortalField[] }[];
 }
@@ -765,6 +818,7 @@ export interface PortalRequestSummary {
   requestType: { id: string; name: string } | null;
   project: { key: string; name: string };
   reporter: { id: string; name: string } | null;
+  organization: Named | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -781,6 +835,9 @@ export interface PortalRequest {
   project: { key: string; name: string };
   requestType: { id: string; name: string } | null;
   reporter: { id: string; name: string } | null;
+  organization: Named | null;
+  /** Set for the requester only: the organizations they can share it with */
+  shareWith: Named[] | null;
   participants: { id: string; name: string }[];
   fields: { name: string; value: string }[];
   comments: { id: string; body: string; createdAt: string; author: { id: string; name: string; agent: boolean } }[];

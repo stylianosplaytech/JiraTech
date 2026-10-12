@@ -118,6 +118,7 @@ export default function QueuesPage() {
                         <th title="Time to resolution">Resolution</th>
                         <th>Reporter</th>
                         <th>Assignee</th>
+                        <th>Organization</th>
                         <th>Request type</th>
                         <th>Created</th>
                       </tr>
@@ -137,6 +138,7 @@ export default function QueuesPage() {
                           <td><SlaBadge clock={r.sla.resolution} /></td>
                           <td className="whitespace-nowrap">{r.reporter ? <span className="flex items-center gap-2"><Avatar name={r.reporter.name} size="xs" />{r.reporter.name}</span> : '—'}</td>
                           <td className="whitespace-nowrap">{r.assignee ? <span className="flex items-center gap-2"><Avatar name={r.assignee.name} size="xs" />{r.assignee.name}</span> : <span className="text-jira-muted">Unassigned</span>}</td>
+                          <td className="text-jira-subtle whitespace-nowrap">{r.organization?.name ?? '—'}</td>
                           <td className="text-jira-subtle whitespace-nowrap">{r.requestType?.name ?? '—'}</td>
                           <td className="text-jira-subtle whitespace-nowrap" title={new Date(r.createdAt).toLocaleString()}>{timeAgo(r.createdAt)}</td>
                         </tr>

@@ -33,6 +33,7 @@ const PEOPLE: { email: string; name: string; role: UserRole }[] = [
   // Service desk customers: they only see the help center.
   { email: 'anna@customer.local', name: 'Anna Petrou', role: UserRole.CUSTOMER },
   { email: 'george@customer.local', name: 'George Miller', role: UserRole.CUSTOMER },
+  { email: 'peter@customer.local', name: 'Peter Novak', role: UserRole.CUSTOMER },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -295,7 +296,7 @@ async function backfillStatuses(projectId: string) {
   }
 }
 
-// ─── Service desk (HELP) ─────────────────────────────────────────────────────
+// ─── Service desks (HELP, ACME) ───────────────────────────────────────────────────
 
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000);
 
@@ -316,62 +317,78 @@ interface RequestSpec {
   fields?: Record<string, string>;
   participants?: User[];
   replies?: { author: User; body: string; minutesAgo: number; internal?: boolean }[];
+  /** Organization id the request is shared with */
+  organization?: string;
 }
 
-async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' | 'anna' | 'george', User>) {
-  const { anna, george, andreas, sofia, lina, elena } = p;
-  const help = await prisma.project.upsert({
-    where: { key: 'HELP' },
+const SD_FLOW: Flow = [
+  { name: 'Waiting for support', category: IssueStatus.TO_DO },
+  { name: 'In Progress', category: IssueStatus.DOING },
+  { name: 'Waiting for customer', category: IssueStatus.DOING },
+  { name: 'Resolved', category: IssueStatus.CLOSED },
+];
+const SD_MOVES: [string, string][] = [
+  ['Waiting for support', 'In Progress'], ['Waiting for support', 'Waiting for customer'], ['Waiting for support', 'Resolved'],
+  ['In Progress', 'Waiting for customer'], ['In Progress', 'Waiting for support'], ['In Progress', 'Resolved'],
+  ['Waiting for customer', 'Waiting for support'], ['Waiting for customer', 'In Progress'], ['Waiting for customer', 'Resolved'],
+  ['Resolved', 'Waiting for support'],
+];
+
+interface DeskSpec {
+  key: string;
+  name: string;
+  description: string;
+  lead: User;
+  agents: [User, ProjectRole][];
+  portal?: { portalOpen?: boolean; portalColor?: string; portalWelcome?: string; portalLogo?: string };
+  fields: { key: string; name: string; type: 'TEXT' | 'SELECT' | 'NUMBER'; options?: string[]; order: number }[];
+  /** [request type, field key, required] */
+  formFields: [string, string, boolean][];
+  /** Organizations (by id) whose members may use the help center */
+  organizations: string[];
+}
+
+/** A service desk set up the way the API sets up a new one; returns a function that adds requests to it. */
+async function demoDesk(d: DeskSpec) {
+  const desk = await prisma.project.upsert({
+    where: { key: d.key },
     update: {},
     create: {
-      key: 'HELP',
-      name: 'IT Help Desk',
-      description: 'Internal IT support. Customers raise requests in the help center; agents work them from the queues.',
+      key: d.key,
+      name: d.name,
+      description: d.description,
       type: ProjectType.SERVICE_DESK,
-      leadId: elena.id,
+      leadId: d.lead.id,
       strictHierarchy: false,
       defaultAccess: ProjectAccess.NONE,
+      ...d.portal,
     },
   });
-  const agents: [User, ProjectRole][] = [[elena, ProjectRole.ADMIN], [andreas, ProjectRole.MEMBER], [sofia, ProjectRole.MEMBER], [lina, ProjectRole.MEMBER]];
-  for (const [u, role] of agents) {
+  for (const [u, role] of d.agents) {
     await prisma.projectMember.upsert({
-      where: { projectId_userId: { projectId: help.id, userId: u.id } },
+      where: { projectId_userId: { projectId: desk.id, userId: u.id } },
       update: {},
-      create: { projectId: help.id, userId: u.id, role },
+      create: { projectId: desk.id, userId: u.id, role },
+    });
+  }
+  for (const organizationId of d.organizations) {
+    await prisma.projectOrganization.upsert({
+      where: { projectId_organizationId: { projectId: desk.id, organizationId } },
+      update: {},
+      create: { projectId: desk.id, organizationId },
     });
   }
 
-  // Same workflow the API gives a new service desk.
-  const flow = await ensureWorkflow(help.id, [
-    { name: 'Waiting for support', category: IssueStatus.TO_DO },
-    { name: 'In Progress', category: IssueStatus.DOING },
-    { name: 'Waiting for customer', category: IssueStatus.DOING },
-    { name: 'Resolved', category: IssueStatus.CLOSED },
-  ], [
-    ['Waiting for support', 'In Progress'], ['Waiting for support', 'Waiting for customer'], ['Waiting for support', 'Resolved'],
-    ['In Progress', 'Waiting for customer'], ['In Progress', 'Waiting for support'], ['In Progress', 'Resolved'],
-    ['Waiting for customer', 'Waiting for support'], ['Waiting for customer', 'In Progress'], ['Waiting for customer', 'Resolved'],
-    ['Resolved', 'Waiting for support'],
-  ]);
-  await prisma.workflowStatus.updateMany({ where: { projectId: help.id, name: 'Waiting for customer' }, data: { pausesSla: true } });
-  if (!(await prisma.requestType.count({ where: { projectId: help.id } }))) await setUpServiceDesk(prisma, help.id);
+  const flow = await ensureWorkflow(desk.id, SD_FLOW, SD_MOVES);
+  await prisma.workflowStatus.updateMany({ where: { projectId: desk.id, name: 'Waiting for customer' }, data: { pausesSla: true } });
+  if (!(await prisma.requestType.count({ where: { projectId: desk.id } }))) await setUpServiceDesk(prisma, desk.id);
 
   // Fields on the portal forms
-  const H = await new Builder(help.id, 'HELP').load();
-  await H.fields([
-    { key: 'os', name: 'Operating system', type: 'SELECT', options: ['Windows', 'macOS', 'Linux', 'iOS', 'Android'], order: 1 },
-    { key: 'manager', name: 'Approving manager', type: 'TEXT', order: 2 },
-    { key: 'affected_url', name: 'Affected page or URL', type: 'TEXT', order: 3 },
-  ]);
-  const fieldIds = new Map((await prisma.customFieldDefinition.findMany({ where: { projectId: help.id } })).map((f) => [f.key, f.id]));
-  const types = new Map((await prisma.requestType.findMany({ where: { projectId: help.id } })).map((t) => [t.name, t]));
-  const formFields: [string, string, boolean][] = [
-    ['Get IT help', 'os', false],
-    ['Report a bug', 'os', false], ['Report a bug', 'affected_url', false],
-    ['Request access', 'manager', true],
-  ];
-  for (const [position, [typeName, key, required]] of formFields.entries()) {
+  const B = await new Builder(desk.id, d.key).load();
+  await B.fields(d.fields);
+  const fieldIds = new Map((await prisma.customFieldDefinition.findMany({ where: { projectId: desk.id } })).map((f) => [f.key, f.id]));
+  const types = new Map((await prisma.requestType.findMany({ where: { projectId: desk.id } })).map((t) => [t.name, t]));
+  for (const [position, [typeName, key, required]] of d.formFields.entries()) {
     const type = types.get(typeName);
     if (!type) continue;
     await prisma.requestTypeField.upsert({
@@ -381,21 +398,22 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     });
   }
 
-  const request = async (s: RequestSpec) => {
-    if (await prisma.issue.findFirst({ where: { projectId: help.id, summary: s.summary } })) return;
+  return async (s: RequestSpec) => {
+    if (await prisma.issue.findFirst({ where: { projectId: desk.id, summary: s.summary } })) return;
     const status = flow.get(s.status)!;
     const type = types.get(s.type)!;
     const created = minutesAgo(s.createdMinutesAgo);
     const lastActivity = Math.min(s.createdMinutesAgo, ...(s.replies ?? []).map((r) => r.minutesAgo));
     const stoppedAt = s.pausedMinutesAgo ?? s.resolvedMinutesAgo;
-    const { key, number } = await H.nextKey();
+    const { key, number } = await B.nextKey();
     const issue = await prisma.issue.create({
       data: {
         key,
         number,
-        projectId: help.id,
+        projectId: desk.id,
         type: type.issueType,
         requestTypeId: type.id,
+        organizationId: s.organization,
         summary: s.summary,
         description: s.description,
         priority: s.priority,
@@ -424,7 +442,7 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     }
     if (s.status !== 'Waiting for support') {
       history.push({
-        field: 'status', fromValue: 'Waiting for support', toValue: s.status, userId: (s.assignee ?? elena).id,
+        field: 'status', fromValue: 'Waiting for support', toValue: s.status, userId: (s.assignee ?? d.lead).id,
         createdAt: minutesAgo(stoppedAt ?? s.createdMinutesAgo - 10),
       });
     }
@@ -439,6 +457,51 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
       });
     }
   };
+}
+
+async function organization(name: string, members: User[]) {
+  const org = await prisma.organization.upsert({ where: { name }, update: {}, create: { name } });
+  for (const u of members) {
+    await prisma.organizationMember.upsert({
+      where: { organizationId_userId: { organizationId: org.id, userId: u.id } },
+      update: {},
+      create: { organizationId: org.id, userId: u.id },
+    });
+  }
+  return org;
+}
+
+// A simple logo for the Acme help center (kept as a data URL, like logos uploaded in the app).
+const ACME_LOGO = `data:image/svg+xml;base64,${Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#00875A"/>'
+  + '<path d="M17 47 32 15l15 32h-8l-7-16-7 16z" fill="#fff"/></svg>',
+).toString('base64')}`;
+
+async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' | 'nikos' | 'anna' | 'george' | 'peter', User>) {
+  const { anna, george, peter, andreas, sofia, lina, nikos, elena } = p;
+
+  // Customer companies: colleagues see requests shared with their organization.
+  const acme = await organization('Acme Retail', [anna, peter]);
+  const globex = await organization('Globex', [george]);
+
+  const request = await demoDesk({
+    key: 'HELP',
+    name: 'IT Help Desk',
+    description: 'Internal IT support. Customers raise requests in the help center; agents work them from the queues.',
+    lead: elena,
+    agents: [[elena, ProjectRole.ADMIN], [andreas, ProjectRole.MEMBER], [sofia, ProjectRole.MEMBER], [lina, ProjectRole.MEMBER]],
+    fields: [
+      { key: 'os', name: 'Operating system', type: 'SELECT', options: ['Windows', 'macOS', 'Linux', 'iOS', 'Android'], order: 1 },
+      { key: 'manager', name: 'Approving manager', type: 'TEXT', order: 2 },
+      { key: 'affected_url', name: 'Affected page or URL', type: 'TEXT', order: 3 },
+    ],
+    formFields: [
+      ['Get IT help', 'os', false],
+      ['Report a bug', 'os', false], ['Report a bug', 'affected_url', false],
+      ['Request access', 'manager', true],
+    ],
+    organizations: [acme.id, globex.id],
+  });
 
   // One request in each SLA situation: breached, on track, paused, at risk, met, brand new.
   await request({
@@ -463,7 +526,7 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     summary: 'Access to the Finance shared drive',
     description: "<p>I've joined the budgeting working group and need read access to the <code>budget-2026</code> folder on the Finance drive.</p>",
     type: 'Request access', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for customer', assignee: sofia,
-    createdMinutesAgo: 6 * 60, respondedAfter: 50, pausedMinutesAgo: 5 * 60 - 10, fields: { manager: 'Katerina Antoniou' },
+    createdMinutesAgo: 6 * 60, respondedAfter: 50, pausedMinutesAgo: 5 * 60 - 10, fields: { manager: 'Katerina Antoniou' }, organization: acme.id,
     replies: [
       { author: sofia, body: '<p>Finance drives need written approval. Could you ask Katerina to reply here confirming the access, please?</p>', minutesAgo: 5 * 60 - 10 },
       { author: sofia, body: '<p>Checked AD: the group is <code>FIN-Budget-RO</code>. Will add Anna as soon as approval lands.</p>', minutesAgo: 5 * 60 - 12, internal: true },
@@ -499,7 +562,47 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     summary: 'New starter needs a laptop and accounts',
     description: '<p>Maria Lopez starts on Monday in Customer Success. She needs a laptop, email, Slack and CRM accounts.</p>',
     type: 'Get IT help', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for support', assignee: elena,
-    createdMinutesAgo: 5 * 60 + 20, fields: { os: 'Windows' },
+    createdMinutesAgo: 5 * 60 + 20, fields: { os: 'Windows' }, organization: acme.id,
+  });
+
+  // ── ACME: a branded help center for one client company only ─────────────
+  const acmeRequest = await demoDesk({
+    key: 'ACME',
+    name: 'Acme Support',
+    description: 'Support for Acme Retail stores and head office.',
+    lead: lina,
+    agents: [[lina, ProjectRole.ADMIN], [nikos, ProjectRole.MEMBER], [andreas, ProjectRole.MEMBER]],
+    portal: {
+      portalOpen: false,
+      portalColor: '#00875A',
+      portalWelcome: 'Welcome to Acme Support. Tell us what you need and our team will get back to you, usually within a few hours.',
+      portalLogo: ACME_LOGO,
+    },
+    fields: [{ key: 'store', name: 'Store', type: 'SELECT', options: ['Head office', 'Athens', 'Limassol', 'Thessaloniki'], order: 1 }],
+    formFields: [['Get IT help', 'store', true], ['Report a bug', 'store', false]],
+    organizations: [acme.id],
+  });
+  await acmeRequest({
+    summary: 'Card terminal in the Limassol store keeps rebooting',
+    description: '<p>Terminal 2 restarts every few minutes since this morning. We are sending customers to terminal 1.</p>',
+    type: 'Get IT help', reporter: peter, priority: Priority.HIGH, status: 'In Progress', assignee: nikos,
+    createdMinutesAgo: 70, respondedAfter: 12, fields: { store: 'Limassol' }, organization: acme.id,
+    replies: [
+      { author: nikos, body: '<p>Thanks Peter, we can see the terminal dropping off the network. A replacement is on its way and should arrive this afternoon.</p>', minutesAgo: 58 },
+      { author: nikos, body: '<p>Courier booked, tracking 77-3310. Firmware rollback did not help.</p>', minutesAgo: 50, internal: true },
+    ],
+  });
+  await acmeRequest({
+    summary: 'Price labels print in the wrong currency',
+    description: '<p>The label printer at head office shows prices in USD instead of EUR.</p>',
+    type: 'Report a bug', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for support',
+    createdMinutesAgo: 40, fields: { store: 'Head office' }, organization: acme.id,
+  });
+  await acmeRequest({
+    summary: 'Change my store manager permissions',
+    description: '<p>I moved to the Athens store and need manager access there instead of Limassol.</p>',
+    type: 'Request access', reporter: peter, priority: Priority.LOW, status: 'Waiting for support',
+    createdMinutesAgo: 25,
   });
 }
 
@@ -516,7 +619,7 @@ async function main() {
   const maria = await byEmail('pm@jiratech.local');
   const andreas = await byEmail('dev@jiratech.local');
   const alex = await byEmail('qa@jiratech.local');
-  const [elena, nikos, sofia, daniel, katerina, marcus, lina, anna, george] = await Promise.all(PEOPLE.map((p) => byEmail(p.email)));
+  const [elena, nikos, sofia, daniel, katerina, marcus, lina, anna, george, peter] = await Promise.all(PEOPLE.map((p) => byEmail(p.email)));
 
   // ── PAY: Payments Platform ────────────────────────────────────────────────
   const pay = await prisma.project.upsert({
@@ -919,7 +1022,7 @@ async function main() {
     [sofia, ProjectRole.MEMBER], [marcus, ProjectRole.MEMBER], [daniel, ProjectRole.VIEWER], [alex, ProjectRole.VIEWER],
   ]);
 
-  await seedServiceDesk({ elena, andreas, sofia, lina, anna, george });
+  await seedServiceDesk({ elena, andreas, sofia, lina, nikos, anna, george, peter });
 
   // ── Saved filters ─────────────────────────────────────────────────────────
   await filter(admin, 'Release blockers', 'labels = release-blocker OR (priority = Highest AND status != CLOSED) ORDER BY priority DESC', true,

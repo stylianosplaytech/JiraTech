@@ -476,7 +476,8 @@ Project administrators change all of it in the **Service desk** section of the p
   (text, number, select or date; each can be required). New fields can be created right in the dialog.
 - **SLA goals**: hours per priority for *time to first response* and *time to resolution*; leave a box empty for no goal.
 - **Queues**: named JQL filters, always limited to the project. Without `ORDER BY`, the request closest to breaching comes first.
-- **Help center access**: *Any customer*, or *Only customers I add* with a list of customers.
+- **Help center**: who may use it (*Any customer*, or *Only the organizations and customers listed*), the organizations it serves,
+  and its **look and feel**: logo (PNG, JPEG, GIF, WebP or SVG up to 256 KB), accent colour and welcome message, with a live preview.
 - **Workflow**: the *Pauses SLA* column marks statuses where the resolution clock stops (e.g. *Waiting for customer*).
 
 ### Customers
@@ -485,11 +486,25 @@ Customers are user accounts with the **Customer** role (create them on the **Peo
 any other page sends them to it, and the API refuses every agent endpoint for them. They can't be project members or leads,
 and they don't appear in assignee, watcher or @mention pickers.
 
+### Several help centers and organizations
+
+Every service desk project is its own help center at `/portal/KEY` with its own branding, so you can run one per client, product or
+department. **Organizations** group customer accounts by company: a global admin creates them and adds members under
+**People → Organizations**, and a service desk's admin links them to the desk. Members of a linked organization can use that help center
+even when it isn't open to every customer.
+
+- A customer with access to **one** help center lands straight in it (header, home link and banner in its colours); customers with
+  several see a list of them, each with its logo.
+- When raising a request, customers choose **Share with** — their organization (the default) or *No one*. Colleagues in that organization
+  see shared requests under *Requests* and can follow and reply to them. The requester can change this on the request page.
+- Agents see the organization on the request panel and in queues, and can change or remove it. Changes are recorded in the history.
+- Only global admins change organization membership, because it decides which help centers a customer can use.
+
 ### The help center (`/portal`)
 
 - **Home**: the service desks the customer can use and their open requests.
 - **Raise a request**: pick a request type, fill in the summary, description and the type's fields.
-- **Requests**: everything they raised or that was shared with them, filterable by open/closed.
+- **Requests**: everything they raised, were added to, or that colleagues shared with their organization, filterable by open/closed.
 - **A request**: description, field values, the public conversation, status and who it's shared with. Customers reply here;
   replying to a request that is *waiting for customer* sends it back to the agents automatically.
 
@@ -504,7 +519,7 @@ menu, and agents can **raise a request on behalf of** a customer (e.g. one who p
 - **Issue page**: a **Service request** panel with the request type, the customer, both SLA clocks and the customers it's shared with (add more with *Share with a customer*).
 - **Comments**: choose **Reply to customer** (customers see it and are notified) or **Add internal note** (agents only, shown in yellow).
   The first reply to the customer stops the first-response clock.
-- **JQL**: `requestType = "Report a bug"` finds requests of a type.
+- **JQL**: `requestType = "Report a bug"` finds requests of a type; `organization = "Acme Retail"` those shared with an organization.
 
 ### How SLAs are measured
 
