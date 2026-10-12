@@ -9,7 +9,7 @@ import QuickSearch from './QuickSearch';
 import NotificationBell from './NotificationBell';
 import Avatar from './Avatar';
 import { Dropdown, Modal, useToast } from './ui';
-import { ChevronDownIcon, LogoutIcon, MenuIcon, PlusIcon, XIcon } from './Icons';
+import { ChevronDownIcon, LogoutIcon, MenuIcon, MessageIcon, PlusIcon, XIcon } from './Icons';
 import CreateIssueForm from './CreateIssueForm';
 
 const NAV = [
@@ -174,6 +174,16 @@ export default function Layout({ children, user, loading }: { children: React.Re
             <PlusIcon size={14} /> <span className="hidden sm:inline">Create</span>
           </button>
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
+            <a
+              href="/portal"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-subtle max-xl:w-8 max-xl:px-0"
+              title="Open the help center in a new window"
+              aria-label="Open the help center in a new window"
+            >
+              <MessageIcon size={16} /> <span className="hidden xl:inline">Help center</span>
+            </a>
             <QuickSearch />
             <NotificationBell />
             {!loading && user && (
