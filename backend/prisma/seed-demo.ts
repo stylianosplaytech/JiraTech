@@ -348,6 +348,8 @@ interface DeskSpec {
   formFields: [string, string, boolean][];
   /** The project's customer portals, all feeding this project */
   portals: PortalSpec[];
+  /** Its email address. No mailbox is connected in the demo: try it with "Send a test email". */
+  email?: { address: string; createCustomers: boolean };
 }
 
 interface PortalSpec {
@@ -407,6 +409,13 @@ async function demoDesk(d: DeskSpec) {
       },
     });
     portalIds.set(ps.slug, portal.id);
+  }
+  if (d.email) {
+    await prisma.emailChannel.upsert({
+      where: { projectId: desk.id },
+      update: {},
+      create: { projectId: desk.id, address: d.email.address, createCustomers: d.email.createCustomers },
+    });
   }
 
   // Fields on the portal forms
@@ -533,6 +542,7 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     ],
     // Internal IT: one portal, open to every customer and tied to no client company.
     portals: [{ slug: 'help', name: 'IT Help Desk', open: true }],
+    email: { address: 'help@jiratech.local', createCustomers: true },
   });
 
   // One request in each SLA situation: breached, on track, paused, at risk, met, brand new.
@@ -629,6 +639,8 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
         requestTypes: ['Report a bug', 'Suggest an improvement'],
       },
     ],
+    // Each client's emails go to its own portal; strangers are turned away rather than joining a client's portal.
+    email: { address: 'support@clientservices.local', createCustomers: false },
   });
   await csRequest({
     portal: 'acme',

@@ -188,6 +188,7 @@ model Project {
   customers             ProjectCustomer[]
   organizations         ProjectOrganization[]
   portals               Portal[]
+  emailChannel          EmailChannel?
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -661,6 +662,7 @@ model RequestType {
   fields  RequestTypeField[]
   issues  Issue[]
   portals PortalRequestType[]
+  emailChannels EmailChannel[]
 
   @@unique([projectId, name])
 }
@@ -783,6 +785,7 @@ model Portal {
   /// Request types offered here; none listed means all of the project's
   requestTypes  PortalRequestType[]
   issues        Issue[]
+  emailChannels EmailChannel[]
 
   @@index([projectId])
 }
@@ -817,4 +820,73 @@ model PortalRequestType {
   requestType RequestType @relation(fields: [requestTypeId], references: [id], onDelete: Cascade)
 
   @@id([portalId, requestTypeId])
+}
+
+/**
+ * A service desk's email address. The mailbox is read over IMAP: each new email becomes a request,
+ * and replies whose subject mentions an existing request (e.g. "(HELP-12)") are added to it as comments.
+ */
+model EmailChannel {
+  id            String   @id @default(cuid())
+  projectId     String   @unique
+  /// The address customers write to, unique across service desks; also the Reply-To of emails sent to customers
+  address       String   @unique
+  /// Polled only when enabled (and the mailbox settings are complete)
+  enabled       Boolean  @default(false)
+  imapHost      String?
+  imapPort      Int      @default(993)
+  /// TLS from the start (port 993); otherwise STARTTLS when the server offers it
+  imapSecure    Boolean  @default(true)
+  imapUser      String?
+  /// Encrypted with MAIL_SECRET (or JWT_SECRET); never sent to the browser
+  imapPassword  String?
+  imapFolder    String   @default("INBOX")
+  /// Where new requests are filed when the sender's own portal can't be told (null: the project's first portal)
+  portalId      String?
+  /// Request type of new requests (null: the portal's first)
+  requestTypeId String?
+  /// Unknown senders get a customer account; otherwise only existing customers of the service desk are accepted
+  createCustomers Boolean @default(true)
+  lastCheckedAt DateTime?
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  portal      Portal?        @relation(fields: [portalId], references: [id], onDelete: SetNull)
+  requestType RequestType?   @relation(fields: [requestTypeId], references: [id], onDelete: SetNull)
+  messages    EmailMessage[]
+}
+
+enum EmailOutcome {
+  /// A new request was raised
+  CREATED
+  /// Added as a reply to an existing request
+  COMMENTED
+  /// Deliberately skipped (auto-reply, unknown sender…)
+  IGNORED
+  FAILED
+}
+
+/** One email the channel received, and what became of it. Also stops a message being processed twice. */
+model EmailMessage {
+  id         String       @id @default(cuid())
+  channelId  String
+  /// The Message-ID header (or a hash of the message when it has none)
+  messageId  String
+  fromEmail  String?
+  fromName   String?
+  subject    String?
+  outcome    EmailOutcome
+  /// Why it was ignored or failed
+  detail     String?
+  issueKey   String?
+  /// Sent with "Send a test email" rather than received in the mailbox
+  test       Boolean      @default(false)
+  receivedAt DateTime     @default(now())
+
+  channel EmailChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, messageId])
+  @@index([channelId, receivedAt])
 }

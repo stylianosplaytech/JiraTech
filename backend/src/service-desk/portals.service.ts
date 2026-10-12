@@ -469,7 +469,7 @@ export class PortalsService implements OnModuleInit {
   }
 
   /** Customers need an open portal, or to be listed (themselves or through an organization); staff need access to its project. */
-  private async canUse(user: AuthUser, portal: Portal) {
+  async canUse(user: AuthUser, portal: Portal) {
     if (user.role !== UserRole.CUSTOMER) return this.access.can(user, portal.projectId, 'browse');
     if (portal.open) return true;
     const [listed, viaOrganization] = await Promise.all([
@@ -492,7 +492,7 @@ export class PortalsService implements OnModuleInit {
   }
 
   /** The request types a portal offers: the ones it lists, or all of its project's. */
-  private async offeredTypes(portal: { id: string; projectId: string }) {
+  async offeredTypes(portal: { id: string; projectId: string }) {
     const listed = await this.prisma.portalRequestType.findMany({ where: { portalId: portal.id }, select: { requestTypeId: true } });
     return this.prisma.requestType.findMany({
       where: { projectId: portal.projectId, ...(listed.length ? { id: { in: listed.map((l) => l.requestTypeId) } } : {}) },
@@ -502,7 +502,7 @@ export class PortalsService implements OnModuleInit {
   }
 
   /** Organizations a request raised by this person through this portal can be shared with: theirs that it serves. */
-  private shareOptions(portalId: string, userId: string) {
+  shareOptions(portalId: string, userId: string) {
     return this.prisma.organization.findMany({
       where: { members: { some: { userId } }, portals: { some: { portalId } } },
       select: { id: true, name: true },

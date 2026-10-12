@@ -63,7 +63,7 @@ the IT Help Desk (**HELP**, one portal open to every customer) and **Client Serv
 through their own branded portals, **Acme Support** (`/portal/acme`) and **Globex Service Center** (`/portal/globex`).
 The new issues cover every status, priority and type, with epics and child issues, blocked and at-risk items,
 comments with @mentions, links (also across projects), watchers, work logs, history and shared saved filters.
-It is safe to run more than once. Every demo user logs in with the same password as the admin account, e.g.
+The desks have demo email addresses (`help@jiratech.local`, `support@clientservices.local`) with no mailbox connected: try them with *Send a test email*. It is safe to run more than once. Every demo user logs in with the same password as the admin account, e.g.
 `elena@jiratech.local` (team lead), `nikos@jiratech.local` (developer), `sofia@jiratech.local` (QA),
 `daniel@jiratech.local` (release manager), `katerina@jiratech.local` (product owner). HELP's agents are Elena (admin), Andreas, Sofia and Lina;
 CS's are Lina (admin), Nikos and Andreas. The customers only see the help center at `/portal`: `anna@customer.local` and
@@ -117,7 +117,7 @@ Create a project with the **Service desk** type. **Customers** (users with the *
 work requests from **Queues** (JQL filters sorted by SLA urgency), reply to the customer or add **internal notes** customers never see,
 and track two **SLAs** per request: time to first response and time to resolution (goals per priority; the clock pauses in statuses marked
 *Pauses SLA*, e.g. *Waiting for customer*, and runs around the clock). A customer replying to a request that's waiting for them sends it
-back to the agents. Admins configure portals, request types (with portal fields), SLA goals and queues on the project page.
+back to the agents. Admins configure portals, request types (with portal fields), SLA goals, queues and the desk's **email address** on the project page: each service desk can have its own address whose emails become requests and whose replies become comments.
 
 **Portals: one team, many client companies.** A service desk project can have several **portals**, e.g. one per client company. Each
 has its own link (`/portal/acme`), logo, accent colour, welcome message, request types, and the **organizations** or customers allowed
@@ -177,6 +177,15 @@ APP_URL=https://jiratech.example.com   # used for links in emails
 ```
 
 Without `SMTP_HOST`, emails are written as `.eml` files to `backend/mail-outbox/` so you can open them locally.
+
+**Incoming email (service desks).** Each service desk can have its own address, read over IMAP: new emails become requests and replies
+(subject containing the key, e.g. `(HELP-12)`) become comments. Configure it on the project page under *Service desk → Email*. Optional settings:
+
+```
+MAIL_SECRET=...          # encrypts stored mailbox passwords (defaults to JWT_SECRET)
+MAIL_POLL_SECONDS=60     # how often mailboxes are read
+MAIL_POLLING=false       # don't read mailboxes on this instance
+```
 
 ### JQL
 

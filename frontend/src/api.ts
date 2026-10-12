@@ -268,6 +268,19 @@ export const api = {
     request<PortalAdmin>(`/service-desk/${key}/portals/${id}/customers/${userId}`, { method: 'PUT' }),
   removePortalCustomer: (key: string, id: string, userId: string) =>
     request<PortalAdmin>(`/service-desk/${key}/portals/${id}/customers/${userId}`, { method: 'DELETE' }),
+  // ─── A service desk's email address (project admins change it) ─────────────
+  getEmailChannel: (key: string) => request<EmailChannelSettings>(`/service-desk/${key}/email`),
+  /** Fields left out keep their value; '' clears the optional ones (imapPassword is write-only). */
+  saveEmailChannel: (key: string, data: EmailChannelPatch) =>
+    request<EmailChannel>(`/service-desk/${key}/email`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteEmailChannel: (key: string) => request<{ deleted: boolean }>(`/service-desk/${key}/email`, { method: 'DELETE' }),
+  getEmailMessages: (key: string) => request<EmailMessage[]>(`/service-desk/${key}/email/messages`),
+  testEmailConnection: (key: string) =>
+    request<{ ok: boolean; messages: number; unseen: number }>(`/service-desk/${key}/email/test-connection`, { method: 'POST' }),
+  checkEmail: (key: string) =>
+    request<{ received: number; created: number; commented: number; ignored: number; failed: number }>(`/service-desk/${key}/email/check`, { method: 'POST' }),
+  sendTestEmail: (key: string, data: { from: string; fromName?: string; subject: string; body: string }) =>
+    request<{ outcome: EmailOutcome; detail: string | null; issueKey: string | null }>(`/service-desk/${key}/email/test-email`, { method: 'POST', body: JSON.stringify(data) }),
   setRequestOrganization: (issueId: string, organizationId: string | null) =>
     request<{ organization: Named | null }>(`/service-desk/requests/${issueId}/organization`, { method: 'PATCH', body: JSON.stringify({ organizationId }) }),
 
@@ -815,8 +828,56 @@ export interface PortalAdmin {
   requests: number;
 }
 
+/** A service desk's email address and the mailbox (IMAP) it is read from. */
+export interface EmailChannel {
+  address: string;
+  enabled: boolean;
+  imapHost: string | null;
+  imapPort: number;
+  /** TLS from the start; otherwise STARTTLS */
+  imapSecure: boolean;
+  imapUser: string | null;
+  hasPassword: boolean;
+  imapFolder: string;
+  /** Default portal for new requests (null: the project's first) */
+  portalId: string | null;
+  /** Request type of new requests (null: the portal's first) */
+  requestTypeId: string | null;
+  /** Unknown senders become customers */
+  createCustomers: boolean;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+}
+
+export interface EmailChannelSettings {
+  channel: EmailChannel | null;
+  /** False when the server was started with MAIL_POLLING=false */
+  polling: boolean;
+  pollSeconds: number;
+}
+
+export type EmailChannelPatch = Partial<Omit<EmailChannel, 'hasPassword' | 'lastCheckedAt' | 'lastError' | 'portalId' | 'requestTypeId'>> & {
+  imapPassword?: string;
+  portalId?: string;
+  requestTypeId?: string;
+};
+
+export type EmailOutcome = 'CREATED' | 'COMMENTED' | 'IGNORED' | 'FAILED';
+
+export interface EmailMessage {
+  id: string;
+  fromEmail: string | null;
+  fromName: string | null;
+  subject: string | null;
+  outcome: EmailOutcome;
+  detail: string | null;
+  issueKey: string | null;
+  test: boolean;
+  receivedAt: string;
+}
+
 export interface Organization extends Named {
-  members: { userId: string; user: { id: string; name: string; email: string } }[];
+  members:{ userId: string; user: { id: string; name: string; email: string } }[];
   portals: { portalId: string; portal: { id: string; slug: string; name: string; project: { key: string; name: string } } }[];
   _count: { issues: number };
 }

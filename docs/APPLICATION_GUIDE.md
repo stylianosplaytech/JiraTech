@@ -42,7 +42,7 @@ On top of the standard Jira-style features, JiraTech supports the **SPORTS conve
 | Backend | NestJS (REST API under `/api`) | Port **3000** |
 | Database | Prisma ORM with **SQLite** (default) or **PostgreSQL** | Chosen by `DATABASE_URL` in `backend/.env` |
 | Auth | JWT (bearer token, 7-day expiry by default) | Token stored in the browser |
-| Email | SMTP, or `.eml` files in `backend/mail-outbox/` when no SMTP host is set | |
+| Email | SMTP, or `.eml` files in `backend/mail-outbox/` when no SMTP host is set; service desk mailboxes read over IMAP | |
 | PDF | jsPDF, generated in the browser | Used by Reports |
 
 Each backend module maps to a feature area: `auth`, `projects`, `issues` (incl. bulk), `workflow`, `search` (JQL), `board`, `comments/history/links` (in issues), `notifications`, `versions`, `components`, `labels`, `custom-fields`, `planning`, `scheduling`, `releases`, `incidents`, `dashboard`, `reports`, `users`, `access` (project permissions), `service-desk` (request types, queues, SLAs and the customer portal).
@@ -519,6 +519,31 @@ and a service desk's admin links them to portals.
   see shared requests under *Requests* and can follow and reply to them. The requester can change this on the request page.
 - Agents see the organization on the request panel and in queues, and can change or remove it. Changes are recorded in the history.
 - Only global admins change organization membership, because it decides which portals a customer can use.
+
+### Email: one address per service desk
+
+Each service desk can have its **own email address** (e.g. `support@acme.com`), set up under *Service desk → Email* on the project page.
+JiraTech reads that address's mailbox over **IMAP** (every minute by default) and:
+
+- turns each **new email** into a request from the sender: the subject becomes the summary, the text the description, and attachments
+  (up to 20 MB each) are attached. It is raised through the portal of the sender's organization; otherwise through the channel's
+  **default portal**, with the chosen **request type** (or the portal's first);
+- adds a **reply** to the existing request as a comment when the subject carries the request's key, e.g. `Re: [JiraTech] (HELP-12) …`.
+  Quoted earlier messages are trimmed. A customer replying to a request *waiting for customer* sends it back to the agents, as on the portal.
+  Only people who can see the request may reply to it;
+- skips out-of-office replies, delivery reports, mailing-list mail and mail from JiraTech's own address, so notifications can't loop.
+
+**Accept emails from anyone**: unknown senders get a customer account (no password; an admin can set one on the People page) and access to
+the default portal. Untick it to accept only existing customers of the service desk — do this when the default portal belongs to one client
+company. Each address can belong to one service desk only. While the channel is on, emails to customers are sent with it as **Reply-To**.
+
+Admins fill in the mail server, port, security (SSL/TLS or STARTTLS), user name, password and folder, then use *Test connection*,
+*Turn on* and *Check now*. The password is stored encrypted (key: `MAIL_SECRET`, or `JWT_SECRET`; changing it means re-entering the
+password) and never sent back to the browser. *Send a test email* runs a made-up email through the channel without a mail server.
+*Received emails* lists the last 50 emails and what became of each (new request, reply added, ignored or failed, and why).
+Read emails are marked as read in the mailbox; a message is never handled twice. Microsoft 365 only allows OAuth sign-in over IMAP, which
+isn't supported yet; Gmail works with an app password. Server settings: `MAIL_POLL_SECONDS` (default 60) and `MAIL_POLLING=false` to stop
+reading mailboxes (e.g. on a second server instance).
 
 ### The help center (`/portal`)
 

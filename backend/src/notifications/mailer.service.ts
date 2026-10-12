@@ -9,6 +9,8 @@ export interface MailMessage {
   subject: string;
   text: string;
   html: string;
+  /** Where replies go, e.g. the service desk's own address so they come back as comments */
+  replyTo?: string;
 }
 
 /**

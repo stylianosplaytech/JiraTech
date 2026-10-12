@@ -6,19 +6,20 @@ import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { AuthRequest } from '../common/auth-user';
 import { ServiceDeskService } from './service-desk.service';
 import { PortalsService } from './portals.service';
+import { EmailChannelService } from './email-channel.service';
 import {
-  CreatePortalDto, PortalCommentDto, PortalRequestDto, QueueDto, RequestOrganizationDto, RequestTypeDto, SlaTargetsDto,
+  CreatePortalDto, EmailChannelDto, PortalCommentDto, PortalRequestDto, QueueDto, RequestOrganizationDto, RequestTypeDto, SlaTargetsDto, TestEmailDto,
   UpdatePortalDto, UpdateQueueDto, UpdateRequestTypeDto,
 } from './dto/service-desk.dto';
 
 const PROJECT = { from: 'projectParam', param: 'key' } as const;
 const ISSUE = { from: 'issueParam', param: 'id' } as const;
 
-/** /service-desk — agents work queues and see SLAs; project admins configure the service desk and its portals. */
+/** /service-desk — agents work queues and see SLAs; project admins configure the service desk, its portals and its email address. */
 @Controller('service-desk')
 @UseGuards(JwtAuthGuard, AccessGuard)
 export class ServiceDeskController {
-  constructor(private serviceDesk: ServiceDeskService, private portals: PortalsService) {}
+  constructor(private serviceDesk: ServiceDeskService, private portals: PortalsService, private email: EmailChannelService) {}
 
   @Get('requests/:id')
   @RequireAccess('browse', ISSUE)
@@ -150,6 +151,50 @@ export class ServiceDeskController {
   @RequireAccess('admin', PROJECT)
   removePortalCustomer(@Param('key') key: string, @Param('portalId') portalId: string, @Param('userId') userId: string) {
     return this.portals.removeCustomer(key, portalId, userId);
+  }
+
+  // ─── Email channel ─────────────────────────────────────────────────────────
+
+  @Get(':key/email')
+  @RequireAccess('browse', PROJECT)
+  emailChannel(@Param('key') key: string) {
+    return this.email.get(key);
+  }
+
+  @Put(':key/email')
+  @RequireAccess('admin', PROJECT)
+  saveEmailChannel(@Param('key') key: string, @Body() dto: EmailChannelDto) {
+    return this.email.save(key, dto);
+  }
+
+  @Delete(':key/email')
+  @RequireAccess('admin', PROJECT)
+  removeEmailChannel(@Param('key') key: string) {
+    return this.email.remove(key);
+  }
+
+  @Get(':key/email/messages')
+  @RequireAccess('browse', PROJECT)
+  emailMessages(@Param('key') key: string) {
+    return this.email.messages(key);
+  }
+
+  @Post(':key/email/test-connection')
+  @RequireAccess('admin', PROJECT)
+  testEmailConnection(@Param('key') key: string) {
+    return this.email.testConnection(key);
+  }
+
+  @Post(':key/email/check')
+  @RequireAccess('admin', PROJECT)
+  checkEmail(@Param('key') key: string) {
+    return this.email.checkNow(key);
+  }
+
+  @Post(':key/email/test-email')
+  @RequireAccess('admin', PROJECT)
+  sendTestEmail(@Param('key') key: string, @Body() dto: TestEmailDto) {
+    return this.email.testEmail(key, dto);
   }
 }
 

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, formatDuration, type PortalAdmin, type Queue, type RequestType, type SlaTarget } from '../api';
 import { PortalHero, PortalLogo } from '../portal/Branding';
+import EmailChannelSettings from './EmailChannelSettings';
 import { PriorityIcon, typeLabel } from './Badges';
 import { SelectPicker } from './Pickers';
 import Avatar from './Avatar';
@@ -706,10 +707,11 @@ export default function ServiceDeskSettings({ projectKey, canAdmin }: { projectK
   return (
     <section id="service-desk" className="scroll-mt-20">
       <h2 className="text-base font-semibold mb-1">Service desk</h2>
-      <p className="text-jira-subtle mb-4">What customers can ask for, how fast you aim to answer, how agents see their work, and the portals customers use.</p>
+      <p className="text-jira-subtle mb-4">What customers can ask for, how fast you aim to answer, how agents see their work, and the portals and email address customers use.</p>
       {isLoading ? <Spinner /> : !data ? <p className="field-error">{errorMessage(error)}</p> : (
         <div className="space-y-8">
           <Portals projectKey={projectKey} requestTypes={data.requestTypes} canAdmin={canAdmin} />
+          <EmailChannelSettings projectKey={projectKey} requestTypes={data.requestTypes} canAdmin={canAdmin} />
           <RequestTypes projectKey={projectKey} types={data.requestTypes} canAdmin={canAdmin} />
           <SlaGoals projectKey={projectKey} targets={data.slaTargets} canAdmin={canAdmin} />
           <QueueEditor projectKey={projectKey} queues={data.queues} canAdmin={canAdmin} />

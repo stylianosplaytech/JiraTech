@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  IsArray, IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
+  IsArray, IsBoolean, IsEmail, IsEnum, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
 } from 'class-validator';
 import { IssueType, Priority } from '@prisma/client';
 
@@ -211,6 +211,85 @@ export class PortalRequestDto {
 export class PortalCommentDto {
   @IsString()
   @MinLength(1)
+  @MaxLength(32000)
+  body!: string;
+}
+
+/** A service desk's email channel. Fields left out keep their value; '' clears the optional ones. */
+export class EmailChannelDto {
+  /** The address customers write to */
+  @IsOptional()
+  @IsEmail({}, { message: 'Enter a valid email address' })
+  @MaxLength(254)
+  address?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  @Matches(/^[A-Za-z0-9.-]*$/, { message: 'Enter the mail server host name, e.g. imap.example.com' })
+  imapHost?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  imapPort?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  imapSecure?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(254)
+  imapUser?: string;
+
+  /** Write-only; '' removes it */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  imapPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  imapFolder?: string;
+
+  /** '' or null: the project's first portal */
+  @IsOptional()
+  @IsString()
+  portalId?: string | null;
+
+  /** '' or null: the portal's first request type */
+  @IsOptional()
+  @IsString()
+  requestTypeId?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  createCustomers?: boolean;
+}
+
+/** "Send a test email": runs a made-up email through the channel as if it had arrived in the mailbox. */
+export class TestEmailDto {
+  @IsEmail({}, { message: 'Enter the sender\'s email address' })
+  from!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  fromName?: string;
+
+  @IsString()
+  @MaxLength(255)
+  subject!: string;
+
+  @IsString()
   @MaxLength(32000)
   body!: string;
 }

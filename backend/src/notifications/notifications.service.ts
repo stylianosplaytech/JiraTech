@@ -310,25 +310,29 @@ export class NotificationsService {
 
   /** `portal`: the recipients are service desk customers, so link to their request in the help center. */
   private async email(ids: string[], actorId: string, issue: IssueRef, portal = false) {
-    const [notifications, actor] = await Promise.all([
+    const [notifications, actor, channel] = await Promise.all([
       this.prisma.notification.findMany({
         where: { id: { in: ids }, user: { emailNotifications: true } },
         include: { user: { select: { email: true, name: true } } },
       }),
       this.prisma.user.findUnique({ where: { id: actorId }, select: { name: true } }),
+      // Customers reply to the service desk's own address; the reply is added to the request (the key is in the subject).
+      portal ? this.prisma.emailChannel.findFirst({ where: { projectId: issue.projectId, enabled: true }, select: { address: true } }) : null,
     ]);
     const who = actor?.name ?? 'Someone';
     const url = portal ? `${this.appUrl}/portal/requests/${issue.key}` : `${this.appUrl}/browse/${issue.key}`;
     const noun = portal ? 'request' : 'issue';
     const reason = portal ? 'you raised or were added to this request' : 'you are involved in this issue';
+    const replyHint = channel ? 'Reply to this email to add a comment to the request.' : null;
     for (const n of notifications) {
       const line = this.sentence(n.type, who, issue.key);
       const ok = await this.mailer.send({
         to: n.user.email,
         subject: `[JiraTech] (${issue.key}) ${issue.summary}`,
         text: `${line}\n\n${issue.key}: ${issue.summary}\n${n.detail ? `\n${n.detail}\n` : ''}\nView the ${noun}: ${url}\n\n`
-          + `You receive this because ${reason}. Turn off email notifications from your profile menu.`,
-        html: this.html(line, issue, n.detail, url, noun, reason),
+          + `${replyHint ? `${replyHint}\n\n` : ''}You receive this because ${reason}. Turn off email notifications from your profile menu.`,
+        html: this.html(line, issue, n.detail, url, noun, reason, replyHint),
+        replyTo: channel?.address,
       });
       if (ok) await this.prisma.notification.update({ where: { id: n.id }, data: { emailedAt: new Date() } });
     }
@@ -346,7 +350,9 @@ export class NotificationsService {
     }
   }
 
-  private html(line: string, issue: IssueRef, detail: string | null, url: string, noun = 'issue', reason = 'you are involved in this issue') {
+  private html(
+    line: string, issue: IssueRef, detail: string | null, url: string, noun = 'issue', reason = 'you are involved in this issue', replyHint: string | null = null,
+  ) {
     const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
     return `<!doctype html><html><body style="margin:0;background:#F4F5F7;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#172B4D">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px">
@@ -357,6 +363,7 @@ export class NotificationsService {
 <p style="margin:0 0 8px;font-size:14px"><a href="${esc(url)}" style="color:#0052CC;text-decoration:none;font-weight:600">${esc(issue.key)}</a> ${esc(issue.summary)}</p>
 ${detail ? `<div style="margin:12px 0;padding:12px;background:#F4F5F7;border-radius:3px;font-size:14px;white-space:pre-wrap">${esc(detail)}</div>` : ''}
 <p style="margin:20px 0 0"><a href="${esc(url)}" style="display:inline-block;background:#0052CC;color:#fff;padding:8px 14px;border-radius:3px;text-decoration:none;font-size:14px;font-weight:500">View ${noun}</a></p>
+${replyHint ? `<p style="margin:16px 0 0;font-size:13px;color:#6B778C">${esc(replyHint)}</p>` : ''}
 </td></tr>
 <tr><td style="padding:16px 24px;border-top:1px solid #DFE1E6;font-size:12px;color:#6B778C">You receive this because ${esc(reason)}. You can turn off email notifications from your profile menu in JiraTech.</td></tr>
 </table></td></tr></table></body></html>`;
