@@ -49,7 +49,7 @@ export default function MyRequestsPage() {
         <div className="overflow-x-auto card bg-white">
           <table className="data-table">
             <thead>
-              <tr><th>Reference</th><th>Summary</th><th>Status</th><th>Help center</th><th>Requester</th><th>Shared with</th><th>Updated</th></tr>
+              <tr><th>Reference</th><th>Summary</th><th>Status</th><th>Portal</th><th>Requester</th><th>Shared with</th><th>Updated</th></tr>
             </thead>
             <tbody>
               {requests.map((r) => (
@@ -60,7 +60,7 @@ export default function MyRequestsPage() {
                     {r.requestType && <span className="block text-xs text-jira-muted">{r.requestType.name}</span>}
                   </td>
                   <td><StatusBadge status={r.status.category} name={r.status.name} /></td>
-                  <td className="text-jira-subtle whitespace-nowrap">{r.project.name}</td>
+                  <td className="text-jira-subtle whitespace-nowrap">{r.portal?.name ?? '—'}</td>
                   <td className="whitespace-nowrap">{r.reporter?.name ?? '—'}</td>
                   <td className="text-jira-subtle whitespace-nowrap">{r.organization?.name ?? '—'}</td>
                   <td className="text-jira-subtle whitespace-nowrap" title={new Date(r.updatedAt).toLocaleString()}>{timeAgo(r.updatedAt)}</td>

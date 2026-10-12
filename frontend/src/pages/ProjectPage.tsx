@@ -95,7 +95,7 @@ export default function ProjectPage() {
             {project.type === 'SERVICE_DESK' && (
               <>
                 <Link to="/queues" className="btn btn-default">Queues</Link>
-                <Link to={`/portal/${project.key}`} className="btn btn-default">Help center</Link>
+                <Link to="#service-desk" onClick={() => document.getElementById('service-desk')?.scrollIntoView()} className="btn btn-default">Portals</Link>
               </>
             )}
             <Link to={searchLink(project.key)} className="btn btn-default">View issues</Link>

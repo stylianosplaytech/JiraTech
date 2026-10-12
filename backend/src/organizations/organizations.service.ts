@@ -4,13 +4,13 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const ORGANIZATION_INCLUDE = {
   members: { include: { user: { select: { id: true, name: true, email: true } } }, orderBy: { user: { name: 'asc' as const } } },
-  projects: { include: { project: { select: { id: true, key: true, name: true } } } },
+  portals: { include: { portal: { select: { id: true, slug: true, name: true, project: { select: { key: true, name: true } } } } } },
   _count: { select: { issues: true } },
 } satisfies Prisma.OrganizationInclude;
 
 /**
- * Customer organizations (companies). Membership decides which help centers a customer can use and which
- * requests they see, so only global admins manage it; service desk admins just link organizations to their desk.
+ * Customer organizations (companies). Membership decides which portals a customer can use and which
+ * requests they see, so only global admins manage it; service desk admins just link organizations to their portals.
  */
 @Injectable()
 export class OrganizationsService {

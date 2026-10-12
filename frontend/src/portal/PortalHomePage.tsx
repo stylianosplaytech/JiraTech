@@ -9,11 +9,11 @@ import { PortalLogo } from './Branding';
 
 export default function PortalHomePage() {
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
-  const { data: desks, isLoading, error } = useQuery({ queryKey: ['portal-desks'], queryFn: api.getPortalDesks });
+  const { data: portals, isLoading, error } = useQuery({ queryKey: ['portal-list'], queryFn: api.getMyPortals });
   const { data: open } = useQuery({ queryKey: ['portal-requests', 'open', ''], queryFn: () => api.getMyRequests('open') });
 
-  // A customer with one help center lands straight in it, with its own look.
-  if (isCustomer(me) && desks?.length === 1) return <Navigate to={`/portal/${desks[0].key}`} replace />;
+  // A customer with one portal lands straight in it, with its own look.
+  if (isCustomer(me) && portals?.length === 1) return <Navigate to={`/portal/${portals[0].slug}`} replace />;
 
   return (
     <div>
@@ -24,20 +24,21 @@ export default function PortalHomePage() {
 
       {isLoading ? <Spinner /> : error ? <EmptyState title="Couldn't load the help center">{errorMessage(error)}</EmptyState> : (
         <>
-          {desks?.length === 0 && (
-            <EmptyState title="No help centers yet">You don't have access to any service desk. Ask your contact for an invitation.</EmptyState>
+          {portals?.length === 0 && (
+            <EmptyState title="No help centers yet">You don't have access to any help center. Ask your contact for an invitation.</EmptyState>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {desks?.map((d) => (
+            {portals?.map((d) => (
               <Link
                 key={d.id}
-                to={`/portal/${d.key}`}
+                to={`/portal/${d.slug}`}
                 className="card p-5 flex items-start gap-4 hover:shadow-popover transition-shadow bg-white border-t-[3px]"
                 style={d.branding.color ? { borderTopColor: d.branding.color } : undefined}
               >
                 <PortalLogo branding={d.branding} name={d.name} size={40} />
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold text-jira-navy">{d.name}</span>
+                  {d.project && <span className="block text-xs text-jira-muted">Feeds {d.project.name} ({d.project.key})</span>}
                   {(d.branding.welcome ?? d.description) && (
                     <span className="block text-sm text-jira-subtle mt-1 line-clamp-2">{d.branding.welcome ?? d.description}</span>
                   )}

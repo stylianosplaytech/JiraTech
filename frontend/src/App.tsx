@@ -41,8 +41,8 @@ function Portal({ user }: { user?: User }) {
         <Route index element={<PortalHomePage />} />
         <Route path="requests" element={<MyRequestsPage />} />
         <Route path="requests/:key" element={<PortalRequestPage />} />
-        <Route path=":key" element={<PortalDeskPage />} />
-        <Route path=":key/:typeId" element={<PortalDeskPage />} />
+        <Route path=":slug" element={<PortalDeskPage />} />
+        <Route path=":slug/:typeId" element={<PortalDeskPage />} />
         <Route path="*" element={<EmptyState title="Page not found" action={<Link to="/portal" className="btn btn-default">Help center</Link>} />} />
       </Routes>
     </PortalLayout>

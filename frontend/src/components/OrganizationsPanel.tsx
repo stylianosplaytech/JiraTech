@@ -34,8 +34,8 @@ export default function OrganizationsPanel({ isAdmin }: { isAdmin: boolean }) {
   return (
     <div>
       <p className="text-jira-subtle mb-4 max-w-3xl">
-        Organizations group customers by company. A service desk can open its help center to whole organizations, and customers
-        can share their requests with colleagues in their organization. Link organizations to a service desk on its project page.
+        Organizations group customers by company. A portal can be opened to whole organizations, and customers
+        can share their requests with colleagues in their organization. Link organizations to a portal on its service desk's project page.
       </p>
       {isAdmin && (
         <form onSubmit={(e) => { e.preventDefault(); create.mutate(); }} className="flex gap-2 mb-4 max-w-md">
@@ -86,9 +86,15 @@ export default function OrganizationsPanel({ isAdmin }: { isAdmin: boolean }) {
                 </div>
                 <div className="px-4 py-2">
                   <div className="text-xs text-jira-muted mb-2">
-                    {o.projects.length
-                      ? <>Help centers: {o.projects.map((p, i) => <span key={p.projectId}>{i > 0 && ', '}<Link to={`/projects/${p.project.key}#service-desk`} className="link">{p.project.name}</Link></span>)}</>
-                      : 'Not linked to any service desk yet'}
+                    {o.portals.length
+                      ? <>Portals: {o.portals.map((p, i) => (
+                        <span key={p.portalId}>
+                          {i > 0 && ', '}
+                          <Link to={`/projects/${p.portal.project.key}#service-desk`} className="link">{p.portal.name}</Link>
+                          <span className="text-jira-muted"> ({p.portal.project.name})</span>
+                        </span>
+                      ))}</>
+                      : 'Not linked to any portal yet'}
                     {' · '}{o._count.issues} shared {o._count.issues === 1 ? 'request' : 'requests'}
                   </div>
                   {o.members.length === 0 && <p className="text-jira-muted text-sm py-1">No members yet.</p>}

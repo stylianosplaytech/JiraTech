@@ -59,15 +59,16 @@ npm run db:seed:demo
 ```
 
 It adds 7 more people, two standard projects — **PAY** (Payments Platform) and **MOB** (Mobile App) — two service desks, and more SPORTS work:
-the IT Help Desk (**HELP**, open to every customer) and **Acme Support** (**ACME**, a branded help center only for the *Acme Retail* organization).
+the IT Help Desk (**HELP**, one portal open to every customer) and **Client Services** (**CS**), one team serving two client companies
+through their own branded portals, **Acme Support** (`/portal/acme`) and **Globex Service Center** (`/portal/globex`).
 The new issues cover every status, priority and type, with epics and child issues, blocked and at-risk items,
 comments with @mentions, links (also across projects), watchers, work logs, history and shared saved filters.
 It is safe to run more than once. Every demo user logs in with the same password as the admin account, e.g.
 `elena@jiratech.local` (team lead), `nikos@jiratech.local` (developer), `sofia@jiratech.local` (QA),
 `daniel@jiratech.local` (release manager), `katerina@jiratech.local` (product owner). HELP's agents are Elena (admin), Andreas, Sofia and Lina;
-ACME's are Lina (admin), Nikos and Andreas. The customers only see the help center at `/portal`: `anna@customer.local` and
-`peter@customer.local` (Acme Retail — they see both help centers and each other's shared requests) and `george@customer.local`
-(Globex — he lands straight in the IT Help Desk).
+CS's are Lina (admin), Nikos and Andreas. The customers only see the help center at `/portal`: `anna@customer.local` and
+`peter@customer.local` (Acme Retail — they see the Acme portal and each other's shared requests) and `george@customer.local`
+(Globex — he sees the Globex portal). Neither company ever sees the other's tickets, although both land in CS.
 
 ## Modules
 
@@ -116,14 +117,17 @@ Create a project with the **Service desk** type. **Customers** (users with the *
 work requests from **Queues** (JQL filters sorted by SLA urgency), reply to the customer or add **internal notes** customers never see,
 and track two **SLAs** per request: time to first response and time to resolution (goals per priority; the clock pauses in statuses marked
 *Pauses SLA*, e.g. *Waiting for customer*, and runs around the clock). A customer replying to a request that's waiting for them sends it
-back to the agents. Admins configure request types (with portal fields), SLA goals, queues and who may use the help center on the project page.
+back to the agents. Admins configure portals, request types (with portal fields), SLA goals and queues on the project page.
 
-**Several help centers.** Every service desk project is its own help center at `/portal/KEY`, with its own logo, accent colour and
-welcome message (project page → *Help center → Look and feel*). A help center is open to every customer, or only to the
-**organizations** and customers you list. Organizations group customers by company (People → *Organizations*, managed by global admins);
-link them to a service desk on its project page. A customer with a single help center lands straight in it; others choose from a list.
-When raising a request, customers can **share it with their organization** (the default) so colleagues can follow it, or keep it private;
-the requester can change this later and agents can too. JQL: `organization = "Acme Retail"`.
+**Portals: one team, many client companies.** A service desk project can have several **portals**, e.g. one per client company. Each
+has its own link (`/portal/acme`), logo, accent colour, welcome message, request types, and the **organizations** or customers allowed
+to use it (or *any customer*). Requests from every portal land in the same project, queues and SLAs, so one team handles them all; agents
+see each request's portal and company. Customers only ever see requests they raised, were added to, or that a colleague shared with their
+own organization — never another company's. Organizations group customers by company (People → *Organizations*, managed by global admins);
+link them to portals on the project page. A customer with a single portal lands straight in it; others choose from a list. When raising
+a request, customers can **share it with their organization** (the default) or keep it private; the requester and agents can change this
+later. JQL: `portal = acme`, `organization = "Acme Retail"`. Service desks from before portals existed were given one portal automatically,
+linked by their project key, so old `/portal/KEY` links keep working.
 
 ### Workflows
 
@@ -182,7 +186,7 @@ text ~ "login" AND updated >= -7d
 labels IS EMPTY AND (priority = Highest OR priority = High)
 ```
 
-Fields: project, key, type, status (workflow status name), statusCategory, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, requestType, organization, summary, description, comment, text, created, updated, blocked.
+Fields: project, key, type, status (workflow status name), statusCategory, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, requestType, organization, portal, summary, description, comment, text, created, updated, blocked.
 Operators: `= != ~ !~ > >= < <= IN, NOT IN, IS [NOT] EMPTY`, combined with `AND / OR / NOT` and parentheses.
 Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMonth()`. Dates: `2026-01-31`, `"2026-01-31 14:00"` or relative `-7d`, `-2w`, `-4h`.
 
@@ -208,15 +212,16 @@ Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMo
 - `POST /api/issues/:id/comments` takes `{ body, internal }`; `internal: true` is an agent-only note in service desk projects
 - Service desk (agents): `GET /api/service-desk/:key` (settings), `GET /api/service-desk/:key/queues`, `GET /api/service-desk/:key/queues/:id/issues`,
   `GET /api/service-desk/requests/:issue` (request type and SLAs); admins: `POST|PATCH|DELETE /api/service-desk/:key/request-types[/:id]`,
-  `POST|PATCH|DELETE /api/service-desk/:key/queues[/:id]`, `PUT /api/service-desk/:key/sla`, `PATCH /api/service-desk/:key/portal`,
-  `GET /api/service-desk/:key/customers`, `PUT|DELETE /api/service-desk/:key/customers/:userId`
-- Help center (customers and staff): `GET /api/portal/desks`, `GET /api/portal/desks/:key`, `POST /api/portal/desks/:key/requests`,
+  `POST|PATCH|DELETE /api/service-desk/:key/queues[/:id]`, `PUT /api/service-desk/:key/sla`
+- Portals (project admins change them): `GET|POST /api/service-desk/:key/portals`, `PATCH|DELETE /api/service-desk/:key/portals/:id`
+  (`{ name, slug, open, welcome, color, logo, requestTypeIds }`), `PUT|DELETE /api/service-desk/:key/portals/:id/organizations/:organizationId`,
+  `PUT|DELETE /api/service-desk/:key/portals/:id/customers/:userId`
+- Help center (customers and staff): `GET /api/portal/portals`, `GET /api/portal/portals/:slug`, `POST /api/portal/portals/:slug/requests`,
   `GET /api/portal/requests?status=open|closed|all&q=`, `GET /api/portal/requests/:key`, `POST /api/portal/requests/:key/comments`
 - `GET /api/users?kind=staff|customers|all` (staff by default)
 - Organizations: `GET /api/organizations` (staff); global admins: `POST /api/organizations`, `PATCH|DELETE /api/organizations/:id`,
   `PUT|DELETE /api/organizations/:id/members/:userId`
-- Help center access and branding: `PATCH /api/service-desk/:key/portal` (`{ portalOpen, welcome, color, logo }`),
-  `PUT|DELETE /api/service-desk/:key/organizations/:organizationId`; sharing: `PATCH /api/service-desk/requests/:issue/organization` (agents),
+- Sharing: `PATCH /api/service-desk/requests/:issue/organization` (agents),
   `POST /api/portal/requests/:key/share` (the requester), `organizationId` / `shareWithOrganization` when raising
 
 Project-scoped endpoints (issues list, board, labels, versions, components, custom fields, dashboard, planning) use the `X-Project-Key` header or `?project=KEY`, defaulting to SPORTS.

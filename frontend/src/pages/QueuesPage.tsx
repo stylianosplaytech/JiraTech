@@ -62,7 +62,7 @@ export default function QueuesPage() {
         title="Queues"
         actions={(
           <>
-            <Link to={`/portal/${key}`} className="btn btn-default"><PlusIcon size={14} /> Raise a request</Link>
+            <Link to="/portal" className="btn btn-default"><PlusIcon size={14} /> Raise a request</Link>
             {project.myRole === 'ADMIN' && <Link to={`/projects/${key}#service-desk`} className="btn btn-default">Service desk settings</Link>}
           </>
         )}
@@ -119,6 +119,7 @@ export default function QueuesPage() {
                         <th>Reporter</th>
                         <th>Assignee</th>
                         <th>Organization</th>
+                        <th>Portal</th>
                         <th>Request type</th>
                         <th>Created</th>
                       </tr>
@@ -139,6 +140,7 @@ export default function QueuesPage() {
                           <td className="whitespace-nowrap">{r.reporter ? <span className="flex items-center gap-2"><Avatar name={r.reporter.name} size="xs" />{r.reporter.name}</span> : '—'}</td>
                           <td className="whitespace-nowrap">{r.assignee ? <span className="flex items-center gap-2"><Avatar name={r.assignee.name} size="xs" />{r.assignee.name}</span> : <span className="text-jira-muted">Unassigned</span>}</td>
                           <td className="text-jira-subtle whitespace-nowrap">{r.organization?.name ?? '—'}</td>
+                          <td className="text-jira-subtle whitespace-nowrap">{r.portal?.name ?? '—'}</td>
                           <td className="text-jira-subtle whitespace-nowrap">{r.requestType?.name ?? '—'}</td>
                           <td className="text-jira-subtle whitespace-nowrap" title={new Date(r.createdAt).toLocaleString()}>{timeAgo(r.createdAt)}</td>
                         </tr>

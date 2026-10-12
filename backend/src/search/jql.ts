@@ -447,6 +447,8 @@ class Compiler {
       case 'organization':
       case 'organisation':
         return this.equality(c, (v) => ({ organization: { name: { in: nameVariants(v) } } }), { organizationId: null });
+      case 'portal':
+        return this.equality(c, (v) => ({ portal: { OR: [{ slug: v.toLowerCase() }, { name: { in: nameVariants(v) } }] } }), { portalId: null });
       case 'requesttype':
         return this.equality(c, (v) => ({ requestType: { name: { in: nameVariants(v) } } }), { requestTypeId: null });
       case 'blocked':
@@ -475,7 +477,7 @@ class Compiler {
       default:
         throw new JqlError(
           `Unknown field '${c.field}'. Try: project, key, type, status, priority, resolution, assignee, reporter, ` +
-          'statusCategory, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, requestType, organization, summary, ' +
+          'statusCategory, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, requestType, organization, portal, summary, ' +
           'description, comment, text, created, updated, blocked',
         );
     }

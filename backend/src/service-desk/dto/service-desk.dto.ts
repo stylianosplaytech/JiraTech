@@ -113,10 +113,38 @@ export class UpdateQueueDto {
 /** Logos are kept in the database (hosts like Render wipe local disks), so they stay small. */
 const MAX_LOGO_CHARS = 350_000; // ≈ 256 KB image as a base64 data URL
 
-export class PortalSettingsDto {
+export class CreatePortalDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  name!: string;
+
+  /** URL name: /portal/:slug (checked in the service) */
+  @IsString()
+  slug!: string;
+}
+
+export class UpdatePortalDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  slug?: string;
+
+  /** Any customer may use it (otherwise only the listed organizations and customers). */
   @IsOptional()
   @IsBoolean()
-  portalOpen?: boolean;
+  open?: boolean;
+
+  /** Request types offered; [] offers all of the project's. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  requestTypeIds?: string[];
 
   /** Shown on the help center's landing page; '' clears it. */
   @IsOptional()

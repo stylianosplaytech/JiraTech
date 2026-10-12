@@ -450,7 +450,7 @@ The full endpoint list is in the project [README](../README.md#api).
 | 18 | People | `/users` | [26-people](screenshots/26-people.png) |
 | 19 | Page not found | any unknown route | [27-not-found](screenshots/27-not-found.png) |
 | 20 | Queues | `/queues` | — |
-| 21 | Help center | `/portal`, `/portal/:key`, `/portal/requests`, `/portal/requests/:key` | — |
+| 21 | Help center | `/portal`, `/portal/:slug`, `/portal/requests`, `/portal/requests/:key` | — |
 
 ---
 
@@ -476,8 +476,8 @@ Project administrators change all of it in the **Service desk** section of the p
   (text, number, select or date; each can be required). New fields can be created right in the dialog.
 - **SLA goals**: hours per priority for *time to first response* and *time to resolution*; leave a box empty for no goal.
 - **Queues**: named JQL filters, always limited to the project. Without `ORDER BY`, the request closest to breaching comes first.
-- **Help center**: who may use it (*Any customer*, or *Only the organizations and customers listed*), the organizations it serves,
-  and its **look and feel**: logo (PNG, JPEG, GIF, WebP or SVG up to 256 KB), accent colour and welcome message, with a live preview.
+- **Portals**: the project's customer-facing help centers (see below). Each has a name and link, who may use it, the request types it
+  offers, and its **look and feel**: logo (PNG, JPEG, GIF, WebP or SVG up to 256 KB), accent colour and welcome message, with a live preview.
 - **Workflow**: the *Pauses SLA* column marks statuses where the resolution clock stops (e.g. *Waiting for customer*).
 
 ### Customers
@@ -486,19 +486,32 @@ Customers are user accounts with the **Customer** role (create them on the **Peo
 any other page sends them to it, and the API refuses every agent endpoint for them. They can't be project members or leads,
 and they don't appear in assignee, watcher or @mention pickers.
 
-### Several help centers and organizations
+### Portals: one team, many client companies
 
-Every service desk project is its own help center at `/portal/KEY` with its own branding, so you can run one per client, product or
-department. **Organizations** group customer accounts by company: a global admin creates them and adds members under
-**People → Organizations**, and a service desk's admin links them to the desk. Members of a linked organization can use that help center
-even when it isn't open to every customer.
+A service desk project can have several **portals**, typically one per client company, so a single team and project can serve many
+companies, each through its own branded help center. Under *Service desk → Portals* on the project page, *Add portal* creates one with a
+name and a link (`/portal/acme`); it starts closed. For each portal you set:
 
-- A customer with access to **one** help center lands straight in it (header, home link and banner in its colours); customers with
+- **Who can use it**: organizations and/or individual customers, or *Any customer*. Staff with access to the project can always use it.
+- **Request types offered**: all of the project's (the default, including ones added later) or a chosen few.
+- **Look and feel**: logo, accent colour and welcome message.
+
+Every portal's requests land in the same project — one set of queues, SLAs and agents — and each request remembers its portal and company
+(shown on the request panel and as queue columns; JQL `portal = acme`). A project keeps at least one portal; deleting one moves its
+requests to the first remaining portal. Service desks created before portals existed were given one automatically, linked by their project
+key (`/portal/HELP` keeps working).
+
+**Organizations** group customer accounts by company: a global admin creates them and adds members under **People → Organizations**,
+and a service desk's admin links them to portals.
+
+- **Each company sees only its own tickets.** Customers see requests they raised, were added to, or that a colleague shared with their
+  own organization. Another company's requests never appear, even though they're in the same project.
+- A customer with access to **one** portal lands straight in it (header, home link and banner in its colours); customers with
   several see a list of them, each with its logo.
 - When raising a request, customers choose **Share with** — their organization (the default) or *No one*. Colleagues in that organization
   see shared requests under *Requests* and can follow and reply to them. The requester can change this on the request page.
 - Agents see the organization on the request panel and in queues, and can change or remove it. Changes are recorded in the history.
-- Only global admins change organization membership, because it decides which help centers a customer can use.
+- Only global admins change organization membership, because it decides which portals a customer can use.
 
 ### The help center (`/portal`)
 

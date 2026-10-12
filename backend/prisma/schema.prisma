@@ -145,6 +145,7 @@ model User {
   notificationsSent Notification[]   @relation("NotificationActor")
   customerOf       ProjectCustomer[]
   organizations    OrganizationMember[]
+  portalAccess     PortalCustomer[]
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────
@@ -162,9 +163,8 @@ model Project {
   /// What people who aren't project members can do
   defaultAccess   ProjectAccess @default(MEMBER)
   type            ProjectType   @default(SOFTWARE)
-  /// Service desks: any customer may raise requests (otherwise only listed customers and organizations)
+  /// Legacy, from before a project could have several portals: copied into its first Portal at startup, no longer read.
   portalOpen      Boolean       @default(true)
-  /// Help center branding: welcome text, accent colour (#RRGGBB) and logo (image data URL)
   portalWelcome   String?
   portalColor     String?
   portalLogo      String?
@@ -187,6 +187,7 @@ model Project {
   queues                Queue[]
   customers             ProjectCustomer[]
   organizations         ProjectOrganization[]
+  portals               Portal[]
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -350,6 +351,8 @@ model Issue {
   requestTypeId     String?
   /// Service desks: the customer organization this request is shared with
   organizationId    String?
+  /// Service desks: the portal it was raised through
+  portalId          String?
   /// SLA clocks: first public reply by an agent, when it was resolved, and time spent paused
   firstRespondedAt  DateTime?
   resolvedAt        DateTime?
@@ -368,6 +371,7 @@ model Issue {
   pi                ProgramIncrement?  @relation(fields: [piId], references: [id])
   requestType       RequestType?       @relation(fields: [requestTypeId], references: [id], onDelete: SetNull)
   organization      Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  portal            Portal?            @relation(fields: [portalId], references: [id], onDelete: SetNull)
   components        IssueComponent[]
   versions          IssueVersion[]
   linksFrom         IssueLink[]        @relation("LinkSource")
@@ -656,6 +660,7 @@ model RequestType {
   project Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   fields  RequestTypeField[]
   issues  Issue[]
+  portals PortalRequestType[]
 
   @@unique([projectId, name])
 }
@@ -699,7 +704,7 @@ model Queue {
   @@unique([projectId, name])
 }
 
-/** Customers allowed to raise requests when a service desk's portal isn't open to every customer. */
+/** Legacy (one portal per project): copied into the project's first Portal at startup, no longer read. */
 model ProjectCustomer {
   projectId String
   userId    String
@@ -721,6 +726,7 @@ model Organization {
 
   members  OrganizationMember[]
   projects ProjectOrganization[]
+  portals  PortalOrganization[]
   issues   Issue[]
 }
 
@@ -736,7 +742,7 @@ model OrganizationMember {
   @@index([userId])
 }
 
-/** Organizations whose members may use a service desk's help center. */
+/** Legacy (one portal per project): copied into the project's first Portal at startup, no longer read. */
 model ProjectOrganization {
   projectId      String
   organizationId String
@@ -747,4 +753,68 @@ model ProjectOrganization {
 
   @@id([projectId, organizationId])
   @@index([organizationId])
+}
+
+/**
+ * A customer-facing help center for a service desk project. A project can have several, e.g. one per client
+ * company, all feeding the same project and team. Each has its own link (/portal/:slug), branding, request types
+ * and the customers / organizations allowed to use it.
+ */
+model Portal {
+  id        String   @id @default(cuid())
+  /// URL name: lowercase letters, digits and hyphens, unique across all portals
+  slug      String   @unique
+  name      String
+  projectId String
+  /// Any customer may use it (otherwise only the listed organizations and customers)
+  open      Boolean  @default(false)
+  welcome   String?
+  /// Accent colour, #RRGGBB
+  color     String?
+  /// Logo as an image data URL
+  logo      String?
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project       Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organizations PortalOrganization[]
+  customers     PortalCustomer[]
+  /// Request types offered here; none listed means all of the project's
+  requestTypes  PortalRequestType[]
+  issues        Issue[]
+
+  @@index([projectId])
+}
+
+model PortalOrganization {
+  portalId       String
+  organizationId String
+
+  portal       Portal       @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([portalId, organizationId])
+  @@index([organizationId])
+}
+
+model PortalCustomer {
+  portalId String
+  userId   String
+
+  portal Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([portalId, userId])
+  @@index([userId])
+}
+
+model PortalRequestType {
+  portalId      String
+  requestTypeId String
+
+  portal      Portal      @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  requestType RequestType @relation(fields: [requestTypeId], references: [id], onDelete: Cascade)
+
+  @@id([portalId, requestTypeId])
 }

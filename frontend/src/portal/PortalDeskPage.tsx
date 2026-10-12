@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type PortalDesk, type PortalField } from '../api';
+import { api, type PortalField, type PortalPage } from '../api';
 import { RichTextEditor } from '../components/RichText';
 import { SelectPicker } from '../components/Pickers';
 import Avatar from '../components/Avatar';
@@ -50,7 +50,7 @@ function FieldInput({ field, value, onChange }: { field: PortalField; value: str
   );
 }
 
-function RequestForm({ desk, typeId }: { desk: PortalDesk; typeId: string }) {
+function RequestForm({ desk, typeId }: { desk: PortalPage; typeId: string }) {
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -69,7 +69,7 @@ function RequestForm({ desk, typeId }: { desk: PortalDesk; typeId: string }) {
   });
 
   const raise = useMutation({
-    mutationFn: () => api.raiseRequest(desk.key, {
+    mutationFn: () => api.raiseRequest(desk.slug, {
       requestTypeId: typeId,
       summary: summary.trim(),
       description: description || undefined,
@@ -87,7 +87,7 @@ function RequestForm({ desk, typeId }: { desk: PortalDesk; typeId: string }) {
     },
   });
 
-  if (!type) return <EmptyState title="Request type not found" action={<Link to={`/portal/${desk.key}`} className="btn btn-default">Back</Link>}>It may have been removed.</EmptyState>;
+  if (!type) return <EmptyState title="Request type not found" action={<Link to={`/portal/${desk.slug}`} className="btn btn-default">Back</Link>}>It may have been removed.</EmptyState>;
   const missing = type.fields.some((f) => f.required && !fields[f.key]?.trim());
 
   return (
@@ -150,19 +150,19 @@ function RequestForm({ desk, typeId }: { desk: PortalDesk; typeId: string }) {
         <button type="submit" className="btn btn-primary" disabled={summary.trim().length < 3 || missing || raise.isPending}>
           {raise.isPending ? 'Sending…' : 'Send'}
         </button>
-        <Link to={`/portal/${desk.key}`} className="btn btn-subtle">Cancel</Link>
+        <Link to={`/portal/${desk.slug}`} className="btn btn-subtle">Cancel</Link>
       </div>
     </form>
   );
 }
 
 export default function PortalDeskPage() {
-  const { key = '', typeId } = useParams<{ key: string; typeId?: string }>();
+  const { slug = '', typeId } = useParams<{ slug: string; typeId?: string }>();
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
-  const { data: desk, isLoading, error } = useQuery({ queryKey: ['portal-desk', key], queryFn: () => api.getPortalDesk(key), retry: false });
+  const { data: desk, isLoading, error } = useQuery({ queryKey: ['portal', slug.toLowerCase()], queryFn: () => api.getPortal(slug), retry: false });
   const { data: open } = useQuery({ queryKey: ['portal-requests', 'open', ''], queryFn: () => api.getMyRequests('open') });
   const home = usePortalHome(me);
-  usePortalBrand(desk && { key: desk.key, name: desk.name, branding: desk.branding });
+  usePortalBrand(desk && { slug: desk.slug, name: desk.name, branding: desk.branding });
 
   if (isLoading) return <Spinner />;
   if (!desk) {
@@ -173,7 +173,7 @@ export default function PortalDeskPage() {
     );
   }
   const accent = desk.branding.color ?? undefined;
-  const mine = open?.filter((r) => r.project.key === desk.key) ?? [];
+  const mine = open?.filter((r) => r.portal?.slug === desk.slug) ?? [];
 
   return (
     <div>
@@ -181,7 +181,7 @@ export default function PortalDeskPage() {
         <nav className="text-sm text-jira-subtle mb-2" aria-label="Breadcrumb">
           {home === '/portal' && <Link to="/portal" className="hover:underline">Help centers</Link>}
           {home === '/portal' && typeId && ' / '}
-          {typeId && <Link to={`/portal/${desk.key}`} className="hover:underline">{desk.name}</Link>}
+          {typeId && <Link to={`/portal/${desk.slug}`} className="hover:underline">{desk.name}</Link>}
         </nav>
       )}
       {!typeId && <div className="mb-6"><PortalHero branding={desk.branding} title={desk.name} subtitle={desk.description} /></div>}
@@ -189,10 +189,10 @@ export default function PortalDeskPage() {
       {typeId ? <RequestForm key={typeId} desk={desk} typeId={typeId} /> : (
         <>
           <h2 className="text-base font-semibold mb-3">What can we help you with?</h2>
-          {desk.requestTypes.length === 0 && <EmptyState title="Nothing to request yet">This help center hasn't set up any request types.</EmptyState>}
+          {desk.requestTypes.length === 0 && <EmptyState title="Nothing to request yet">This help center doesn't offer any request types yet.</EmptyState>}
           <div className="card bg-white divide-y divide-jira-border max-w-2xl">
             {desk.requestTypes.map((t) => (
-              <Link key={t.id} to={`/portal/${desk.key}/${t.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-jira-gray">
+              <Link key={t.id} to={`/portal/${desk.slug}/${t.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-jira-gray">
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium text-jira-blue" style={accent ? { color: accent } : undefined}>{t.name}</span>
                   {t.description && <span className="block text-sm text-jira-subtle">{t.description}</span>}

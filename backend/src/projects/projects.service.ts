@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
 import { AccessService } from '../access/access.service';
 import { WorkflowService } from '../workflow/workflow.service';
-import { setUpServiceDesk } from '../service-desk/defaults';
+import { createDefaultPortal, setUpServiceDesk } from '../service-desk/defaults';
 import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 
 const PROJECT_CREATORS: UserRole[] = [
@@ -85,6 +85,7 @@ export class ProjectsService {
       if (serviceDesk) {
         await this.workflow.ensure(tx, project.id, 'SERVICE_DESK');
         await setUpServiceDesk(tx, project.id);
+        await createDefaultPortal(tx, project);
       }
       return project;
     });

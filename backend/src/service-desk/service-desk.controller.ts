@@ -5,19 +5,20 @@ import { AllowCustomers, JwtAuthGuard } from '../auth/guards';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { AuthRequest } from '../common/auth-user';
 import { ServiceDeskService } from './service-desk.service';
+import { PortalsService } from './portals.service';
 import {
-  PortalCommentDto, PortalRequestDto, PortalSettingsDto, QueueDto, RequestOrganizationDto, RequestTypeDto, SlaTargetsDto,
-  UpdateQueueDto, UpdateRequestTypeDto,
+  CreatePortalDto, PortalCommentDto, PortalRequestDto, QueueDto, RequestOrganizationDto, RequestTypeDto, SlaTargetsDto,
+  UpdatePortalDto, UpdateQueueDto, UpdateRequestTypeDto,
 } from './dto/service-desk.dto';
 
 const PROJECT = { from: 'projectParam', param: 'key' } as const;
 const ISSUE = { from: 'issueParam', param: 'id' } as const;
 
-/** /service-desk — agents work queues and see SLAs; project admins configure the service desk. */
+/** /service-desk — agents work queues and see SLAs; project admins configure the service desk and its portals. */
 @Controller('service-desk')
 @UseGuards(JwtAuthGuard, AccessGuard)
 export class ServiceDeskController {
-  constructor(private serviceDesk: ServiceDeskService) {}
+  constructor(private serviceDesk: ServiceDeskService, private portals: PortalsService) {}
 
   @Get('requests/:id')
   @RequireAccess('browse', ISSUE)
@@ -28,7 +29,7 @@ export class ServiceDeskController {
   @Patch('requests/:id/organization')
   @RequireAccess('edit', ISSUE)
   setRequestOrganization(@Param('id') id: string, @Body() dto: RequestOrganizationDto, @Request() req: AuthRequest) {
-    return this.serviceDesk.setRequestOrganization(id, dto.organizationId ?? null, req.user.id);
+    return this.portals.setRequestOrganization(id, dto.organizationId ?? null, req.user.id);
   }
 
   @Get(':key')
@@ -36,6 +37,8 @@ export class ServiceDeskController {
   settings(@Param('key') key: string) {
     return this.serviceDesk.settings(key);
   }
+
+  // ─── Queues ────────────────────────────────────────────────────────────────
 
   @Get(':key/queues')
   @RequireAccess('browse', PROJECT)
@@ -73,6 +76,8 @@ export class ServiceDeskController {
     return this.serviceDesk.deleteQueue(key, queueId);
   }
 
+  // ─── Request types and SLAs ────────────────────────────────────────────────
+
   @Post(':key/request-types')
   @RequireAccess('admin', PROJECT)
   createRequestType(@Param('key') key: string, @Body() dto: RequestTypeDto) {
@@ -97,82 +102,96 @@ export class ServiceDeskController {
     return this.serviceDesk.setSlaTargets(key, dto.targets);
   }
 
-  @Get(':key/customers')
+  // ─── Portals ───────────────────────────────────────────────────────────────
+
+  @Get(':key/portals')
   @RequireAccess('browse', PROJECT)
-  customers(@Param('key') key: string) {
-    return this.serviceDesk.customers(key);
+  listPortals(@Param('key') key: string) {
+    return this.portals.list(key);
   }
 
-  @Patch(':key/portal')
+  @Post(':key/portals')
   @RequireAccess('admin', PROJECT)
-  setPortal(@Param('key') key: string, @Body() dto: PortalSettingsDto) {
-    return this.serviceDesk.updatePortal(key, dto);
+  createPortal(@Param('key') key: string, @Body() dto: CreatePortalDto) {
+    return this.portals.create(key, dto);
   }
 
-  @Put(':key/organizations/:organizationId')
+  @Patch(':key/portals/:portalId')
   @RequireAccess('admin', PROJECT)
-  addOrganization(@Param('key') key: string, @Param('organizationId') organizationId: string) {
-    return this.serviceDesk.addOrganization(key, organizationId);
+  updatePortal(@Param('key') key: string, @Param('portalId') portalId: string, @Body() dto: UpdatePortalDto) {
+    return this.portals.update(key, portalId, dto);
   }
 
-  @Delete(':key/organizations/:organizationId')
+  @Delete(':key/portals/:portalId')
   @RequireAccess('admin', PROJECT)
-  removeOrganization(@Param('key') key: string, @Param('organizationId') organizationId: string) {
-    return this.serviceDesk.removeOrganization(key, organizationId);
+  deletePortal(@Param('key') key: string, @Param('portalId') portalId: string) {
+    return this.portals.remove(key, portalId);
   }
 
-  @Put(':key/customers/:userId')
+  @Put(':key/portals/:portalId/organizations/:organizationId')
   @RequireAccess('admin', PROJECT)
-  addCustomer(@Param('key') key: string, @Param('userId') userId: string) {
-    return this.serviceDesk.addCustomer(key, userId);
+  addPortalOrganization(@Param('key') key: string, @Param('portalId') portalId: string, @Param('organizationId') organizationId: string) {
+    return this.portals.addOrganization(key, portalId, organizationId);
   }
 
-  @Delete(':key/customers/:userId')
+  @Delete(':key/portals/:portalId/organizations/:organizationId')
   @RequireAccess('admin', PROJECT)
-  removeCustomer(@Param('key') key: string, @Param('userId') userId: string) {
-    return this.serviceDesk.removeCustomer(key, userId);
+  removePortalOrganization(@Param('key') key: string, @Param('portalId') portalId: string, @Param('organizationId') organizationId: string) {
+    return this.portals.removeOrganization(key, portalId, organizationId);
+  }
+
+  @Put(':key/portals/:portalId/customers/:userId')
+  @RequireAccess('admin', PROJECT)
+  addPortalCustomer(@Param('key') key: string, @Param('portalId') portalId: string, @Param('userId') userId: string) {
+    return this.portals.addCustomer(key, portalId, userId);
+  }
+
+  @Delete(':key/portals/:portalId/customers/:userId')
+  @RequireAccess('admin', PROJECT)
+  removePortalCustomer(@Param('key') key: string, @Param('portalId') portalId: string, @Param('userId') userId: string) {
+    return this.portals.removeCustomer(key, portalId, userId);
   }
 }
 
-/** /portal — the help center. Open to customers; access is checked per service desk and per request. */
+/** /portal — the help centers. Open to customers; access is checked per portal and per request. */
 @Controller('portal')
 @UseGuards(JwtAuthGuard)
 @AllowCustomers()
 export class PortalController {
-  constructor(private serviceDesk: ServiceDeskService) {}
+  constructor(private portals: PortalsService) {}
 
-  @Get('desks')
-  desks(@Request() req: AuthRequest) {
-    return this.serviceDesk.portalDesks(req.user);
+  @Get('portals')
+  mine(@Request() req: AuthRequest) {
+    return this.portals.mine(req.user);
   }
 
-  @Get('desks/:key')
-  desk(@Param('key') key: string, @Request() req: AuthRequest) {
-    return this.serviceDesk.portalDesk(key, req.user);
+  @Get('portals/:slug')
+  portal(@Param('slug') slug: string, @Request() req: AuthRequest) {
+    return this.portals.portal(slug, req.user);
   }
 
-  @Post('desks/:key/requests')
-  raise(@Param('key') key: string, @Body() dto: PortalRequestDto, @Request() req: AuthRequest) {
-    return this.serviceDesk.raise(key, dto, req.user);
+  @Post('portals/:slug/requests')
+  raise(@Param('slug') slug: string, @Body() dto: PortalRequestDto, @Request() req: AuthRequest) {
+    return this.portals.raise(slug, dto, req.user);
   }
 
   @Get('requests')
   myRequests(@Request() req: AuthRequest, @Query('status') status?: string, @Query('q') q?: string) {
-    return this.serviceDesk.myRequests(req.user, { status, q });
+    return this.portals.myRequests(req.user, { status, q });
   }
 
   @Get('requests/:key')
   request(@Param('key') key: string, @Request() req: AuthRequest) {
-    return this.serviceDesk.request(key, req.user);
+    return this.portals.request(key, req.user);
   }
 
   @Post('requests/:key/share')
   share(@Param('key') key: string, @Body() dto: RequestOrganizationDto, @Request() req: AuthRequest) {
-    return this.serviceDesk.shareRequest(key, req.user, dto.organizationId ?? null);
+    return this.portals.share(key, req.user, dto.organizationId ?? null);
   }
 
   @Post('requests/:key/comments')
   comment(@Param('key') key: string, @Body() dto: PortalCommentDto, @Request() req: AuthRequest) {
-    return this.serviceDesk.portalComment(key, req.user, dto.body);
+    return this.portals.comment(key, req.user, dto.body);
   }
 }

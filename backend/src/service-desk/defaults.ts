@@ -41,3 +41,23 @@ export async function setUpServiceDesk(tx: Prisma.TransactionClient, projectId: 
     data: DEFAULT_QUEUES.map((q, position) => ({ ...q, projectId, position })),
   });
 }
+
+type SlugDb = Pick<Prisma.TransactionClient, 'portal'>;
+
+/** Portal URL names that would clash with the help center's own pages. */
+export const RESERVED_PORTAL_SLUGS = new Set(['requests', 'portals', 'new', 'admin']);
+
+/** A free portal URL name based on `base` (acme, acme-2, …). */
+export async function freePortalSlug(db: SlugDb, base: string) {
+  const clean = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'portal';
+  const root = RESERVED_PORTAL_SLUGS.has(clean) ? `${clean}-desk` : clean;
+  for (let i = 1; ; i++) {
+    const slug = i === 1 ? root : `${root}-${i}`;
+    if (!(await db.portal.findUnique({ where: { slug } }))) return slug;
+  }
+}
+
+/** A new service desk's first portal: named after the project, linked by its key, open to every customer. */
+export async function createDefaultPortal(db: SlugDb, project: { id: string; key: string; name: string }) {
+  return db.portal.create({ data: { projectId: project.id, slug: await freePortalSlug(db, project.key), name: project.name, open: true } });
+}

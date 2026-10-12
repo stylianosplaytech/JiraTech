@@ -45,6 +45,8 @@ export default function RequestPanel({ issue, canEdit }: { issue: Issue; canEdit
       </div>
       <div className="px-4 py-2 divide-y divide-jira-border">
         <div className="py-1.5 grid grid-cols-[120px_1fr] gap-x-2 gap-y-1 items-start text-[13px]">
+          <span className="text-jira-subtle font-medium">Portal</span>
+          <span>{info?.portal ? <a href={`/portal/${info.portal.slug}`} target="_blank" rel="noopener noreferrer" className="link">{info.portal.name}</a> : <span className="text-jira-muted">None</span>}</span>
           <span className="text-jira-subtle font-medium">Request type</span>
           <span>{issue.requestType?.name ?? <span className="text-jira-muted">None (raised outside the portal)</span>}</span>
           <span className="text-jira-subtle font-medium">Customer</span>

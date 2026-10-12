@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, formatDuration, type DeskCustomers, type Queue, type RequestType, type SlaTarget } from '../api';
+import { api, formatDuration, type PortalAdmin, type Queue, type RequestType, type SlaTarget } from '../api';
 import { PortalHero, PortalLogo } from '../portal/Branding';
 import { PriorityIcon, typeLabel } from './Badges';
 import { SelectPicker } from './Pickers';
@@ -370,7 +370,7 @@ function QueueEditor({ projectKey, queues, canAdmin }: { projectKey: string; que
   );
 }
 
-// ─── Portal access and branding ──────────────────────────────────────────────
+// ─── Portals ─────────────────────────────────────────────────────────────────
 
 const MAX_LOGO_BYTES = 256 * 1024;
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
@@ -384,188 +384,314 @@ function readAsDataUrl(file: File) {
   });
 }
 
-function Branding({ projectKey, projectName, data, canAdmin }: {
-  projectKey: string; projectName: string; data: DeskCustomers; canAdmin: boolean;
+/** "Acme Support" → "acme-support" */
+const toSlug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+
+type PortalPatch = Parameters<typeof api.updatePortal>[2];
+
+function PortalCard({ projectKey, portal, requestTypes, canAdmin, onlyOne }: {
+  projectKey: string; portal: PortalAdmin; requestTypes: RequestType[]; canAdmin: boolean; onlyOne: boolean;
 }) {
   const queryClient = useQueryClient();
   const { onError, toast } = useSd(projectKey);
-  const [welcome, setWelcome] = useState(data.branding.welcome ?? '');
-  const [color, setColor] = useState(data.branding.color ?? '');
-  useEffect(() => { setWelcome(data.branding.welcome ?? ''); setColor(data.branding.color ?? ''); }, [data.branding.welcome, data.branding.color]);
-  const save = useMutation({
-    mutationFn: (patch: { welcome?: string; color?: string; logo?: string }) => api.updatePortal(projectKey, patch),
-    onSuccess: (d) => {
-      queryClient.setQueryData(['desk-customers', projectKey], d);
-      queryClient.invalidateQueries({ queryKey: ['portal-desk', projectKey] });
-      queryClient.invalidateQueries({ queryKey: ['portal-desks'] });
-      toast('Help center updated');
+  const { confirm, prompt } = useDialogs();
+  const [open, setOpen] = useState(false);
+  const [welcome, setWelcome] = useState(portal.branding.welcome ?? '');
+  const [color, setColor] = useState(portal.branding.color ?? '');
+  useEffect(() => { setWelcome(portal.branding.welcome ?? ''); setColor(portal.branding.color ?? ''); }, [portal.branding.welcome, portal.branding.color]);
+  const { data: allCustomers = [] } = useQuery({ queryKey: ['users', 'customers'], queryFn: () => api.getUsers(undefined, 'customers'), enabled: canAdmin && open });
+  const { data: allOrganizations = [] } = useQuery({ queryKey: ['organizations'], queryFn: api.getOrganizations, enabled: canAdmin && open });
+
+  const done = (p: PortalAdmin) => {
+    queryClient.setQueryData<PortalAdmin[]>(['portals', projectKey], (list) => list?.map((x) => (x.id === p.id ? p : x)));
+    queryClient.invalidateQueries({ queryKey: ['portal'] });
+    queryClient.invalidateQueries({ queryKey: ['portal-list'] });
+  };
+  const update = useMutation({
+    mutationFn: (patch: PortalPatch) => api.updatePortal(projectKey, portal.id, patch),
+    onSuccess: (p) => { done(p); toast(`${p.name} updated`); },
+    onError,
+  });
+  const remove = useMutation({
+    mutationFn: () => api.deletePortal(projectKey, portal.id),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ['portals', projectKey] });
+      toast(`${portal.name} deleted. Its requests now belong to ${r.movedTo.name}.`);
     },
     onError,
   });
-  const dirty = welcome !== (data.branding.welcome ?? '') || color !== (data.branding.color ?? '');
+  const addOrg = useMutation({ mutationFn: (id: string) => api.addPortalOrganization(projectKey, portal.id, id), onSuccess: done, onError });
+  const removeOrg = useMutation({ mutationFn: (id: string) => api.removePortalOrganization(projectKey, portal.id, id), onSuccess: done, onError });
+  const addCustomer = useMutation({ mutationFn: (id: string) => api.addPortalCustomer(projectKey, portal.id, id), onSuccess: done, onError });
+  const removeCustomer = useMutation({ mutationFn: (id: string) => api.removePortalCustomer(projectKey, portal.id, id), onSuccess: done, onError });
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
     if (!LOGO_TYPES.includes(file.type)) { toast('Use a PNG, JPEG, GIF, WebP or SVG image', 'error'); return; }
     if (file.size > MAX_LOGO_BYTES) { toast('The logo must be smaller than 256 KB', 'error'); return; }
-    save.mutate({ logo: await readAsDataUrl(file) });
+    update.mutate({ logo: await readAsDataUrl(file) });
+  };
+
+  const url = `${window.location.origin}/portal/${portal.slug}`;
+  const linkedOrgs = new Set(portal.organizations.map((o) => o.id));
+  const listed = new Set(portal.customers.map((c) => c.id));
+  const offered = new Set(portal.requestTypeIds);
+  const allOffered = offered.size === 0;
+  const lookDirty = welcome !== (portal.branding.welcome ?? '') || color !== (portal.branding.color ?? '');
+  const audience = portal.open
+    ? 'Any customer'
+    : [...portal.organizations.map((o) => o.name), ...(portal.customers.length ? [`${portal.customers.length} customer${portal.customers.length === 1 ? '' : 's'}`] : [])].join(', ') || 'Nobody yet';
+
+  const toggleType = (id: string) => {
+    // Unticking from "all" means offering all the others.
+    const current = allOffered ? new Set(requestTypes.map((t) => t.id)) : new Set(offered);
+    if (current.has(id)) current.delete(id); else current.add(id);
+    if (current.size === 0) { toast('A portal needs at least one request type', 'error'); return; }
+    update.mutate({ requestTypeIds: current.size === requestTypes.length ? [] : [...current] });
   };
 
   return (
-    <div className="mt-6">
-      <h4 className="font-semibold text-sm mb-2">Look and feel</h4>
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_280px] gap-4">
-        <div className="space-y-3">
-          <div>
-            <span className="field-label">Logo</span>
-            <div className="flex items-center gap-3">
-              <PortalLogo branding={data.branding} name={projectName} size={40} />
-              {canAdmin && (
-                <>
-                  <label className="btn btn-default btn-sm cursor-pointer">
-                    Upload…
-                    <input type="file" accept={LOGO_TYPES.join(',')} className="sr-only" onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
-                  </label>
-                  {data.branding.logo && <button type="button" className="btn btn-subtle btn-sm" onClick={() => save.mutate({ logo: '' })}>Remove</button>}
-                </>
+    <div className="card overflow-hidden">
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-jira-border" style={portal.branding.color ? { borderTop: `3px solid ${portal.branding.color}` } : undefined}>
+        <PortalLogo branding={portal.branding} name={portal.name} size={32} />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold truncate">{portal.name}</div>
+          <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs link break-all">{url}</a>
+        </div>
+        <div className="text-xs text-jira-subtle text-right">
+          <div title="Who can use this portal">{audience}</div>
+          <div>{portal.requests} request{portal.requests === 1 ? '' : 's'}</div>
+        </div>
+        <button type="button" className="btn btn-default btn-sm" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {open ? 'Close' : canAdmin ? 'Configure' : 'Details'}
+        </button>
+      </div>
+
+      {open && (
+        <div className="p-4 space-y-5">
+          {canAdmin && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn btn-default btn-sm"
+                onClick={async () => {
+                  const name = await prompt({ title: 'Rename portal', label: 'Name', initial: portal.name, confirmLabel: 'Rename' });
+                  if (name && name !== portal.name) update.mutate({ name });
+                }}
+              >
+                <EditIcon size={14} /> Rename
+              </button>
+              <button
+                type="button"
+                className="btn btn-default btn-sm"
+                onClick={async () => {
+                  const slug = await prompt({ title: 'Change link', label: `${window.location.origin}/portal/…`, initial: portal.slug, confirmLabel: 'Change link' });
+                  if (slug && slug !== portal.slug) update.mutate({ slug });
+                }}
+              >
+                Change link
+              </button>
+              {!onlyOne && (
+                <button
+                  type="button"
+                  className="btn btn-subtle btn-sm text-[#DE350B]"
+                  onClick={async () => {
+                    if (await confirm({
+                      title: `Delete ${portal.name}?`,
+                      message: 'Its link stops working. Its requests stay in this project and move to the first remaining portal.',
+                      confirmLabel: 'Delete',
+                      danger: true,
+                    })) remove.mutate();
+                  }}
+                >
+                  <TrashIcon size={14} /> Delete portal
+                </button>
               )}
             </div>
-            <span className="field-help">Square images work best; up to 256 KB.</span>
-          </div>
-          <div>
-            <label className="field-label" htmlFor="portal-color">Accent colour</label>
-            <div className="flex items-center gap-2">
-              <input
-                id="portal-color"
-                type="color"
-                disabled={!canAdmin}
-                value={color || '#0052CC'}
-                onChange={(e) => setColor(e.target.value.toUpperCase())}
-                className="h-8 w-12 rounded-[3px] border border-jira-border cursor-pointer disabled:cursor-default"
-              />
-              <span className="font-mono text-xs text-jira-subtle">{color || 'Default'}</span>
-              {canAdmin && color && <button type="button" className="btn btn-subtle btn-sm" onClick={() => setColor('')}>Use default</button>}
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <h4 className="font-semibold text-sm mb-2">Who can use it</h4>
+              <label className="flex items-start gap-2 cursor-pointer mb-3">
+                <input type="checkbox" className="mt-1" disabled={!canAdmin || update.isPending} checked={portal.open} onChange={(e) => update.mutate({ open: e.target.checked })} />
+                <span>Any customer<span className="field-help mt-0">Otherwise only the organizations and customers below. Staff with access to the project can always use it.</span></span>
+              </label>
+              <div className="text-xs font-semibold text-jira-muted mb-1">Organizations</div>
+              {portal.organizations.length === 0 && <p className="text-jira-muted text-sm">None.</p>}
+              {portal.organizations.map((o) => (
+                <div key={o.id} className="group flex items-center gap-2 py-1">
+                  <UsersIcon size={14} className="text-jira-muted" />
+                  <span className="flex-1 truncate">{o.name} <span className="text-jira-muted text-xs">{o.members} {o.members === 1 ? 'member' : 'members'}</span></span>
+                  {canAdmin && (
+                    <button type="button" onClick={() => removeOrg.mutate(o.id)} className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-jira-muted hover:text-jira-navy" aria-label={`Remove ${o.name}`}>
+                      <XIcon size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {canAdmin && (
+                <SelectPicker
+                  value={undefined}
+                  onChange={(id) => id && addOrg.mutate(id)}
+                  placeholder="+ Add organization"
+                  options={allOrganizations.filter((o) => !linkedOrgs.has(o.id)).map((o) => ({ id: o.id, label: o.name, hint: `${o.members.length} members` }))}
+                />
+              )}
+              <div className="text-xs font-semibold text-jira-muted mt-3 mb-1">Individual customers</div>
+              {portal.customers.length === 0 && <p className="text-jira-muted text-sm">None.</p>}
+              {portal.customers.map((c) => (
+                <div key={c.id} className="group flex items-center gap-2 py-1">
+                  <Avatar name={c.name} size="xs" />
+                  <span className="flex-1 truncate">{c.name} <span className="text-jira-muted text-xs">{c.email}</span></span>
+                  {canAdmin && (
+                    <button type="button" onClick={() => removeCustomer.mutate(c.id)} className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-jira-muted hover:text-jira-navy" aria-label={`Remove ${c.name}`}>
+                      <XIcon size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {canAdmin && (
+                <SelectPicker
+                  value={undefined}
+                  onChange={(id) => id && addCustomer.mutate(id)}
+                  placeholder="+ Add customer"
+                  options={allCustomers.filter((c) => !listed.has(c.id)).map((c) => ({ id: c.id, label: c.name, hint: c.email, icon: <Avatar name={c.name} size="xs" /> }))}
+                />
+              )}
+            </div>
+
+            <div>
+              <h4 className="font-semibold text-sm mb-2">Request types offered</h4>
+              <div className="space-y-1">
+                {requestTypes.map((t) => (
+                  <label key={t.id} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" disabled={!canAdmin || update.isPending} checked={allOffered || offered.has(t.id)} onChange={() => toggleType(t.id)} />
+                    <span>{t.name}</span>
+                  </label>
+                ))}
+              </div>
+              <span className="field-help">{allOffered ? 'All of the project\'s request types, including ones added later.' : 'Only the ticked ones.'}</span>
             </div>
           </div>
-          <label className="block">
-            <span className="field-label">Welcome message</span>
-            <textarea className="input" rows={3} maxLength={1000} disabled={!canAdmin} value={welcome} onChange={(e) => setWelcome(e.target.value)} placeholder="Shown at the top of this help center" />
-          </label>
-          {canAdmin && (
-            <button type="button" className="btn btn-default" disabled={!dirty || save.isPending} onClick={() => save.mutate({ welcome, color })}>
-              Save look and feel
-            </button>
-          )}
-        </div>
-        <div>
-          <span className="field-label">Preview</span>
-          <div className="rounded-[3px] overflow-hidden border border-jira-border">
-            <PortalHero branding={{ ...data.branding, welcome: welcome || null, color: color || null }} title={projectName} compact />
+
+          <div>
+            <h4 className="font-semibold text-sm mb-2">Look and feel</h4>
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_280px] gap-4">
+              <div className="space-y-3">
+                <div>
+                  <span className="field-label">Logo</span>
+                  <div className="flex items-center gap-3">
+                    <PortalLogo branding={portal.branding} name={portal.name} size={40} />
+                    {canAdmin && (
+                      <>
+                        <label className="btn btn-default btn-sm cursor-pointer">
+                          Upload…
+                          <input type="file" accept={LOGO_TYPES.join(',')} className="sr-only" onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
+                        </label>
+                        {portal.branding.logo && <button type="button" className="btn btn-subtle btn-sm" onClick={() => update.mutate({ logo: '' })}>Remove</button>}
+                      </>
+                    )}
+                  </div>
+                  <span className="field-help">Square images work best; up to 256 KB.</span>
+                </div>
+                <div>
+                  <label className="field-label" htmlFor={`color-${portal.id}`}>Accent colour</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id={`color-${portal.id}`}
+                      type="color"
+                      disabled={!canAdmin}
+                      value={color || '#0052CC'}
+                      onChange={(e) => setColor(e.target.value.toUpperCase())}
+                      className="h-8 w-12 rounded-[3px] border border-jira-border cursor-pointer disabled:cursor-default"
+                    />
+                    <span className="font-mono text-xs text-jira-subtle">{color || 'Default'}</span>
+                    {canAdmin && color && <button type="button" className="btn btn-subtle btn-sm" onClick={() => setColor('')}>Use default</button>}
+                  </div>
+                </div>
+                <label className="block">
+                  <span className="field-label">Welcome message</span>
+                  <textarea className="input" rows={3} maxLength={1000} disabled={!canAdmin} value={welcome} onChange={(e) => setWelcome(e.target.value)} placeholder="Shown at the top of this portal" />
+                </label>
+                {canAdmin && (
+                  <button type="button" className="btn btn-default" disabled={!lookDirty || update.isPending} onClick={() => update.mutate({ welcome, color })}>
+                    Save look and feel
+                  </button>
+                )}
+              </div>
+              <div>
+                <span className="field-label">Preview</span>
+                <div className="rounded-[3px] overflow-hidden border border-jira-border">
+                  <PortalHero branding={{ ...portal.branding, welcome: welcome || null, color: color || null }} title={portal.name} compact />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function PortalAccess({ projectKey, projectName, canAdmin }: { projectKey: string; projectName: string; canAdmin: boolean }) {
+function Portals({ projectKey, requestTypes, canAdmin }: { projectKey: string; requestTypes: RequestType[]; canAdmin: boolean }) {
   const queryClient = useQueryClient();
   const { onError, toast } = useSd(projectKey);
-  const { data } = useQuery({ queryKey: ['desk-customers', projectKey], queryFn: () => api.getDeskCustomers(projectKey) });
-  const { data: allCustomers = [] } = useQuery({ queryKey: ['users', 'customers'], queryFn: () => api.getUsers(undefined, 'customers'), enabled: canAdmin });
-  const { data: allOrganizations = [] } = useQuery({ queryKey: ['organizations'], queryFn: api.getOrganizations, enabled: canAdmin });
-  const done = (d: DeskCustomers) => queryClient.setQueryData(['desk-customers', projectKey], d);
-  const setOpen = useMutation({
-    mutationFn: (portalOpen: boolean) => api.updatePortal(projectKey, { portalOpen }),
-    onSuccess: (d) => { done(d); toast(d.portalOpen ? 'Any customer can now raise requests' : 'Only the customers and organizations listed can raise requests'); },
+  const [form, setForm] = useState<{ name: string; slug: string; slugEdited: boolean } | null>(null);
+  const { data: portals } = useQuery({ queryKey: ['portals', projectKey], queryFn: () => api.getPortals(projectKey) });
+  const create = useMutation({
+    mutationFn: () => api.createPortal(projectKey, { name: form!.name.trim(), slug: form!.slug }),
+    onSuccess: (p) => {
+      queryClient.invalidateQueries({ queryKey: ['portals', projectKey] });
+      queryClient.invalidateQueries({ queryKey: ['portal-list'] });
+      setForm(null);
+      toast(`${p.name} created. Add the organizations or customers who should use it.`);
+    },
     onError,
   });
-  const add = useMutation({ mutationFn: (id: string) => api.addDeskCustomer(projectKey, id), onSuccess: done, onError });
-  const remove = useMutation({ mutationFn: (id: string) => api.removeDeskCustomer(projectKey, id), onSuccess: done, onError });
-  const addOrg = useMutation({ mutationFn: (id: string) => api.addDeskOrganization(projectKey, id), onSuccess: done, onError });
-  const removeOrg = useMutation({ mutationFn: (id: string) => api.removeDeskOrganization(projectKey, id), onSuccess: done, onError });
-  if (!data) return <Spinner />;
-  const listed = new Set(data.customers.map((c) => c.id));
-  const linked = new Set(data.organizations.map((o) => o.id));
-  const portalUrl = `${window.location.origin}/portal/${projectKey}`;
+  if (!portals) return <Spinner />;
 
   return (
     <div>
-      <h3 className="font-semibold mb-1">Help center</h3>
-      <p className="text-jira-subtle text-sm mb-3">
-        This service desk's own help center is at <a href={portalUrl} target="_blank" rel="noopener noreferrer" className="link">{portalUrl}</a>.
-        Customer accounts and organizations are managed on the <Link to="/users?tab=organizations" className="link">People</Link> page.
-        Agents are the project's members; anyone who can browse the project can also raise requests.
-      </p>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="card">
-          <div className="card-header"><span className="card-title">Organizations ({data.organizations.length})</span></div>
-          <div className="px-4 py-2">
-            <p className="text-xs text-jira-muted mb-1">Their members can use this help center, and requests can be shared with the whole organization.</p>
-            {data.organizations.length === 0 && <p className="text-jira-muted text-sm py-1">No organizations yet.</p>}
-            {data.organizations.map((o) => (
-              <div key={o.id} className="group flex items-center gap-2 py-1">
-                <UsersIcon size={14} className="text-jira-muted" />
-                <span className="flex-1 truncate">{o.name} <span className="text-jira-muted text-xs">{o.members} {o.members === 1 ? 'member' : 'members'}</span></span>
-                {canAdmin && (
-                  <button type="button" onClick={() => removeOrg.mutate(o.id)} className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-jira-muted hover:text-jira-navy" aria-label={`Remove ${o.name}`}>
-                    <XIcon size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
-            {canAdmin && (
-              <SelectPicker
-                value={undefined}
-                onChange={(id) => id && addOrg.mutate(id)}
-                placeholder="+ Add organization"
-                options={allOrganizations.filter((o) => !linked.has(o.id)).map((o) => ({ id: o.id, label: o.name, hint: `${o.members.length} members` }))}
-              />
-            )}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header"><span className="card-title">Who else can raise requests</span></div>
-          <div className="px-4 py-2">
-            <div className="space-y-2 mb-2" role="radiogroup" aria-label="Who can raise requests">
-              {([[true, 'Any customer', 'Every customer account can use this help center.'], [false, 'Only the organizations and customers listed', 'Use this for a portal that belongs to specific clients.']] as const).map(([value, label, help]) => (
-                <label key={String(value)} className="flex items-start gap-2 cursor-pointer">
-                  <input type="radio" name={`portal-open-${projectKey}`} className="mt-1" disabled={!canAdmin || setOpen.isPending} checked={data.portalOpen === value} onChange={() => setOpen.mutate(value)} />
-                  <span>{label}<span className="field-help mt-0">{help}</span></span>
-                </label>
-              ))}
-            </div>
-            {!data.portalOpen && (
-              <>
-                <div className="text-xs font-semibold text-jira-muted mt-3 mb-1">Individual customers ({data.customers.length})</div>
-                {data.customers.map((c) => (
-                  <div key={c.id} className="group flex items-center gap-2 py-1">
-                    <Avatar name={c.name} size="xs" />
-                    <span className="flex-1 truncate">{c.name} <span className="text-jira-muted text-xs">{c.email}</span></span>
-                    {canAdmin && (
-                      <button type="button" onClick={() => remove.mutate(c.id)} className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-jira-muted hover:text-jira-navy" aria-label={`Remove ${c.name}`}>
-                        <XIcon size={14} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {canAdmin && (
-                  <SelectPicker
-                    value={undefined}
-                    onChange={(id) => id && add.mutate(id)}
-                    placeholder="+ Add customer"
-                    options={allCustomers.filter((c) => !listed.has(c.id)).map((c) => ({ id: c.id, label: c.name, hint: c.email, icon: <Avatar name={c.name} size="xs" /> }))}
-                  />
-                )}
-              </>
-            )}
-          </div>
-        </div>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="font-semibold">Portals</h3>
+        {canAdmin && !form && <button type="button" className="btn btn-default btn-sm" onClick={() => setForm({ name: '', slug: '', slugEdited: false })}><PlusIcon size={14} /> Add portal</button>}
       </div>
-
-      <Branding projectKey={projectKey} projectName={projectName} data={data} canAdmin={canAdmin} />
+      <p className="text-jira-subtle text-sm mb-3">
+        Each portal is a separate help center with its own link, look, request types and customers, and all of them feed this project
+        and its team. Give each client company its own portal: they only ever see their own requests. Customer accounts and
+        organizations are managed on the <Link to="/users?tab=organizations" className="link">People</Link> page.
+      </p>
+      {form && (
+        <form onSubmit={(e) => { e.preventDefault(); create.mutate(); }} className="card p-4 mb-3 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+          <label className="block">
+            <span className="field-label">Portal name</span>
+            <input
+              autoFocus
+              className="input"
+              value={form.name}
+              placeholder="e.g. Acme Support"
+              onChange={(e) => setForm({ ...form, name: e.target.value, slug: form.slugEdited ? form.slug : toSlug(e.target.value) })}
+            />
+          </label>
+          <label className="block">
+            <span className="field-label">Link</span>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-jira-muted whitespace-nowrap">/portal/</span>
+              <input className="input font-mono" value={form.slug} onChange={(e) => setForm({ ...form, slug: toSlug(e.target.value), slugEdited: true })} placeholder="acme" />
+            </div>
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" className="btn btn-primary" disabled={form.name.trim().length < 2 || form.slug.length < 2 || create.isPending}>Create</button>
+            <button type="button" className="btn btn-subtle" onClick={() => setForm(null)}>Cancel</button>
+          </div>
+        </form>
+      )}
+      <div className="space-y-3">
+        {portals.map((p) => (
+          <PortalCard key={p.id} projectKey={projectKey} portal={p} requestTypes={requestTypes} canAdmin={canAdmin} onlyOne={portals.length === 1} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -580,13 +706,13 @@ export default function ServiceDeskSettings({ projectKey, canAdmin }: { projectK
   return (
     <section id="service-desk" className="scroll-mt-20">
       <h2 className="text-base font-semibold mb-1">Service desk</h2>
-      <p className="text-jira-subtle mb-4">What customers can ask for, how fast you aim to answer, and how agents see their work.</p>
+      <p className="text-jira-subtle mb-4">What customers can ask for, how fast you aim to answer, how agents see their work, and the portals customers use.</p>
       {isLoading ? <Spinner /> : !data ? <p className="field-error">{errorMessage(error)}</p> : (
         <div className="space-y-8">
+          <Portals projectKey={projectKey} requestTypes={data.requestTypes} canAdmin={canAdmin} />
           <RequestTypes projectKey={projectKey} types={data.requestTypes} canAdmin={canAdmin} />
           <SlaGoals projectKey={projectKey} targets={data.slaTargets} canAdmin={canAdmin} />
           <QueueEditor projectKey={projectKey} queues={data.queues} canAdmin={canAdmin} />
-          <PortalAccess projectKey={projectKey} projectName={data.project.name} canAdmin={canAdmin} />
         </div>
       )}
     </section>

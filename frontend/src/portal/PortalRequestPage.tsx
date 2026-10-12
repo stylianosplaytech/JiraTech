@@ -33,15 +33,8 @@ export default function PortalRequestPage() {
       .catch(() => undefined);
   }, [requestId, queryClient]);
 
-  // Take on the look of the help center the request belongs to (if this person can open it).
-  const projectKey = request?.project.key;
-  const { data: desk } = useQuery({
-    queryKey: ['portal-desk', projectKey],
-    queryFn: () => api.getPortalDesk(projectKey!),
-    enabled: !!projectKey,
-    retry: false,
-  });
-  usePortalBrand(desk && { key: desk.key, name: desk.name, branding: desk.branding });
+  // Take on the look of the portal the request was raised through.
+  usePortalBrand(request?.portal && { slug: request.portal.slug, name: request.portal.name, branding: request.portal.branding });
 
   const share = useMutation({
     mutationFn: (organizationId: string | null) => api.shareRequest(key, organizationId),
@@ -77,7 +70,8 @@ export default function PortalRequestPage() {
   return (
     <div>
       <nav className="text-sm text-jira-subtle mb-2" aria-label="Breadcrumb">
-        <Link to="/portal" className="hover:underline">Help center</Link> / <Link to={`/portal/${request.project.key}`} className="hover:underline">{request.project.name}</Link>
+        <Link to="/portal" className="hover:underline">Help center</Link>
+        {request.portal && <> / <Link to={`/portal/${request.portal.slug}`} className="hover:underline">{request.portal.name}</Link></>}
       </nav>
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2 mb-6">
         <h1 className="page-title min-w-0 break-words flex-1">{request.summary}</h1>

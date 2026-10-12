@@ -1,6 +1,7 @@
 /**
- * Demo data for trying out JiraTech: extra people, two standard projects (PAY, MOB), an IT service
- * desk (HELP) with customers, more SPORTS work, comments, links, watchers, work logs, history and saved filters.
+ * Demo data for trying out JiraTech: extra people, two standard projects (PAY, MOB), two service desks
+ * (HELP, internal IT; CS, one team serving two client companies through their own portals), customers and
+ * their organizations, more SPORTS work, comments, links, watchers, work logs, history and saved filters.
  *
  * Runs on top of the base seed (prisma/seed.ts) and is safe to re-run: anything that
  * already exists is left alone.
@@ -296,7 +297,7 @@ async function backfillStatuses(projectId: string) {
   }
 }
 
-// ─── Service desks (HELP, ACME) ───────────────────────────────────────────────────
+// ─── Service desks (HELP, CS) ─────────────────────────────────────────────────────
 
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000);
 
@@ -319,6 +320,8 @@ interface RequestSpec {
   replies?: { author: User; body: string; minutesAgo: number; internal?: boolean }[];
   /** Organization id the request is shared with */
   organization?: string;
+  /** Portal (by link name) it was raised through; the desk's first portal when omitted */
+  portal?: string;
 }
 
 const SD_FLOW: Flow = [
@@ -340,12 +343,24 @@ interface DeskSpec {
   description: string;
   lead: User;
   agents: [User, ProjectRole][];
-  portal?: { portalOpen?: boolean; portalColor?: string; portalWelcome?: string; portalLogo?: string };
   fields: { key: string; name: string; type: 'TEXT' | 'SELECT' | 'NUMBER'; options?: string[]; order: number }[];
   /** [request type, field key, required] */
   formFields: [string, string, boolean][];
-  /** Organizations (by id) whose members may use the help center */
-  organizations: string[];
+  /** The project's customer portals, all feeding this project */
+  portals: PortalSpec[];
+}
+
+interface PortalSpec {
+  slug: string;
+  name: string;
+  open?: boolean;
+  welcome?: string;
+  color?: string;
+  logo?: string;
+  /** Organizations (by id) whose members may use it */
+  organizations?: string[];
+  /** Request types offered (by name); all when omitted */
+  requestTypes?: string[];
 }
 
 /** A service desk set up the way the API sets up a new one; returns a function that adds requests to it. */
@@ -361,7 +376,6 @@ async function demoDesk(d: DeskSpec) {
       leadId: d.lead.id,
       strictHierarchy: false,
       defaultAccess: ProjectAccess.NONE,
-      ...d.portal,
     },
   });
   for (const [u, role] of d.agents) {
@@ -371,17 +385,29 @@ async function demoDesk(d: DeskSpec) {
       create: { projectId: desk.id, userId: u.id, role },
     });
   }
-  for (const organizationId of d.organizations) {
-    await prisma.projectOrganization.upsert({
-      where: { projectId_organizationId: { projectId: desk.id, organizationId } },
-      update: {},
-      create: { projectId: desk.id, organizationId },
-    });
-  }
 
   const flow = await ensureWorkflow(desk.id, SD_FLOW, SD_MOVES);
   await prisma.workflowStatus.updateMany({ where: { projectId: desk.id, name: 'Waiting for customer' }, data: { pausesSla: true } });
   if (!(await prisma.requestType.count({ where: { projectId: desk.id } }))) await setUpServiceDesk(prisma, desk.id);
+  const allTypes = await prisma.requestType.findMany({ where: { projectId: desk.id } });
+
+  // Portals: each with its own link, look, organizations and request types.
+  const portalIds = new Map<string, string>();
+  for (const [position, ps] of d.portals.entries()) {
+    const portal = await prisma.portal.upsert({
+      where: { slug: ps.slug },
+      update: {},
+      create: {
+        slug: ps.slug, name: ps.name, projectId: desk.id, position,
+        open: ps.open ?? false, welcome: ps.welcome, color: ps.color, logo: ps.logo,
+        organizations: ps.organizations ? { create: ps.organizations.map((organizationId) => ({ organizationId })) } : undefined,
+        requestTypes: ps.requestTypes
+          ? { create: allTypes.filter((t) => ps.requestTypes!.includes(t.name)).map((t) => ({ requestTypeId: t.id })) }
+          : undefined,
+      },
+    });
+    portalIds.set(ps.slug, portal.id);
+  }
 
   // Fields on the portal forms
   const B = await new Builder(desk.id, d.key).load();
@@ -414,6 +440,7 @@ async function demoDesk(d: DeskSpec) {
         type: type.issueType,
         requestTypeId: type.id,
         organizationId: s.organization,
+        portalId: portalIds.get(s.portal ?? d.portals[0].slug),
         summary: s.summary,
         description: s.description,
         priority: s.priority,
@@ -476,6 +503,10 @@ const ACME_LOGO = `data:image/svg+xml;base64,${Buffer.from(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#00875A"/>'
   + '<path d="M17 47 32 15l15 32h-8l-7-16-7 16z" fill="#fff"/></svg>',
 ).toString('base64')}`;
+const GLOBEX_LOGO = `data:image/svg+xml;base64,${Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#5243AA"/>'
+  + '<circle cx="32" cy="32" r="16" fill="none" stroke="#fff" stroke-width="6"/><path d="M32 32h14" stroke="#fff" stroke-width="6"/></svg>',
+).toString('base64')}`;
 
 async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' | 'nikos' | 'anna' | 'george' | 'peter', User>) {
   const { anna, george, peter, andreas, sofia, lina, nikos, elena } = p;
@@ -500,7 +531,8 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
       ['Report a bug', 'os', false], ['Report a bug', 'affected_url', false],
       ['Request access', 'manager', true],
     ],
-    organizations: [acme.id, globex.id],
+    // Internal IT: one portal, open to every customer.
+    portals: [{ slug: 'help', name: 'IT Help Desk', open: true, organizations: [acme.id, globex.id] }],
   });
 
   // One request in each SLA situation: breached, on track, paused, at risk, met, brand new.
@@ -565,24 +597,40 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     createdMinutesAgo: 5 * 60 + 20, fields: { os: 'Windows' }, organization: acme.id,
   });
 
-  // ── ACME: a branded help center for one client company only ─────────────
-  const acmeRequest = await demoDesk({
-    key: 'ACME',
-    name: 'Acme Support',
-    description: 'Support for Acme Retail stores and head office.',
+  await removeLegacyAcmeDesk();
+
+  // ── CS: one team serving several client companies, each through its own portal ──
+  const csRequest = await demoDesk({
+    key: 'CS',
+    name: 'Client Services',
+    description: 'One support team for all our client companies. Each client raises requests through its own portal.',
     lead: lina,
     agents: [[lina, ProjectRole.ADMIN], [nikos, ProjectRole.MEMBER], [andreas, ProjectRole.MEMBER]],
-    portal: {
-      portalOpen: false,
-      portalColor: '#00875A',
-      portalWelcome: 'Welcome to Acme Support. Tell us what you need and our team will get back to you, usually within a few hours.',
-      portalLogo: ACME_LOGO,
-    },
     fields: [{ key: 'store', name: 'Store', type: 'SELECT', options: ['Head office', 'Athens', 'Limassol', 'Thessaloniki'], order: 1 }],
     formFields: [['Get IT help', 'store', true], ['Report a bug', 'store', false]],
-    organizations: [acme.id],
+    portals: [
+      {
+        slug: 'acme',
+        name: 'Acme Support',
+        color: '#00875A',
+        welcome: 'Welcome to Acme Support. Tell us what you need and our team will get back to you, usually within a few hours.',
+        logo: ACME_LOGO,
+        organizations: [acme.id],
+        requestTypes: ['Get IT help', 'Report a bug', 'Request access'],
+      },
+      {
+        slug: 'globex',
+        name: 'Globex Service Center',
+        color: '#5243AA',
+        welcome: 'Globex customers: report a problem or suggest an improvement. We reply within one business day.',
+        logo: GLOBEX_LOGO,
+        organizations: [globex.id],
+        requestTypes: ['Report a bug', 'Suggest an improvement'],
+      },
+    ],
   });
-  await acmeRequest({
+  await csRequest({
+    portal: 'acme',
     summary: 'Card terminal in the Limassol store keeps rebooting',
     description: '<p>Terminal 2 restarts every few minutes since this morning. We are sending customers to terminal 1.</p>',
     type: 'Get IT help', reporter: peter, priority: Priority.HIGH, status: 'In Progress', assignee: nikos,
@@ -592,18 +640,61 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
       { author: nikos, body: '<p>Courier booked, tracking 77-3310. Firmware rollback did not help.</p>', minutesAgo: 50, internal: true },
     ],
   });
-  await acmeRequest({
+  await csRequest({
+    portal: 'acme',
     summary: 'Price labels print in the wrong currency',
     description: '<p>The label printer at head office shows prices in USD instead of EUR.</p>',
     type: 'Report a bug', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for support',
     createdMinutesAgo: 40, fields: { store: 'Head office' }, organization: acme.id,
   });
-  await acmeRequest({
+  await csRequest({
+    portal: 'acme',
     summary: 'Change my store manager permissions',
     description: '<p>I moved to the Athens store and need manager access there instead of Limassol.</p>',
     type: 'Request access', reporter: peter, priority: Priority.LOW, status: 'Waiting for support',
     createdMinutesAgo: 25,
   });
+  await csRequest({
+    portal: 'globex',
+    summary: 'Invoice PDF shows the wrong VAT number',
+    description: '<p>Since the last update our invoices show the old VAT number in the footer.</p>',
+    type: 'Report a bug', reporter: george, priority: Priority.HIGH, status: 'In Progress', assignee: andreas,
+    createdMinutesAgo: 3 * 60, respondedAfter: 35, organization: globex.id,
+    replies: [
+      { author: andreas, body: '<p>Thanks George, we found the cached template and are regenerating this month\'s invoices.</p>', minutesAgo: 3 * 60 - 35 },
+    ],
+  });
+  await csRequest({
+    portal: 'globex',
+    summary: 'Add CSV export to the order history',
+    description: '<p>Our finance team would like to export the order history to CSV.</p>',
+    type: 'Suggest an improvement', reporter: george, priority: Priority.LOW, status: 'Waiting for support',
+    createdMinutesAgo: 90, organization: globex.id,
+  });
+}
+
+/**
+ * Earlier versions of this seed made a separate ACME service desk for Acme alone; its requests now live in
+ * Client Services (CS) behind the Acme portal. Remove it, but only while it still holds nothing but that demo data.
+ */
+async function removeLegacyAcmeDesk() {
+  const legacy = await prisma.project.findUnique({ where: { key: 'ACME' }, include: { issues: { select: { id: true, summary: true } } } });
+  const demo = new Set(['Card terminal in the Limassol store keeps rebooting', 'Price labels print in the wrong currency', 'Change my store manager permissions']);
+  if (!legacy || legacy.name !== 'Acme Support' || legacy.issues.some((i) => !demo.has(i.summary))) return;
+  const ids = legacy.issues.map((i) => i.id);
+  await prisma.$transaction([
+    prisma.notification.deleteMany({ where: { OR: [{ issueId: { in: ids } }, { issueKey: { startsWith: 'ACME-' } }] } }),
+    prisma.issueLink.deleteMany({ where: { OR: [{ sourceId: { in: ids } }, { targetId: { in: ids } }] } }),
+    prisma.issueComponent.deleteMany({ where: { issueId: { in: ids } } }),
+    prisma.issueVersion.deleteMany({ where: { issueId: { in: ids } } }),
+    prisma.issue.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.customFieldDefinition.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.label.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.component.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.version.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.project.delete({ where: { id: legacy.id } }),
+  ]);
+  console.log('Replaced the old ACME demo desk with the Client Services (CS) project and its Acme portal.');
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────

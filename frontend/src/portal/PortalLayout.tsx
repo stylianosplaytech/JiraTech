@@ -9,9 +9,9 @@ import { Dropdown } from '../components/ui';
 import { LogoutIcon } from '../components/Icons';
 import { DEFAULT_ACCENT, PortalLogo } from './Branding';
 
-/** The help center a page belongs to, so the header can take on its look. */
+/** The portal a page belongs to, so the header can take on its look. */
 export interface PortalBrand {
-  key: string;
+  slug: string;
   name: string;
   branding: PortalBranding;
 }
@@ -21,7 +21,7 @@ const BrandContext = createContext<(brand: PortalBrand | null) => void>(() => un
 /** Pages inside one help center call this with its branding (or undefined while loading). */
 export function usePortalBrand(brand: PortalBrand | null | undefined) {
   const setBrand = useContext(BrandContext);
-  const id = brand ? `${brand.key}|${brand.name}|${brand.branding.color}|${brand.branding.logo?.length}` : '';
+  const id = brand ? `${brand.slug}|${brand.name}|${brand.branding.color}|${brand.branding.logo?.length}` : '';
   useEffect(() => {
     if (!brand) return undefined;
     setBrand(brand);
@@ -31,8 +31,8 @@ export function usePortalBrand(brand: PortalBrand | null | undefined) {
 
 /** A customer with a single help center goes straight to it; otherwise to the list of help centers. */
 export function usePortalHome(user?: User) {
-  const { data: desks } = useQuery({ queryKey: ['portal-desks'], queryFn: api.getPortalDesks });
-  return isCustomer(user) && desks?.length === 1 ? `/portal/${desks[0].key}` : '/portal';
+  const { data: portals } = useQuery({ queryKey: ['portal-list'], queryFn: api.getMyPortals });
+  return isCustomer(user) && portals?.length === 1 ? `/portal/${portals[0].slug}` : '/portal';
 }
 
 /** The help center chrome: what customers see instead of the full app. Staff get a way back. */
@@ -58,7 +58,7 @@ export default function PortalLayout({ user, children }: { user?: User; children
         <header className="sticky top-0 z-40 bg-white border-b border-jira-border" style={{ borderTop: `3px solid ${accent}` }}>
           <div className="h-14 px-2 sm:px-4 flex items-center gap-1 sm:gap-2 max-w-5xl mx-auto">
             {brand ? (
-              <Link to={`/portal/${brand.key}`} className="flex items-center gap-2 pr-2 min-w-0" aria-label={`${brand.name} home`}>
+              <Link to={`/portal/${brand.slug}`} className="flex items-center gap-2 pr-2 min-w-0" aria-label={`${brand.name} home`}>
                 <PortalLogo branding={brand.branding} name={brand.name} size={28} />
                 <span className="hidden sm:inline font-semibold text-[17px] text-jira-navy tracking-tight truncate max-w-[220px]">{brand.name}</span>
               </Link>
