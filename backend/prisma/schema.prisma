@@ -21,6 +21,13 @@ enum UserRole {
   RELEASE_MANAGER
   SCRUM_MASTER
   TEAM_LEAD
+  /// Service desk customer: can only use the help center portal
+  CUSTOMER
+}
+
+enum ProjectType {
+  SOFTWARE
+  SERVICE_DESK
 }
 
 enum ComponentType {
@@ -136,6 +143,7 @@ model User {
   notifications    Notification[]    @relation("NotificationRecipient")
   projectMemberships ProjectMember[]
   notificationsSent Notification[]   @relation("NotificationActor")
+  customerOf       ProjectCustomer[]
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────
@@ -152,6 +160,9 @@ model Project {
   strictHierarchy Boolean  @default(true)
   /// What people who aren't project members can do
   defaultAccess   ProjectAccess @default(MEMBER)
+  type            ProjectType   @default(SOFTWARE)
+  /// Service desks: any customer may raise requests (otherwise only the listed customers)
+  portalOpen      Boolean       @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -166,6 +177,10 @@ model Project {
   programIncrements     ProgramIncrement[]
   labels                Label[]
   customFieldDefinitions CustomFieldDefinition[]
+  requestTypes          RequestType[]
+  slaTargets            SlaTarget[]
+  queues                Queue[]
+  customers             ProjectCustomer[]
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -279,6 +294,7 @@ model CustomFieldDefinition {
 
   project Project            @relation(fields: [projectId], references: [id])
   values  CustomFieldValue[]
+  requestTypes RequestTypeField[]
 
   @@unique([projectId, key])
 }
@@ -324,6 +340,13 @@ model Issue {
   reporterId        String?
   sprintId          String?
   piId              String?
+  /// Service desk request type (null for ordinary issues)
+  requestTypeId     String?
+  /// SLA clocks: first public reply by an agent, when it was resolved, and time spent paused
+  firstRespondedAt  DateTime?
+  resolvedAt        DateTime?
+  slaPausedAt       DateTime?
+  slaPausedSeconds  Int              @default(0)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -335,6 +358,7 @@ model Issue {
   reporter          User?              @relation("Reporter", fields: [reporterId], references: [id])
   sprint            Sprint?            @relation(fields: [sprintId], references: [id])
   pi                ProgramIncrement?  @relation(fields: [piId], references: [id])
+  requestType       RequestType?       @relation(fields: [requestTypeId], references: [id], onDelete: SetNull)
   components        IssueComponent[]
   versions          IssueVersion[]
   linksFrom         IssueLink[]        @relation("LinkSource")
@@ -465,6 +489,8 @@ model Comment {
   issueId   String
   authorId  String
   body      String
+  /// Internal notes are only visible to agents, never to service desk customers
+  internal  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -577,6 +603,8 @@ model WorkflowStatus {
   name      String
   category  IssueStatus
   position  Int         @default(0)
+  /// Service desks: SLA clocks pause while a request is in this status (e.g. "Waiting for customer")
+  pausesSla Boolean     @default(false)
   createdAt DateTime    @default(now())
 
   project         Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -600,4 +628,77 @@ model WorkflowTransition {
   toStatus   WorkflowStatus @relation("TransitionTo", fields: [toStatusId], references: [id], onDelete: Cascade)
 
   @@unique([fromStatusId, toStatusId])
+}
+
+// ─── Service desk ────────────────────────────────────────────────────────────
+
+/** What customers can ask for on the portal, e.g. "Get IT help" or "Request access". */
+model RequestType {
+  id          String    @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  /// Issue type the request is created as
+  issueType   IssueType @default(TASK)
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fields  RequestTypeField[]
+  issues  Issue[]
+
+  @@unique([projectId, name])
+}
+
+/** A project custom field shown on a request type's portal form. */
+model RequestTypeField {
+  requestTypeId String
+  fieldId       String
+  required      Boolean @default(false)
+  position      Int     @default(0)
+
+  requestType RequestType           @relation(fields: [requestTypeId], references: [id], onDelete: Cascade)
+  field       CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@id([requestTypeId, fieldId])
+}
+
+/** SLA goals per priority, in minutes (null = no goal). Clocks run around the clock. */
+model SlaTarget {
+  projectId            String
+  priority             Priority
+  firstResponseMinutes Int?
+  resolutionMinutes    Int?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, priority])
+}
+
+/** An agent queue: a named JQL filter within the service desk project. */
+model Queue {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  jql       String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+}
+
+/** Customers allowed to raise requests when a service desk's portal isn't open to every customer. */
+model ProjectCustomer {
+  projectId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
 }

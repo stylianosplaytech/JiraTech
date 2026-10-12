@@ -1,4 +1,4 @@
-import { ProjectAccess, ProjectRole } from '@prisma/client';
+import { ProjectAccess, ProjectRole, ProjectType } from '@prisma/client';
 import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class CreateProjectDto {
@@ -28,6 +28,11 @@ export class CreateProjectDto {
   @IsOptional()
   @IsEnum(ProjectAccess)
   defaultAccess?: ProjectAccess;
+
+  /** Fixed once created. */
+  @IsOptional()
+  @IsEnum(ProjectType)
+  type?: ProjectType;
 }
 
 export class UpdateProjectDto {

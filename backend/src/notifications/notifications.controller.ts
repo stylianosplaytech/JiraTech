@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsOptional } from 'class-validator';
-import { JwtAuthGuard } from '../auth/guards';
+import { AllowCustomers, JwtAuthGuard } from '../auth/guards';
 import { AuthRequest } from '../common/auth-user';
 import { NotificationsService } from './notifications.service';
 
@@ -12,6 +12,7 @@ class PreferencesDto {
 
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
+@AllowCustomers()
 export class NotificationsController {
   constructor(private notifications: NotificationsService) {}
 

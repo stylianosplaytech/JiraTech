@@ -256,4 +256,9 @@ export class CommentDto {
   @MinLength(1)
   @MaxLength(32000)
   body!: string;
+
+  /** Service desk projects: an internal note that customers don't see. */
+  @IsOptional()
+  @IsBoolean()
+  internal?: boolean;
 }

@@ -27,9 +27,13 @@ export interface ProjectPermissions {
 export class AccessService {
   constructor(private prisma: PrismaService) {}
 
-  /** Global admins and the project lead administer a project; otherwise membership, then the project default. */
+  /**
+   * Global admins and the project lead administer a project; otherwise membership, then the project default.
+   * Service desk customers have no project role: they only reach their own requests through the portal.
+   */
   async role(user: AuthUser, projectId: string): Promise<EffectiveRole> {
     if (user.role === UserRole.ADMIN) return 'ADMIN';
+    if (user.role === UserRole.CUSTOMER) return 'NONE';
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       select: { leadId: true, defaultAccess: true, members: { where: { userId: user.id }, select: { role: true } } },
@@ -61,6 +65,7 @@ export class AccessService {
   /** Project ids the user can browse, or null when they can browse everything. */
   async browsableProjectIds(user: AuthUser): Promise<string[] | null> {
     if (user.role === UserRole.ADMIN) return null;
+    if (user.role === UserRole.CUSTOMER) return [];
     const projects = await this.prisma.project.findMany({
       where: {
         OR: [
@@ -74,7 +79,7 @@ export class AccessService {
     return projects.map((p) => p.id);
   }
 
-  /** Of these users, the ones who can see the project (used to avoid notifying people without access). */
+  /** Of these users, the ones who can see the project (used to avoid notifying people without access). Never customers. */
   async filterBrowsers(projectId: string, userIds: string[]): Promise<Set<string>> {
     if (!userIds.length) return new Set();
     const [project, users] = await Promise.all([
@@ -86,6 +91,7 @@ export class AccessService {
     ]);
     const memberIds = new Set(project.members.map((m) => m.userId));
     return new Set(users
+      .filter((u) => u.role !== UserRole.CUSTOMER)
       .filter((u) => u.role === UserRole.ADMIN || u.id === project.leadId || memberIds.has(u.id)
         || project.defaultAccess !== ProjectAccess.NONE)
       .map((u) => u.id));

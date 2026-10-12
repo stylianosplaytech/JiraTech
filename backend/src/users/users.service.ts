@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { contains } from '../common/text-match';
@@ -14,19 +14,18 @@ const USER_SELECT = {
   updatedAt: true,
 } as const;
 
+export type UserKind = 'staff' | 'customers' | 'all';
+
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(search?: string) {
-    const where = search
-      ? {
-          OR: [
-            { name: contains(search) },
-            { email: contains(search) },
-          ],
-        }
-      : undefined;
+  /** Staff by default: customers only appear when asked for (People page, service desk customer lists). */
+  async findAll(search?: string, kind: UserKind = 'staff') {
+    const where: Prisma.UserWhereInput = {};
+    if (search) where.OR = [{ name: contains(search) }, { email: contains(search) }];
+    if (kind === 'staff') where.role = { not: UserRole.CUSTOMER };
+    if (kind === 'customers') where.role = UserRole.CUSTOMER;
     return this.prisma.user.findMany({
       where,
       select: USER_SELECT,

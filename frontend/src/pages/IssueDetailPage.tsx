@@ -16,6 +16,7 @@ import Avatar from '../components/Avatar';
 import CustomFieldRows from '../components/CustomFieldsPanel';
 import IssueLinks from '../components/IssueLinks';
 import ActivitySection from '../components/ActivitySection';
+import RequestPanel from '../components/RequestPanel';
 
 
 const STATUS_BUTTON: Record<string, string> = {
@@ -459,6 +460,8 @@ export default function IssueDetailPage() {
             {issue.blocked && <span className="lozenge bg-[#FFEBE6] text-[#BF2600]">Blocked</span>}
           </div>
 
+          {issue.project?.type === 'SERVICE_DESK' && <RequestPanel issue={issue} canEdit={canEdit} />}
+
           <div className="card">
             <div className="card-header"><h2 className="card-title">Details</h2></div>
             <div className="px-4 py-2">
@@ -467,6 +470,7 @@ export default function IssueDetailPage() {
                   variant="inline"
                   disabled={!canEdit}
                   value={issue.assignee?.id}
+                  selected={issue.assignee}
                   onChange={(assigneeId) => update.mutate({ assigneeId: assigneeId ?? '' })}
                   currentUserId={currentUser?.id}
                 />
@@ -476,6 +480,7 @@ export default function IssueDetailPage() {
                   variant="inline"
                   disabled={!canEdit}
                   value={issue.reporter?.id}
+                  selected={issue.reporter}
                   onChange={(reporterId) => reporterId && update.mutate({ reporterId })}
                   allowClear={false}
                   placeholder="None"

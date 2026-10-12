@@ -65,6 +65,9 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
   const [tab, setTab] = useState<'comments' | 'history' | 'worklog'>('comments');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newestFirst, setNewestFirst] = useState(true);
+  // Service desks: agents either reply to the customer or leave an internal note.
+  const serviceDesk = issue.project?.type === 'SERVICE_DESK';
+  const [internal, setInternal] = useState(false);
 
   const { data: comments } = useQuery({ queryKey: ['comments', issue.id], queryFn: () => api.getComments(issue.id) });
   const { data: history } = useQuery({
@@ -78,7 +81,11 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
     queryClient.invalidateQueries({ queryKey: ['issue'] });
   };
   const onError = (e: unknown) => toast(errorMessage(e), 'error');
-  const add = useMutation({ mutationFn: (body: string) => api.addComment(issue.id, body), onSuccess: refresh, onError });
+  const add = useMutation({
+    mutationFn: ({ body, internal: note }: { body: string; internal: boolean }) => api.addComment(issue.id, body, note),
+    onSuccess: (_c, v) => { refresh(); if (serviceDesk) toast(v.internal ? 'Internal note added' : 'Reply sent to the customer'); },
+    onError,
+  });
   const edit = useMutation({
     mutationFn: ({ id, body }: { id: string; body: string }) => api.updateComment(issue.id, id, body),
     onSuccess: () => { refresh(); setEditingId(null); },
@@ -95,9 +102,12 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
     return (
       <div key={c.id} className="flex gap-3">
         <Avatar name={c.author.name} size="md" />
-        <div className="flex-1 min-w-0">
+        <div className={`flex-1 min-w-0 ${c.internal ? 'rounded-[3px] bg-[#FFFAE6] px-3 py-2' : ''}`}>
           <div className="mb-1">
             <span className="font-semibold">{c.author.name}</span>
+            {serviceDesk && (c.internal
+              ? <span className="lozenge bg-[#FFF0B3] text-[#974F0C] ml-2">Internal note</span>
+              : <span className="lozenge bg-[#DEEBFF] text-[#0747A6] ml-2">Shared with customer</span>)}
             <span className="text-jira-muted ml-2" title={new Date(c.createdAt).toLocaleString()}>{timeAgo(c.createdAt)}</span>
             {edited && <span className="text-jira-muted ml-1">• Edited</span>}
           </div>
@@ -166,9 +176,21 @@ export default function ActivitySection({ issue, currentUser }: { issue: Issue; 
 
       {tab === 'comments' && (
         <div className="space-y-5">
-          <div className="flex gap-3">
-            {currentUser && <Avatar name={currentUser.name} size="md" />}
-            <CommentEditor saving={add.isPending} onSave={(body) => add.mutate(body)} placeholder="Add a comment…" />
+          <div>
+            {serviceDesk && (
+              <div className="flex gap-1 mb-2 ml-11" role="group" aria-label="Comment visibility">
+                <button type="button" aria-pressed={!internal} onClick={() => setInternal(false)} className={`btn btn-sm ${!internal ? 'bg-jira-blue-light text-jira-blue' : 'btn-subtle'}`}>Reply to customer</button>
+                <button type="button" aria-pressed={internal} onClick={() => setInternal(true)} className={`btn btn-sm ${internal ? 'bg-[#FFF0B3] text-[#974F0C]' : 'btn-subtle'}`}>Add internal note</button>
+              </div>
+            )}
+            <div className="flex gap-3">
+              {currentUser && <Avatar name={currentUser.name} size="md" />}
+              <CommentEditor
+                saving={add.isPending}
+                onSave={(body) => add.mutate({ body, internal: serviceDesk && internal })}
+                placeholder={!serviceDesk ? 'Add a comment…' : internal ? 'Add an internal note (only agents see it)…' : 'Reply to the customer…'}
+              />
+            </div>
           </div>
           {sorted.map(renderComment)}
         </div>

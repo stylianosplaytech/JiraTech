@@ -35,6 +35,8 @@ export interface JqlSort {
 export interface CompiledJql {
   where: Prisma.IssueWhereInput;
   orderBy: JqlSort[];
+  /** False when the query had no ORDER BY and `orderBy` is the default (newest first). */
+  explicitOrder: boolean;
 }
 
 // ─── Tokenizer ───────────────────────────────────────────────────────────────
@@ -442,6 +444,8 @@ class Compiler {
         return this.equality(c, (v) => ({ parent: { key: v.toUpperCase() } }), { parentId: null });
       case 'epicname':
         return this.equality(c, (v) => ({ epicName: v }), { epicName: null });
+      case 'requesttype':
+        return this.equality(c, (v) => ({ requestType: { name: { in: nameVariants(v) } } }), { requestTypeId: null });
       case 'blocked':
         return this.equality(c, (v) => ({ blocked: ['true', 'yes', '1'].includes(v.toLowerCase()) }));
       case 'summary':
@@ -468,8 +472,8 @@ class Compiler {
       default:
         throw new JqlError(
           `Unknown field '${c.field}'. Try: project, key, type, status, priority, resolution, assignee, reporter, ` +
-          'statusCategory, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, summary, description, ' +
-          'comment, text, created, updated, blocked',
+          'statusCategory, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, requestType, summary, ' +
+          'description, comment, text, created, updated, blocked',
         );
     }
   }
@@ -622,5 +626,5 @@ const CURRENT_USER = '\u0000currentUser';
 export function compileJql(jql: string, ctx: JqlContext): CompiledJql {
   const { node, sort } = new Parser(tokenize(jql ?? '')).parse();
   const where = node ? new Compiler(ctx).compile(node) : {};
-  return { where, orderBy: sort.length ? sort : [{ field: 'created', direction: 'desc' }] };
+  return { where, orderBy: sort.length ? sort : [{ field: 'created', direction: 'desc' }], explicitOrder: sort.length > 0 };
 }

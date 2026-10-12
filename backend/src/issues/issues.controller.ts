@@ -131,7 +131,7 @@ export class IssuesController {
   @Post(':id/comments')
   @RequireAccess('browse', ISSUE)
   addComment(@Param('id') id: string, @Body() dto: CommentDto, @Request() req: AuthRequest) {
-    return this.issuesService.addComment(id, req.user.id, dto.body);
+    return this.issuesService.addComment(id, req.user, dto.body, { internal: dto.internal });
   }
 
   @Patch(':id/comments/:commentId')

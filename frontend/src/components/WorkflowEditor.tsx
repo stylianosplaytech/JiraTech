@@ -13,7 +13,7 @@ const CATEGORY_OPTIONS = CATEGORIES.map((c) => ({ id: c, label: CATEGORY_LABELS[
 const pairKey = (from: string, to: string) => `${from}>${to}`;
 
 /** Project admins edit statuses and allowed transitions; everyone else sees the workflow read-only. */
-export default function WorkflowEditor({ projectKey, canAdmin }: { projectKey: string; canAdmin: boolean }) {
+export default function WorkflowEditor({ projectKey, canAdmin, serviceDesk = false }: { projectKey: string; canAdmin: boolean; serviceDesk?: boolean }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { data: wf } = useQuery({ queryKey: ['workflow', projectKey], queryFn: () => api.getWorkflow(projectKey) });
@@ -45,7 +45,7 @@ export default function WorkflowEditor({ projectKey, canAdmin }: { projectKey: s
     onError,
   });
   const update = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { name?: string; category?: string } }) => api.updateWorkflowStatus(projectKey, id, data),
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; category?: string; pausesSla?: boolean } }) => api.updateWorkflowStatus(projectKey, id, data),
     onSuccess: refetch,
     onError,
   });
@@ -105,6 +105,7 @@ export default function WorkflowEditor({ projectKey, canAdmin }: { projectKey: s
               {canAdmin && <th className="w-16">Order</th>}
               <th>Status</th>
               <th className="w-44">Category</th>
+              {serviceDesk && <th className="w-24" title="SLA clocks pause while a request is in this status">Pauses SLA</th>}
               <th>Can move to</th>
               <th className="w-20 text-right">Issues</th>
               {canAdmin && <th className="w-12" />}
@@ -148,6 +149,18 @@ export default function WorkflowEditor({ projectKey, canAdmin }: { projectKey: s
                     options={CATEGORY_OPTIONS}
                   />
                 </td>
+                {serviceDesk && (
+                  <td className="text-center">
+                    <input
+                      type="checkbox"
+                      checked={!!s.pausesSla}
+                      disabled={!canAdmin || s.category === 'CLOSED'}
+                      title={s.category === 'CLOSED' ? 'SLAs always stop in Done statuses' : 'Pause SLA clocks while a request is in this status'}
+                      onChange={(e) => update.mutate({ id: s.id, data: { pausesSla: e.target.checked } })}
+                      aria-label={`${s.name} pauses SLA`}
+                    />
+                  </td>
+                )}
                 <td>
                   <div className="flex flex-wrap gap-1">
                     {outgoing(s.id).map((t) => <StatusBadge key={t.id} status={t.category} name={t.name} />)}

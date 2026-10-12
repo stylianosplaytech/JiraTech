@@ -1,6 +1,6 @@
 # JiraTech
 
-A Jira-style ALM platform: multiple projects, issues, comments, links, JQL search and saved filters — plus the SPORTS planning, release and incident workflows.
+A Jira-style ALM platform: multiple projects, issues, comments, links, JQL search and saved filters, a service desk with a customer help center — plus the SPORTS planning, release and incident workflows.
 
 ## Stack
 
@@ -22,7 +22,7 @@ cp backend/.env.example backend/.env
 npm run db:push -w backend
 npm run db:seed
 
-# Start dev servers (API :3000, UI :5173)
+# Start dev servers (API :3000, UI :5172)
 npm run dev
 ```
 
@@ -58,12 +58,14 @@ To try every feature with realistic content, load the demo data on top of the ba
 npm run db:seed:demo
 ```
 
-It adds 7 more people, two standard projects — **PAY** (Payments Platform) and **MOB** (Mobile App) — and more SPORTS work.
+It adds 7 more people, two standard projects — **PAY** (Payments Platform) and **MOB** (Mobile App) — an IT service desk (**HELP**)
+with two customers, and more SPORTS work.
 The new issues cover every status, priority and type, with epics and child issues, blocked and at-risk items,
 comments with @mentions, links (also across projects), watchers, work logs, history and shared saved filters.
 It is safe to run more than once. Every demo user logs in with the same password as the admin account, e.g.
 `elena@jiratech.local` (team lead), `nikos@jiratech.local` (developer), `sofia@jiratech.local` (QA),
-`daniel@jiratech.local` (release manager), `katerina@jiratech.local` (product owner).
+`daniel@jiratech.local` (release manager), `katerina@jiratech.local` (product owner). HELP's agents are Elena (admin), Andreas, Sofia and Lina;
+its customers `anna@customer.local` and `george@customer.local` only see the help center at `/portal`.
 
 ## Modules
 
@@ -80,6 +82,7 @@ It is safe to run more than once. Every demo user logs in with the same password
 | 8 | Projects, comments, history, links, JQL search, saved filters | Done |
 | 9 | Notifications (in-app and email), @mention picker | Done |
 | 10 | Project permissions, rich text, configurable workflows, bulk edit | Done |
+| 11 | Service desk: customer help center, request types, queues, SLAs, internal notes | Done |
 
 ## Jira-style features
 
@@ -103,6 +106,15 @@ Each project has members with a role, plus **general access** for everyone else:
 General access is **Open** (everyone is a member), **Limited** (everyone is a viewer) or **Private** (members only — the project is invisible to others).
 Global admins and the project lead always administer a project. Search, quick search, boards, links and notifications only include
 what you can see. Manage people on the project page under *People and access*.
+
+### Service desk
+
+Create a project with the **Service desk** type. **Customers** (users with the *Customer* role, created on the People page) use the
+**help center** at `/portal` to raise requests, reply and follow them; they can't reach anything else. Agents — the project's members —
+work requests from **Queues** (JQL filters sorted by SLA urgency), reply to the customer or add **internal notes** customers never see,
+and track two **SLAs** per request: time to first response and time to resolution (goals per priority; the clock pauses in statuses marked
+*Pauses SLA*, e.g. *Waiting for customer*, and runs around the clock). A customer replying to a request that's waiting for them sends it
+back to the agents. Admins configure request types (with portal fields), SLA goals, queues and who may use the help center on the project page.
 
 ### Workflows
 
@@ -161,7 +173,7 @@ text ~ "login" AND updated >= -7d
 labels IS EMPTY AND (priority = Highest OR priority = High)
 ```
 
-Fields: project, key, type, status (workflow status name), statusCategory, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, summary, description, comment, text, created, updated, blocked.
+Fields: project, key, type, status (workflow status name), statusCategory, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, requestType, summary, description, comment, text, created, updated, blocked.
 Operators: `= != ~ !~ > >= < <= IN, NOT IN, IS [NOT] EMPTY`, combined with `AND / OR / NOT` and parentheses.
 Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMonth()`. Dates: `2026-01-31`, `"2026-01-31 14:00"` or relative `-7d`, `-2w`, `-4h`.
 
@@ -184,6 +196,14 @@ Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMo
 - `GET /api/projects/:key/workflow`, `POST|PATCH|DELETE /api/projects/:key/workflow/statuses[/:id]`, `PUT /api/projects/:key/workflow/order`, `PUT /api/projects/:key/workflow/transitions`
 - `GET /api/issues/:id/transitions`, `POST /api/issues/:id/transition` (`{ statusId, resolution }`)
 - `POST /api/issues/bulk` (`{ issueIds, action: edit|transition|watch|delete, … }`)
+- `POST /api/issues/:id/comments` takes `{ body, internal }`; `internal: true` is an agent-only note in service desk projects
+- Service desk (agents): `GET /api/service-desk/:key` (settings), `GET /api/service-desk/:key/queues`, `GET /api/service-desk/:key/queues/:id/issues`,
+  `GET /api/service-desk/requests/:issue` (request type and SLAs); admins: `POST|PATCH|DELETE /api/service-desk/:key/request-types[/:id]`,
+  `POST|PATCH|DELETE /api/service-desk/:key/queues[/:id]`, `PUT /api/service-desk/:key/sla`, `PATCH /api/service-desk/:key/portal`,
+  `GET /api/service-desk/:key/customers`, `PUT|DELETE /api/service-desk/:key/customers/:userId`
+- Help center (customers and staff): `GET /api/portal/desks`, `GET /api/portal/desks/:key`, `POST /api/portal/desks/:key/requests`,
+  `GET /api/portal/requests?status=open|closed|all&q=`, `GET /api/portal/requests/:key`, `POST /api/portal/requests/:key/comments`
+- `GET /api/users?kind=staff|customers|all` (staff by default)
 
 Project-scoped endpoints (issues list, board, labels, versions, components, custom fields, dashboard, planning) use the `X-Project-Key` header or `?project=KEY`, defaulting to SPORTS.
 - `GET /api/board` — kanban board data

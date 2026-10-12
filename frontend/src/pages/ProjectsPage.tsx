@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../api';
+import { api, type ProjectType } from '../api';
 import { useProject } from '../project';
 import { suggestProjectKey } from '../utils';
 import UserPicker from '../components/UserPicker';
@@ -17,7 +17,8 @@ function CreateProjectDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const toast = useToast();
   const { setProjectKey } = useProject();
-  const [form, setForm] = useState({ name: '', key: '', description: '', leadId: '', strictHierarchy: false });
+  const [form, setForm] = useState({ name: '', key: '', description: '', leadId: '', strictHierarchy: false, type: 'SOFTWARE' as ProjectType });
+  const serviceDesk = form.type === 'SERVICE_DESK';
   const [keyEdited, setKeyEdited] = useState(false);
 
   const create = useMutation({
@@ -27,7 +28,8 @@ function CreateProjectDialog({ onClose }: { onClose: () => void }) {
         key: form.key,
         description: form.description.trim() || undefined,
         leadId: form.leadId || undefined,
-        strictHierarchy: form.strictHierarchy,
+        strictHierarchy: !serviceDesk && form.strictHierarchy,
+        type: form.type,
       }),
     onSuccess: async (project) => {
       await queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -53,7 +55,17 @@ function CreateProjectDialog({ onClose }: { onClose: () => void }) {
       )}
     >
       <form id="create-project" onSubmit={(e) => { e.preventDefault(); create.mutate(); }} className="space-y-4">
-        <p className="text-jira-subtle">Projects group issues with their own key, people, versions and components.</p>
+        <div role="radiogroup" aria-label="Project type" className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {([
+            ['SOFTWARE', 'Software', 'Plan and track work: boards, epics, versions and releases.'],
+            ['SERVICE_DESK', 'Service desk', 'Customers raise requests in a help center; agents work queues with SLAs.'],
+          ] as const).map(([value, label, help]) => (
+            <label key={value} className={`card p-3 cursor-pointer flex items-start gap-2 ${form.type === value ? 'border-jira-blue bg-jira-blue-light/40' : 'hover:bg-jira-gray'}`}>
+              <input type="radio" name="project-type" className="mt-1" checked={form.type === value} onChange={() => setForm({ ...form, type: value })} />
+              <span><span className="font-medium">{label}</span><span className="field-help mt-0">{help}</span></span>
+            </label>
+          ))}
+        </div>
         <label className="block">
           <span className="field-label">Name <span className="text-[#DE350B]">*</span></span>
           <input
@@ -89,13 +101,19 @@ function CreateProjectDialog({ onClose }: { onClose: () => void }) {
           <span className="field-label">Project lead</span>
           <UserPicker value={form.leadId || undefined} onChange={(id) => setForm({ ...form, leadId: id ?? '' })} placeholder="Me (default)" />
         </div>
-        <label className="flex items-start gap-2 cursor-pointer">
+        {serviceDesk && (
+          <p className="field-help mt-0">
+            Starts with a service desk workflow (Waiting for support → In Progress → Waiting for customer → Resolved), four request
+            types, SLA goals and agent queues. You can change all of it on the project page.
+          </p>
+        )}
+        {!serviceDesk && <label className="flex items-start gap-2 cursor-pointer">
           <input type="checkbox" checked={form.strictHierarchy} onChange={(e) => setForm({ ...form, strictHierarchy: e.target.checked })} className="mt-1" />
           <span>
             Enforce SPORTS conventions
             <span className="field-help mt-0">Stories, tasks and defects must sit under an epic; components must follow the ASSETID / @team naming.</span>
           </span>
-        </label>
+        </label>}
         {create.isError && <div className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2">{errorMessage(create.error)}</div>}
       </form>
     </Modal>
@@ -158,7 +176,7 @@ export default function ProjectsPage() {
                       </Link>
                     </td>
                     <td className="font-mono text-xs">{p.key}</td>
-                    <td className="text-jira-subtle">{p.strictHierarchy ? 'SPORTS conventions' : 'Standard'}</td>
+                    <td className="text-jira-subtle">{p.type === 'SERVICE_DESK' ? 'Service desk' : p.strictHierarchy ? 'SPORTS conventions' : 'Software'}</td>
                     <td>
                       <span className={`lozenge ${p.defaultAccess === 'NONE' ? 'bg-[#FFEBE6] text-[#BF2600]' : p.defaultAccess === 'VIEWER' ? 'bg-[#FFFAE6] text-[#974F0C]' : 'bg-[#E3FCEF] text-[#006644]'}`} title={ACCESS_INFO[p.defaultAccess].help}>
                         {ACCESS_INFO[p.defaultAccess].label}

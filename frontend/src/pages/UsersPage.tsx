@@ -10,7 +10,7 @@ import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useToast } from '
 const ROLES = [
   'ADMIN', 'DEVELOPER', 'MERGE_MASTER', 'PRODUCT_MANAGER', 'PRODUCT_OWNER',
   'PROGRAM_MANAGER', 'PROJECT_MANAGER', 'QA_SPECIALIST', 'RELEASE_MANAGER',
-  'SCRUM_MASTER', 'TEAM_LEAD',
+  'SCRUM_MASTER', 'TEAM_LEAD', 'CUSTOMER',
 ];
 
 const EMPTY_FORM = { email: '', name: '', password: '', role: 'DEVELOPER' };
@@ -25,8 +25,8 @@ export default function UsersPage() {
   const { data: currentUser } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const isAdmin = currentUser?.role === 'ADMIN';
   const { data: users, isLoading } = useQuery({
-    queryKey: ['users', search],
-    queryFn: () => api.getUsers(search || undefined),
+    queryKey: ['users', 'all', search],
+    queryFn: () => api.getUsers(search || undefined, 'all'),
   });
 
   const save = useMutation({
@@ -57,7 +57,7 @@ export default function UsersPage() {
         title="People"
         actions={isAdmin && <button type="button" onClick={() => open({ mode: 'create' })} className="btn btn-primary"><PlusIcon size={14} /> Add person</button>}
       >
-        <p className="text-jira-subtle mt-2">Everyone who can sign in and be an assignee, reporter or watcher.</p>
+        <p className="text-jira-subtle mt-2">Everyone who can sign in. Customers only use the help center to raise and follow service desk requests.</p>
         <div className="relative w-72 mt-4">
           <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-jira-muted pointer-events-none" />
           <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or email" className="input h-8 pl-8" />
@@ -76,7 +76,7 @@ export default function UsersPage() {
                   <tr key={user.id}>
                     <td><span className="flex items-center gap-3"><Avatar name={user.name} size="md" /><span className="font-medium">{user.name}</span></span></td>
                     <td className="text-jira-subtle">{user.email}</td>
-                    <td><span className="lozenge bg-jira-gray-hover text-[#42526E]">{humanize(user.role)}</span></td>
+                    <td><span className={`lozenge ${user.role === 'CUSTOMER' ? 'bg-[#EAE6FF] text-[#403294]' : 'bg-jira-gray-hover text-[#42526E]'}`}>{humanize(user.role)}</span></td>
                     {isAdmin && (
                       <td className="text-right">
                         <button type="button" onClick={() => open({ mode: 'edit', user })} className="btn btn-subtle btn-sm"><EditIcon size={13} /> Edit</button>
@@ -121,7 +121,7 @@ export default function UsersPage() {
             </label>
             <div>
               <span className="field-label">Role</span>
-              <SelectPicker variant="field" value={form.role} onChange={(role) => role && setForm({ ...form, role })} options={ROLES.map((r) => ({ id: r, label: humanize(r) }))} />
+              <SelectPicker variant="field" value={form.role} onChange={(role) => role && setForm({ ...form, role })} options={ROLES.map((r) => ({ id: r, label: humanize(r), hint: r === 'CUSTOMER' ? 'Help center only' : undefined }))} />
             </div>
             {save.isError && <div className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2">{errorMessage(save.error)}</div>}
           </form>

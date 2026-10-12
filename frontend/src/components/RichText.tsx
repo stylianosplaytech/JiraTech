@@ -160,7 +160,7 @@ function ToolbarButton({ onClick, active, label, children }: { onClick: () => vo
   );
 }
 
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({ editor, mentions }: { editor: Editor; mentions: boolean }) {
   const { prompt } = useDialogs();
   const setLink = async () => {
     const previous = editor.getAttributes('link').href as string | undefined;
@@ -184,7 +184,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolbarButton label="Code block" active={editor.isActive('codeBlock')} onClick={() => editor.chain().focus().toggleCodeBlock().run()}><span className="font-mono text-xs">{'{ }'}</span></ToolbarButton>
       {sep}
       <ToolbarButton label="Link" active={editor.isActive('link')} onClick={() => void setLink()}>🔗</ToolbarButton>
-      <ToolbarButton label="Mention someone (@)" onClick={() => editor.chain().focus().insertContent(' @').run()}>@</ToolbarButton>
+      {mentions && <ToolbarButton label="Mention someone (@)" onClick={() => editor.chain().focus().insertContent(' @').run()}>@</ToolbarButton>}
     </div>
   );
 }
@@ -201,11 +201,13 @@ export interface RichTextEditorProps {
   minHeight?: number;
   onFocus?: () => void;
   compact?: boolean;
+  /** @name mentions (off on the help center, where people can't look up colleagues). */
+  mentions?: boolean;
 }
 
 /** Rich-text editor with a formatting toolbar and @name mentions. Emits '' for an empty document. */
 export function RichTextEditor({
-  value, onChange, placeholder, autoFocus, onSubmit, onCancel, minHeight = 120, onFocus, compact,
+  value, onChange, placeholder, autoFocus, onSubmit, onCancel, minHeight = 120, onFocus, compact, mentions = true,
 }: RichTextEditorProps) {
   const queryClient = useQueryClient();
   const callbacks = useRef({ onSubmit, onCancel, onChange, onFocus });
@@ -221,7 +223,7 @@ export function RichTextEditor({
       StarterKit.configure({ heading: { levels: [2, 3] } }),
       Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer nofollow' } }),
       Placeholder.configure({ placeholder: placeholder ?? '' }),
-      mentionExtension(loadUsers),
+      ...(mentions ? [mentionExtension(loadUsers)] : []),
     ],
     content: toEditorHtml(value),
     autofocus: autoFocus ? 'end' : false,
@@ -251,7 +253,7 @@ export function RichTextEditor({
   if (!editor) return null;
   return (
     <div className="rounded-[3px] border-2 border-jira-border bg-white focus-within:border-jira-focus transition-colors">
-      {!compact && <Toolbar editor={editor} />}
+      {!compact && <Toolbar editor={editor} mentions={mentions} />}
       <div style={{ minHeight: compact ? undefined : minHeight }} className="px-3 py-2 cursor-text" onClick={() => editor.commands.focus()}>
         <EditorContent editor={editor} />
       </div>

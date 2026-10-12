@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { NotificationType, Prisma } from '@prisma/client';
+import { NotificationType, Prisma, ProjectType, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from './mailer.service';
 import { AccessService } from '../access/access.service';
@@ -57,7 +57,7 @@ function newMentions(before: string | null | undefined, after: string | null | u
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
-  private readonly appUrl = (process.env.APP_URL ?? 'http://localhost:5173').replace(/\/$/, '');
+  private readonly appUrl = (process.env.APP_URL ?? 'http://localhost:5172').replace(/\/$/, '');
 
   constructor(private prisma: PrismaService, private mailer: MailerService, private access: AccessService) {}
 
@@ -159,6 +159,39 @@ export class NotificationsService {
     });
   }
 
+  // ─── Service desk customers: public activity only, linking to the portal ──
+
+  /** A public reply on a request. Internal notes never reach this. */
+  async requestCommented(issueId: string, actorId: string, body: string) {
+    await this.safely(() => this.toCustomers(issueId, actorId, NotificationType.COMMENTED, excerpt(body)));
+  }
+
+  async requestStatusChanged(issueId: string, actorId: string, to: string) {
+    await this.safely(() => this.toCustomers(issueId, actorId, NotificationType.STATUS_CHANGED, `Status: ${to}`));
+  }
+
+  /** The customers on a request (its reporter and participants), other than the actor. */
+  private async toCustomers(issueId: string, actorId: string, type: NotificationType, detail: string) {
+    const issue = await this.prisma.issue.findUniqueOrThrow({
+      where: { id: issueId },
+      include: {
+        project: { select: { type: true } },
+        reporter: { select: { id: true, role: true } },
+        watchers: { select: { user: { select: { id: true, role: true } } } },
+      },
+    });
+    if (issue.project.type !== ProjectType.SERVICE_DESK) return;
+    const people = [issue.reporter, ...issue.watchers.map((w) => w.user)];
+    const ids = new Set(people.filter((u) => u?.role === UserRole.CUSTOMER).map((u) => u!.id));
+    ids.delete(actorId);
+    if (!ids.size) return;
+    const created = await this.prisma.$transaction([...ids].map((userId) =>
+      this.prisma.notification.create({
+        data: { userId, actorId, issueId: issue.id, issueKey: issue.key, issueSummary: issue.summary, type, detail },
+      })));
+    void this.email(created.map((n) => n.id), actorId, issue, true);
+  }
+
   // ─── Reading ───────────────────────────────────────────────────────────────
 
   async list(userId: string, opts: { scope?: 'all' | 'direct'; unreadOnly?: boolean; limit?: number }) {
@@ -239,8 +272,9 @@ export class NotificationsService {
 
   private async addMentions(r: Recipients, issueId: string, mentions: Mentions, detail: string) {
     if (!mentions.ids.length && !mentions.emails.length) return;
+    // Mentions never pull customers into a request (they aren't told about internal activity anyway).
     const users = await this.prisma.user.findMany({
-      where: { OR: [{ id: { in: mentions.ids } }, { email: { in: mentions.emails } }] },
+      where: { OR: [{ id: { in: mentions.ids } }, { email: { in: mentions.emails } }], role: { not: UserRole.CUSTOMER } },
       select: { id: true },
     });
     for (const u of users) {
@@ -274,7 +308,8 @@ export class NotificationsService {
     void this.email(created.map((n) => n.id), actorId, issue);
   }
 
-  private async email(ids: string[], actorId: string, issue: IssueRef) {
+  /** `portal`: the recipients are service desk customers, so link to their request in the help center. */
+  private async email(ids: string[], actorId: string, issue: IssueRef, portal = false) {
     const [notifications, actor] = await Promise.all([
       this.prisma.notification.findMany({
         where: { id: { in: ids }, user: { emailNotifications: true } },
@@ -283,15 +318,17 @@ export class NotificationsService {
       this.prisma.user.findUnique({ where: { id: actorId }, select: { name: true } }),
     ]);
     const who = actor?.name ?? 'Someone';
-    const url = `${this.appUrl}/browse/${issue.key}`;
+    const url = portal ? `${this.appUrl}/portal/requests/${issue.key}` : `${this.appUrl}/browse/${issue.key}`;
+    const noun = portal ? 'request' : 'issue';
+    const reason = portal ? 'you raised or were added to this request' : 'you are involved in this issue';
     for (const n of notifications) {
       const line = this.sentence(n.type, who, issue.key);
       const ok = await this.mailer.send({
         to: n.user.email,
         subject: `[JiraTech] (${issue.key}) ${issue.summary}`,
-        text: `${line}\n\n${issue.key}: ${issue.summary}\n${n.detail ? `\n${n.detail}\n` : ''}\nView the issue: ${url}\n\n`
-          + 'You receive this because you are involved in this issue. Turn off email notifications from your profile menu.',
-        html: this.html(line, issue, n.detail, url),
+        text: `${line}\n\n${issue.key}: ${issue.summary}\n${n.detail ? `\n${n.detail}\n` : ''}\nView the ${noun}: ${url}\n\n`
+          + `You receive this because ${reason}. Turn off email notifications from your profile menu.`,
+        html: this.html(line, issue, n.detail, url, noun, reason),
       });
       if (ok) await this.prisma.notification.update({ where: { id: n.id }, data: { emailedAt: new Date() } });
     }
@@ -309,7 +346,7 @@ export class NotificationsService {
     }
   }
 
-  private html(line: string, issue: IssueRef, detail: string | null, url: string) {
+  private html(line: string, issue: IssueRef, detail: string | null, url: string, noun = 'issue', reason = 'you are involved in this issue') {
     const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
     return `<!doctype html><html><body style="margin:0;background:#F4F5F7;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#172B4D">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px">
@@ -319,9 +356,9 @@ export class NotificationsService {
 <p style="margin:0 0 16px;font-size:15px">${esc(line)}</p>
 <p style="margin:0 0 8px;font-size:14px"><a href="${esc(url)}" style="color:#0052CC;text-decoration:none;font-weight:600">${esc(issue.key)}</a> ${esc(issue.summary)}</p>
 ${detail ? `<div style="margin:12px 0;padding:12px;background:#F4F5F7;border-radius:3px;font-size:14px;white-space:pre-wrap">${esc(detail)}</div>` : ''}
-<p style="margin:20px 0 0"><a href="${esc(url)}" style="display:inline-block;background:#0052CC;color:#fff;padding:8px 14px;border-radius:3px;text-decoration:none;font-size:14px;font-weight:500">View issue</a></p>
+<p style="margin:20px 0 0"><a href="${esc(url)}" style="display:inline-block;background:#0052CC;color:#fff;padding:8px 14px;border-radius:3px;text-decoration:none;font-size:14px;font-weight:500">View ${noun}</a></p>
 </td></tr>
-<tr><td style="padding:16px 24px;border-top:1px solid #DFE1E6;font-size:12px;color:#6B778C">You receive this because you are involved in this issue. You can turn off email notifications from your profile menu in JiraTech.</td></tr>
+<tr><td style="padding:16px 24px;border-top:1px solid #DFE1E6;font-size:12px;color:#6B778C">You receive this because ${esc(reason)}. You can turn off email notifications from your profile menu in JiraTech.</td></tr>
 </table></td></tr></table></body></html>`;
   }
 

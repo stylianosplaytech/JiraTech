@@ -53,9 +53,13 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<User>('/auth/me'),
-  getUsers: (search?: string) => {
-    const qs = search ? `?search=${encodeURIComponent(search)}` : '';
-    return request<User[]>(`/users${qs}`);
+  /** Staff by default; `kind` also lists service desk customers. */
+  getUsers: (search?: string, kind: 'staff' | 'customers' | 'all' = 'staff') => {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (kind !== 'staff') params.set('kind', kind);
+    const qs = params.toString();
+    return request<User[]>(`/users${qs ? `?${qs}` : ''}`);
   },
   createUser: (data: { email: string; name: string; password: string; role: string }) =>
     request<User>('/users', { method: 'POST', body: JSON.stringify(data) }),
@@ -79,7 +83,7 @@ export const api = {
   getWorkflow: (key: string) => request<Workflow>(`/projects/${key}/workflow`),
   addWorkflowStatus: (key: string, data: { name: string; category: string }) =>
     request<WorkflowStatus>(`/projects/${key}/workflow/statuses`, { method: 'POST', body: JSON.stringify(data) }),
-  updateWorkflowStatus: (key: string, statusId: string, data: { name?: string; category?: string }) =>
+  updateWorkflowStatus: (key: string, statusId: string, data: { name?: string; category?: string; pausesSla?: boolean }) =>
     request<WorkflowStatus>(`/projects/${key}/workflow/statuses/${statusId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteWorkflowStatus: (key: string, statusId: string, moveTo?: string) =>
     request<Workflow>(`/projects/${key}/workflow/statuses/${statusId}${moveTo ? `?moveTo=${moveTo}` : ''}`, { method: 'DELETE' }),
@@ -97,8 +101,8 @@ export const api = {
   deleteLink: (id: string, linkId: string) =>
     request<Issue>(`/issues/${id}/links/${linkId}`, { method: 'DELETE' }),
   getComments: (id: string) => request<Comment[]>(`/issues/${id}/comments`),
-  addComment: (id: string, body: string) =>
-    request<Comment>(`/issues/${id}/comments`, { method: 'POST', body: JSON.stringify({ body }) }),
+  addComment: (id: string, body: string, internal = false) =>
+    request<Comment>(`/issues/${id}/comments`, { method: 'POST', body: JSON.stringify({ body, internal }) }),
   updateComment: (id: string, commentId: string, body: string) =>
     request<Comment>(`/issues/${id}/comments/${commentId}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
   deleteComment: (id: string, commentId: string) =>
@@ -121,7 +125,7 @@ export const api = {
 
   getProjects: () => request<Project[]>('/projects'),
   getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
-  createProject: (data: { key: string; name: string; description?: string; leadId?: string; strictHierarchy?: boolean }) =>
+  createProject: (data: { key: string; name: string; description?: string; leadId?: string; strictHierarchy?: boolean; type?: ProjectType }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(data) }),
   getProjectMembers: (key: string) =>
     request<{ leadId: string | null; defaultAccess: ProjectAccess; members: ProjectMember[] }>(`/projects/${key}/members`),
@@ -181,6 +185,9 @@ export const api = {
     request<Label>('/labels', { method: 'POST', body: JSON.stringify({ name }) }),
   getVersions: (projectKey?: string) => request<Version[]>(`/versions${projectKey ? `?project=${projectKey}` : ''}`),
   getCustomFieldDefinitions: () => request<CustomFieldDefinition[]>('/custom-fields'),
+  /** Creates the field in the current project. */
+  createCustomField: (data: { key: string; name: string; type: string; options?: string[] }) =>
+    request<CustomFieldDefinition>('/custom-fields', { method: 'POST', body: JSON.stringify(data) }),
   getBoard: (sprintId?: string) => {
     const qs = sprintId ? `?sprintId=${sprintId}` : '';
     return request<BoardData>(`/board${qs}`);
@@ -225,6 +232,43 @@ export const api = {
     request<Issue[]>(`/releases/${epicId}/candidates`),
   getReleaseNotes: (epicId: string) =>
     request<ReleaseNotes>(`/releases/${epicId}/notes`),
+
+  // ─── Service desk (agents and project admins) ──────────────────────────────
+  getServiceDesk: (key: string) => request<ServiceDeskSettings>(`/service-desk/${key}`),
+  getQueues: (key: string) => request<Queue[]>(`/service-desk/${key}/queues`),
+  getQueueIssues: (key: string, queueId: string, startAt = 0) =>
+    request<QueuePage>(`/service-desk/${key}/queues/${queueId}/issues?startAt=${startAt}`),
+  createQueue: (key: string, data: { name: string; jql: string }) =>
+    request<Queue>(`/service-desk/${key}/queues`, { method: 'POST', body: JSON.stringify(data) }),
+  updateQueue: (key: string, id: string, data: { name?: string; jql?: string }) =>
+    request<Queue>(`/service-desk/${key}/queues/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteQueue: (key: string, id: string) => request(`/service-desk/${key}/queues/${id}`, { method: 'DELETE' }),
+  createRequestType: (key: string, data: RequestTypePayload) =>
+    request<RequestType>(`/service-desk/${key}/request-types`, { method: 'POST', body: JSON.stringify(data) }),
+  updateRequestType: (key: string, id: string, data: Partial<RequestTypePayload>) =>
+    request<RequestType>(`/service-desk/${key}/request-types/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteRequestType: (key: string, id: string) => request(`/service-desk/${key}/request-types/${id}`, { method: 'DELETE' }),
+  setSlaTargets: (key: string, targets: SlaTarget[]) =>
+    request<SlaTarget[]>(`/service-desk/${key}/sla`, { method: 'PUT', body: JSON.stringify({ targets }) }),
+  getDeskCustomers: (key: string) => request<DeskCustomers>(`/service-desk/${key}/customers`),
+  setPortalOpen: (key: string, portalOpen: boolean) =>
+    request<DeskCustomers>(`/service-desk/${key}/portal`, { method: 'PATCH', body: JSON.stringify({ portalOpen }) }),
+  addDeskCustomer: (key: string, userId: string) =>
+    request<DeskCustomers>(`/service-desk/${key}/customers/${userId}`, { method: 'PUT' }),
+  removeDeskCustomer: (key: string, userId: string) =>
+    request<DeskCustomers>(`/service-desk/${key}/customers/${userId}`, { method: 'DELETE' }),
+  getRequestInfo: (issueId: string) => request<RequestInfo>(`/service-desk/requests/${issueId}`),
+
+  // ─── Help center portal (customers and staff) ──────────────────────────────
+  getPortalDesks: () => request<PortalDeskSummary[]>('/portal/desks'),
+  getPortalDesk: (key: string) => request<PortalDesk>(`/portal/desks/${key}`),
+  raiseRequest: (key: string, data: { requestTypeId: string; summary: string; description?: string; fields?: Record<string, string>; onBehalfOfId?: string }) =>
+    request<{ key: string }>(`/portal/desks/${key}/requests`, { method: 'POST', body: JSON.stringify(data) }),
+  getMyRequests: (status: 'open' | 'closed' | 'all', q?: string) =>
+    request<PortalRequestSummary[]>(`/portal/requests?status=${status}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
+  getPortalRequest: (key: string) => request<PortalRequest>(`/portal/requests/${key}`),
+  replyToRequest: (key: string, body: string) =>
+    request<PortalRequest>(`/portal/requests/${key}/comments`, { method: 'POST', body: JSON.stringify({ body }) }),
 };
 
 export interface User {
@@ -344,11 +388,15 @@ export interface ProjectMember {
   user: { id: string; name: string; email: string; role: string };
 }
 
+export type ProjectType = 'SOFTWARE' | 'SERVICE_DESK';
+
 export interface Project {
   id: string;
   key: string;
   name: string;
   description?: string | null;
+  type: ProjectType;
+  portalOpen?: boolean;
   strictHierarchy: boolean;
   defaultAccess: ProjectAccess;
   myRole?: EffectiveRole;
@@ -369,6 +417,8 @@ export interface Comment {
   id: string;
   issueId: string;
   body: string;
+  /** Service desks: an internal note that customers don't see. */
+  internal?: boolean;
   createdAt: string;
   updatedAt: string;
   author: { id: string; name: string; email: string };
@@ -405,7 +455,8 @@ export interface Issue {
   id: string;
   key: string;
   workflowStatus?: WorkflowStatusRef | null;
-  project?: { id: string; key: string; name: string; strictHierarchy?: boolean; leadId?: string | null };
+  project?: { id: string; key: string; name: string; strictHierarchy?: boolean; leadId?: string | null; type?: ProjectType };
+  requestType?: { id: string; name: string } | null;
   permissions?: Permissions;
   reporterId?: string;
   _count?: { comments: number; children: number };
@@ -497,6 +548,7 @@ export interface WorkflowStatusRef {
 
 export interface WorkflowStatus extends WorkflowStatusRef {
   position: number;
+  pausesSla?: boolean;
   issueCount?: number;
 }
 
@@ -576,6 +628,174 @@ export interface ScheduleResult {
   violatedConstraints: string[];
   unusedCapacity: Record<string, number>;
   criticalPaths: string[][];
+}
+
+// ─── Service desk ────────────────────────────────────────────────────────────
+
+export interface SlaClock {
+  goalMinutes: number;
+  elapsedMinutes: number;
+  /** Negative once breached. */
+  remainingMinutes: number;
+  breached: boolean;
+  completed: boolean;
+  paused: boolean;
+}
+
+export interface Sla {
+  firstResponse: SlaClock | null;
+  resolution: SlaClock | null;
+}
+
+export interface SlaTarget {
+  priority: string;
+  firstResponseMinutes: number | null;
+  resolutionMinutes: number | null;
+}
+
+export interface RequestTypeField {
+  requestTypeId: string;
+  fieldId: string;
+  required: boolean;
+  position: number;
+  field: CustomFieldDefinition;
+}
+
+export interface RequestType {
+  id: string;
+  name: string;
+  description: string | null;
+  issueType: string;
+  position: number;
+  fields: RequestTypeField[];
+  _count?: { issues: number };
+}
+
+export interface RequestTypePayload {
+  name: string;
+  description?: string;
+  issueType: string;
+  fields?: { fieldId: string; required: boolean }[];
+}
+
+export interface Queue {
+  id: string;
+  name: string;
+  jql: string;
+  position: number;
+  count?: number;
+  error?: string | null;
+}
+
+export interface QueueRow {
+  id: string;
+  key: string;
+  summary: string;
+  type: string;
+  priority: string;
+  status: string;
+  workflowStatus: WorkflowStatusRef | null;
+  requestType: { id: string; name: string } | null;
+  reporter: { id: string; name: string; email: string } | null;
+  assignee: { id: string; name: string; email: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  sla: Sla;
+}
+
+export interface QueuePage {
+  queue: Queue;
+  total: number;
+  startAt: number;
+  maxResults: number;
+  issues: QueueRow[];
+}
+
+export interface ServiceDeskSettings {
+  project: { id: string; key: string; name: string; portalOpen: boolean };
+  requestTypes: RequestType[];
+  slaTargets: SlaTarget[];
+  queues: Queue[];
+}
+
+export interface DeskCustomers {
+  portalOpen: boolean;
+  customers: { id: string; name: string; email: string }[];
+}
+
+export interface RequestInfo {
+  serviceDesk: boolean;
+  requestType: { id: string; name: string } | null;
+  sla: Sla | null;
+}
+
+export interface PortalDeskSummary {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  _count: { requestTypes: number };
+}
+
+export interface PortalField {
+  key: string;
+  name: string;
+  type: 'TEXT' | 'NUMBER' | 'SELECT' | 'DATE';
+  options: string[];
+  required: boolean;
+}
+
+export interface PortalDesk {
+  key: string;
+  name: string;
+  description: string | null;
+  canRaiseOnBehalf: boolean;
+  requestTypes: { id: string; name: string; description: string | null; fields: PortalField[] }[];
+}
+
+export interface PortalStatus {
+  name: string;
+  category: string;
+}
+
+export interface PortalRequestSummary {
+  key: string;
+  summary: string;
+  status: PortalStatus;
+  requestType: { id: string; name: string } | null;
+  project: { key: string; name: string };
+  reporter: { id: string; name: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PortalRequest {
+  id: string;
+  key: string;
+  summary: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolution: string | null;
+  status: PortalStatus;
+  project: { key: string; name: string };
+  requestType: { id: string; name: string } | null;
+  reporter: { id: string; name: string } | null;
+  participants: { id: string; name: string }[];
+  fields: { name: string; value: string }[];
+  comments: { id: string; body: string; createdAt: string; author: { id: string; name: string; agent: boolean } }[];
+}
+
+export const isCustomer = (user?: { role: string } | null) => user?.role === 'CUSTOMER';
+
+/** "45m", "3h 20m", "2d 4h". */
+export function formatDuration(minutes: number): string {
+  const m = Math.abs(Math.round(minutes));
+  if (m < 60) return `${m}m`;
+  if (m < 24 * 60) return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`;
+  const d = Math.floor(m / (24 * 60));
+  const h = Math.floor((m % (24 * 60)) / 60);
+  return `${d}d${h ? ` ${h}h` : ''}`;
 }
 
 export function formatMinutes(minutes: number): string {

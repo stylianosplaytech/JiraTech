@@ -2,7 +2,7 @@ import {
   Controller, Get, Post, Patch, Param, Body, Query, UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { UsersService } from './users.service';
+import { UserKind, UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { JwtAuthGuard, RolesGuard, Roles } from '../auth/guards';
 
@@ -12,8 +12,8 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Get()
-  findAll(@Query('search') search?: string) {
-    return this.usersService.findAll(search);
+  findAll(@Query('search') search?: string, @Query('kind') kind?: UserKind) {
+    return this.usersService.findAll(search, kind && ['staff', 'customers', 'all'].includes(kind) ? kind : 'staff');
   }
 
   @Get(':id')

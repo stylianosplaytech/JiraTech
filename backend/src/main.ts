@@ -14,7 +14,7 @@ const frontendDist = resolve(__dirname, '../../frontend/dist');
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.setGlobalPrefix('api');
-  app.enableCors({ origin: ['http://localhost:5173'], credentials: true });
+  app.enableCors({ origin: ['http://localhost:5172'], credentials: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   if (existsSync(frontendDist)) {

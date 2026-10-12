@@ -184,7 +184,7 @@ function toPrismaOrder(s: JqlSort): Prisma.IssueOrderByWithRelationInput[] {
   }
 }
 
-interface SortRow {
+export interface SortRow {
   key: string;
   number: number;
   summary: string;
@@ -196,7 +196,7 @@ interface SortRow {
   assignee: { name: string } | null;
 }
 
-function compareRows(a: SortRow, b: SortRow, sorts: JqlSort[]): number {
+export function compareRows(a: SortRow, b: SortRow, sorts: JqlSort[]): number {
   for (const s of sorts) {
     let cmp = 0;
     switch (s.field) {

@@ -22,9 +22,9 @@ const NAV = [
   { path: '/users', label: 'People' },
 ];
 
-function Logo() {
+export function Logo({ to = '/', label = 'JiraTech' }: { to?: string; label?: string }) {
   return (
-    <Link to="/" className="flex items-center gap-2 pr-2 shrink-0" aria-label="JiraTech home">
+    <Link to={to} className="flex items-center gap-2 pr-2 shrink-0" aria-label="JiraTech home">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
         <defs>
           <linearGradient id="jt-g" x1="0" y1="0" x2="1" y2="1">
@@ -35,7 +35,7 @@ function Logo() {
         <path d="M12 2 22 12 12 22 2 12Z" fill="url(#jt-g)" />
         <path d="M12 7.5 16.5 12 12 16.5 7.5 12Z" fill="white" />
       </svg>
-      <span className="hidden sm:inline font-semibold text-[17px] text-jira-navy tracking-tight">JiraTech</span>
+      <span className="hidden sm:inline font-semibold text-[17px] text-jira-navy tracking-tight">{label}</span>
     </Link>
   );
 }
@@ -83,7 +83,7 @@ function ProjectSwitcher() {
 }
 
 /** Account-menu switch for notification emails (in-app notifications are always on). */
-function EmailPreference() {
+export function EmailPreference() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { data } = useQuery({ queryKey: ['notification-prefs'], queryFn: api.getNotificationPreferences });
@@ -125,6 +125,9 @@ export default function Layout({ children, user, loading }: { children: React.Re
   const [createPending, setCreatePending] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
+  const { project } = useProject();
+  // Service desks add their queues next to the board.
+  const nav = project?.type === 'SERVICE_DESK' ? [NAV[0], { path: '/queues', label: 'Queues' }, ...NAV.slice(1)] : NAV;
 
   useEffect(() => setMenuOpen(false), [pathname]);
 
@@ -151,7 +154,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
           <Logo />
           <ProjectSwitcher />
           <nav className="hidden lg:flex items-stretch h-14 ml-1" aria-label="Main">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
@@ -195,6 +198,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
                     </div>
                     <EmailPreference />
                     <div className="border-t border-jira-border mt-1 pt-1">
+                      <Link to="/portal" className="menu-item">Help center</Link>
                       <button type="button" className="menu-item" onClick={logout}><LogoutIcon size={14} /> Log out</button>
                     </div>
                   </>
@@ -205,7 +209,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
         </div>
         {menuOpen && (
           <nav id="mobile-nav" className="lg:hidden border-t border-jira-border py-2" aria-label="Main">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}

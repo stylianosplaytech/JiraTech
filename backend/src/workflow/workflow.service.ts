@@ -6,8 +6,10 @@ import { PrismaService } from '../prisma/prisma.service';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
+type StatusTemplate = { name: string; category: IssueStatus; pausesSla?: boolean };
+
 /** The workflow every project starts with — identical to the original fixed workflow. */
-const DEFAULT_STATUSES: { name: string; category: IssueStatus }[] = [
+const DEFAULT_STATUSES: StatusTemplate[] = [
   { name: 'Backlog', category: IssueStatus.BACKLOG },
   { name: 'To Do', category: IssueStatus.TO_DO },
   { name: 'In Progress', category: IssueStatus.DOING },
@@ -19,6 +21,22 @@ const DEFAULT_TRANSITIONS: [string, string][] = [
   ['In Progress', 'Closed'], ['In Progress', 'To Do'],
   ['Closed', 'To Do'],
 ];
+
+/** Service desk projects: requests wait for an agent, then for the customer (SLA paused), then get resolved. */
+const SERVICE_DESK_STATUSES: StatusTemplate[] = [
+  { name: 'Waiting for support', category: IssueStatus.TO_DO },
+  { name: 'In Progress', category: IssueStatus.DOING },
+  { name: 'Waiting for customer', category: IssueStatus.DOING, pausesSla: true },
+  { name: 'Resolved', category: IssueStatus.CLOSED },
+];
+const SERVICE_DESK_TRANSITIONS: [string, string][] = [
+  ['Waiting for support', 'In Progress'], ['Waiting for support', 'Waiting for customer'], ['Waiting for support', 'Resolved'],
+  ['In Progress', 'Waiting for customer'], ['In Progress', 'Waiting for support'], ['In Progress', 'Resolved'],
+  ['Waiting for customer', 'Waiting for support'], ['Waiting for customer', 'In Progress'], ['Waiting for customer', 'Resolved'],
+  ['Resolved', 'Waiting for support'],
+];
+
+export type WorkflowTemplate = 'SOFTWARE' | 'SERVICE_DESK';
 
 export const CATEGORY_NAMES: Record<IssueStatus, string> = {
   BACKLOG: 'Backlog', TO_DO: 'To Do', DOING: 'In Progress', CLOSED: 'Done',
@@ -41,16 +59,22 @@ export class WorkflowService implements OnModuleInit {
     if (backfilled) this.logger.log(`Assigned workflow statuses to ${backfilled} existing issues`);
   }
 
-  /** Create the default workflow for a project that has none. */
-  async ensure(db: Db, projectId: string) {
+  /** Create the default workflow (or the service desk one) for a project that has none. */
+  async ensure(db: Db, projectId: string, template?: WorkflowTemplate) {
     if (await db.workflowStatus.count({ where: { projectId } })) return;
+    template ??= (await db.project.findUnique({ where: { id: projectId }, select: { type: true } }))?.type ?? 'SOFTWARE';
+    const [statuses, transitions] = template === 'SERVICE_DESK'
+      ? [SERVICE_DESK_STATUSES, SERVICE_DESK_TRANSITIONS]
+      : [DEFAULT_STATUSES, DEFAULT_TRANSITIONS];
     const ids = new Map<string, string>();
-    for (const [i, s] of DEFAULT_STATUSES.entries()) {
-      const created = await db.workflowStatus.create({ data: { projectId, name: s.name, category: s.category, position: i } });
+    for (const [i, s] of statuses.entries()) {
+      const created = await db.workflowStatus.create({
+        data: { projectId, name: s.name, category: s.category, position: i, pausesSla: !!s.pausesSla },
+      });
       ids.set(s.name, created.id);
     }
     await db.workflowTransition.createMany({
-      data: DEFAULT_TRANSITIONS.map(([from, to]) => ({ projectId, fromStatusId: ids.get(from)!, toStatusId: ids.get(to)! })),
+      data: transitions.map(([from, to]) => ({ projectId, fromStatusId: ids.get(from)!, toStatusId: ids.get(to)! })),
     });
   }
 
@@ -161,7 +185,7 @@ export class WorkflowService implements OnModuleInit {
     return this.prisma.workflowStatus.create({ data: { projectId, name: clean, category, position: (_max.position ?? -1) + 1 } });
   }
 
-  async updateStatus(projectId: string, statusId: string, data: { name?: string; category?: IssueStatus }) {
+  async updateStatus(projectId: string, statusId: string, data: { name?: string; category?: IssueStatus; pausesSla?: boolean }) {
     const status = await this.statusOf(projectId, statusId);
     const name = data.name?.trim();
     if (name !== undefined && !name) throw new BadRequestException('Status name is required');
@@ -169,7 +193,7 @@ export class WorkflowService implements OnModuleInit {
       throw new ConflictException(`A status called ${name} already exists`);
     }
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.workflowStatus.update({ where: { id: statusId }, data: { name, category: data.category } });
+      const updated = await tx.workflowStatus.update({ where: { id: statusId }, data: { name, category: data.category, pausesSla: data.pausesSla } });
       // Keep the category column of issues in this status in sync.
       if (data.category && data.category !== status.category) {
         await tx.issue.updateMany({ where: { statusId }, data: { status: data.category } });

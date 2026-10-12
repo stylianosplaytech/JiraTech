@@ -1,6 +1,6 @@
 /**
- * Demo data for trying out JiraTech: extra people, two standard projects (PAY, MOB),
- * more SPORTS work, comments, links, watchers, work logs, history and saved filters.
+ * Demo data for trying out JiraTech: extra people, two standard projects (PAY, MOB), an IT service
+ * desk (HELP) with customers, more SPORTS work, comments, links, watchers, work logs, history and saved filters.
  *
  * Runs on top of the base seed (prisma/seed.ts) and is safe to re-run: anything that
  * already exists is left alone.
@@ -9,10 +9,11 @@
  */
 import {
   ComponentType, IssueResolution, IssueStatus, IssueType, LinkType, Priority, PrismaClient, ProjectAccess, ProjectRole,
-  RagStatus, UserRole,
+  ProjectType, RagStatus, UserRole,
   type Issue, type User,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { setUpServiceDesk } from '../src/service-desk/defaults';
 
 const prisma = new PrismaClient();
 
@@ -29,6 +30,9 @@ const PEOPLE: { email: string; name: string; role: UserRole }[] = [
   { email: 'katerina@jiratech.local', name: 'Katerina Antoniou', role: UserRole.PRODUCT_OWNER },
   { email: 'marcus@jiratech.local', name: 'Marcus Weber', role: UserRole.SCRUM_MASTER },
   { email: 'lina@jiratech.local', name: 'Lina Haddad', role: UserRole.DEVELOPER },
+  // Service desk customers: they only see the help center.
+  { email: 'anna@customer.local', name: 'Anna Petrou', role: UserRole.CUSTOMER },
+  { email: 'george@customer.local', name: 'George Miller', role: UserRole.CUSTOMER },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -124,7 +128,7 @@ class Builder {
     }
   }
 
-  private async nextKey() {
+  async nextKey() {
     const project = await prisma.project.update({
       where: { id: this.projectId },
       data: { issueCounter: { increment: 1 } },
@@ -291,6 +295,214 @@ async function backfillStatuses(projectId: string) {
   }
 }
 
+// ─── Service desk (HELP) ─────────────────────────────────────────────────────
+
+const minutesAgo = (m: number) => new Date(NOW - m * 60_000);
+
+interface RequestSpec {
+  summary: string;
+  description: string;
+  type: string;
+  reporter: User;
+  priority: Priority;
+  status: string;
+  assignee?: User;
+  createdMinutesAgo: number;
+  /** Minutes after creation of the first public agent reply */
+  respondedAfter?: number;
+  /** In "Waiting for customer" since (minutes ago) */
+  pausedMinutesAgo?: number;
+  resolvedMinutesAgo?: number;
+  fields?: Record<string, string>;
+  participants?: User[];
+  replies?: { author: User; body: string; minutesAgo: number; internal?: boolean }[];
+}
+
+async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' | 'anna' | 'george', User>) {
+  const { anna, george, andreas, sofia, lina, elena } = p;
+  const help = await prisma.project.upsert({
+    where: { key: 'HELP' },
+    update: {},
+    create: {
+      key: 'HELP',
+      name: 'IT Help Desk',
+      description: 'Internal IT support. Customers raise requests in the help center; agents work them from the queues.',
+      type: ProjectType.SERVICE_DESK,
+      leadId: elena.id,
+      strictHierarchy: false,
+      defaultAccess: ProjectAccess.NONE,
+    },
+  });
+  const agents: [User, ProjectRole][] = [[elena, ProjectRole.ADMIN], [andreas, ProjectRole.MEMBER], [sofia, ProjectRole.MEMBER], [lina, ProjectRole.MEMBER]];
+  for (const [u, role] of agents) {
+    await prisma.projectMember.upsert({
+      where: { projectId_userId: { projectId: help.id, userId: u.id } },
+      update: {},
+      create: { projectId: help.id, userId: u.id, role },
+    });
+  }
+
+  // Same workflow the API gives a new service desk.
+  const flow = await ensureWorkflow(help.id, [
+    { name: 'Waiting for support', category: IssueStatus.TO_DO },
+    { name: 'In Progress', category: IssueStatus.DOING },
+    { name: 'Waiting for customer', category: IssueStatus.DOING },
+    { name: 'Resolved', category: IssueStatus.CLOSED },
+  ], [
+    ['Waiting for support', 'In Progress'], ['Waiting for support', 'Waiting for customer'], ['Waiting for support', 'Resolved'],
+    ['In Progress', 'Waiting for customer'], ['In Progress', 'Waiting for support'], ['In Progress', 'Resolved'],
+    ['Waiting for customer', 'Waiting for support'], ['Waiting for customer', 'In Progress'], ['Waiting for customer', 'Resolved'],
+    ['Resolved', 'Waiting for support'],
+  ]);
+  await prisma.workflowStatus.updateMany({ where: { projectId: help.id, name: 'Waiting for customer' }, data: { pausesSla: true } });
+  if (!(await prisma.requestType.count({ where: { projectId: help.id } }))) await setUpServiceDesk(prisma, help.id);
+
+  // Fields on the portal forms
+  const H = await new Builder(help.id, 'HELP').load();
+  await H.fields([
+    { key: 'os', name: 'Operating system', type: 'SELECT', options: ['Windows', 'macOS', 'Linux', 'iOS', 'Android'], order: 1 },
+    { key: 'manager', name: 'Approving manager', type: 'TEXT', order: 2 },
+    { key: 'affected_url', name: 'Affected page or URL', type: 'TEXT', order: 3 },
+  ]);
+  const fieldIds = new Map((await prisma.customFieldDefinition.findMany({ where: { projectId: help.id } })).map((f) => [f.key, f.id]));
+  const types = new Map((await prisma.requestType.findMany({ where: { projectId: help.id } })).map((t) => [t.name, t]));
+  const formFields: [string, string, boolean][] = [
+    ['Get IT help', 'os', false],
+    ['Report a bug', 'os', false], ['Report a bug', 'affected_url', false],
+    ['Request access', 'manager', true],
+  ];
+  for (const [position, [typeName, key, required]] of formFields.entries()) {
+    const type = types.get(typeName);
+    if (!type) continue;
+    await prisma.requestTypeField.upsert({
+      where: { requestTypeId_fieldId: { requestTypeId: type.id, fieldId: fieldIds.get(key)! } },
+      update: {},
+      create: { requestTypeId: type.id, fieldId: fieldIds.get(key)!, required, position },
+    });
+  }
+
+  const request = async (s: RequestSpec) => {
+    if (await prisma.issue.findFirst({ where: { projectId: help.id, summary: s.summary } })) return;
+    const status = flow.get(s.status)!;
+    const type = types.get(s.type)!;
+    const created = minutesAgo(s.createdMinutesAgo);
+    const lastActivity = Math.min(s.createdMinutesAgo, ...(s.replies ?? []).map((r) => r.minutesAgo));
+    const stoppedAt = s.pausedMinutesAgo ?? s.resolvedMinutesAgo;
+    const { key, number } = await H.nextKey();
+    const issue = await prisma.issue.create({
+      data: {
+        key,
+        number,
+        projectId: help.id,
+        type: type.issueType,
+        requestTypeId: type.id,
+        summary: s.summary,
+        description: s.description,
+        priority: s.priority,
+        statusId: status.id,
+        status: status.category,
+        resolution: status.category === IssueStatus.CLOSED ? IssueResolution.COMPLETED : null,
+        reporterId: s.reporter.id,
+        assigneeId: s.assignee?.id,
+        createdAt: created,
+        updatedAt: minutesAgo(lastActivity),
+        firstRespondedAt: s.respondedAfter != null ? new Date(created.getTime() + s.respondedAfter * 60_000) : null,
+        slaPausedAt: stoppedAt != null ? minutesAgo(stoppedAt) : null,
+        resolvedAt: s.resolvedMinutesAgo != null ? minutesAgo(s.resolvedMinutesAgo) : null,
+        watchers: {
+          create: [...new Map([s.reporter, ...(s.assignee ? [s.assignee] : []), ...(s.participants ?? [])].map((u) => [u.id, u])).values()]
+            .map((u) => ({ userId: u.id, createdAt: created })),
+        },
+        customFieldValues: s.fields
+          ? { create: Object.entries(s.fields).map(([k, value]) => ({ fieldId: fieldIds.get(k)!, value })) }
+          : undefined,
+      },
+    });
+    const history = [{ field: 'created', fromValue: null as string | null, toValue: key, userId: s.reporter.id, createdAt: created }];
+    if (s.assignee) {
+      history.push({ field: 'assignee', fromValue: null, toValue: s.assignee.name, userId: s.assignee.id, createdAt: minutesAgo(s.createdMinutesAgo - 5) });
+    }
+    if (s.status !== 'Waiting for support') {
+      history.push({
+        field: 'status', fromValue: 'Waiting for support', toValue: s.status, userId: (s.assignee ?? elena).id,
+        createdAt: minutesAgo(stoppedAt ?? s.createdMinutesAgo - 10),
+      });
+    }
+    await prisma.issueHistory.createMany({ data: history.map((h) => ({ ...h, issueId: issue.id })) });
+    for (const r of s.replies ?? []) {
+      const at = minutesAgo(r.minutesAgo);
+      await prisma.comment.create({ data: { issueId: issue.id, authorId: r.author.id, body: r.body, internal: !!r.internal, createdAt: at, updatedAt: at } });
+      await prisma.issueWatcher.upsert({
+        where: { issueId_userId: { issueId: issue.id, userId: r.author.id } },
+        update: {},
+        create: { issueId: issue.id, userId: r.author.id },
+      });
+    }
+  };
+
+  // One request in each SLA situation: breached, on track, paused, at risk, met, brand new.
+  await request({
+    summary: "Can't connect to the VPN from home",
+    description: "<p>Since this morning the VPN client says <em>Authentication failed</em>. My password works for email. I'm working from home all week.</p>",
+    type: 'Get IT help', reporter: anna, priority: Priority.HIGH, status: 'Waiting for support',
+    createdMinutesAgo: 95, fields: { os: 'Windows' },
+  });
+  await request({
+    summary: 'Laptop battery drains in under two hours',
+    description: "<p>My laptop used to last a full day; now it's empty by lunchtime even with the screen dimmed.</p>",
+    type: 'Get IT help', reporter: george, priority: Priority.MEDIUM, status: 'In Progress', assignee: andreas,
+    createdMinutesAgo: 26 * 60, respondedAfter: 75, fields: { os: 'macOS' },
+    replies: [
+      { author: andreas, body: '<p>Thanks George. Could you open <strong>System Settings → Battery</strong> and tell me which apps use the most energy?</p>', minutesAgo: 26 * 60 - 75 },
+      { author: george, body: '<p>The top one is "Teams Helper" at 40%.</p>', minutesAgo: 24 * 60 },
+      { author: andreas, body: "<p>Known issue with Teams 24.3 on this model; the upgrade is scheduled for Friday. Battery health also reads 71%, so I'll order a replacement.</p>", minutesAgo: 23 * 60, internal: true },
+      { author: andreas, body: "<p>That's a known Teams problem and we'll update it on Friday. Your battery is also worn, so we've ordered a new one and will let you know when it arrives.</p>", minutesAgo: 22 * 60 },
+    ],
+  });
+  await request({
+    summary: 'Access to the Finance shared drive',
+    description: "<p>I've joined the budgeting working group and need read access to the <code>budget-2026</code> folder on the Finance drive.</p>",
+    type: 'Request access', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for customer', assignee: sofia,
+    createdMinutesAgo: 6 * 60, respondedAfter: 50, pausedMinutesAgo: 5 * 60 - 10, fields: { manager: 'Katerina Antoniou' },
+    replies: [
+      { author: sofia, body: '<p>Finance drives need written approval. Could you ask Katerina to reply here confirming the access, please?</p>', minutesAgo: 5 * 60 - 10 },
+      { author: sofia, body: '<p>Checked AD: the group is <code>FIN-Budget-RO</code>. Will add Anna as soon as approval lands.</p>', minutesAgo: 5 * 60 - 12, internal: true },
+    ],
+  });
+  await request({
+    summary: 'Payment page shows a blank screen on Safari',
+    description: '<p>When I click <strong>Pay now</strong> on Safari the page turns white. Chrome works. Customers are calling us about it.</p>',
+    type: 'Report a bug', reporter: george, priority: Priority.HIGHEST, status: 'In Progress', assignee: lina,
+    createdMinutesAgo: 150, respondedAfter: 18, participants: [anna], fields: { os: 'iOS', affected_url: 'https://shop.example.com/checkout' },
+    replies: [
+      { author: lina, body: "<p>We can reproduce it on Safari and are working on a fix now. I'll update you within the hour.</p>", minutesAgo: 132 },
+      { author: lina, body: "<p>Root cause: the new payment SDK uses a regex lookbehind that older Safari doesn't support. Hotfix in review.</p>", minutesAgo: 60, internal: true },
+    ],
+  });
+  await request({
+    summary: 'Password reset email never arrives',
+    description: '<p>I requested a password reset three times but no email came, not even in spam.</p>',
+    type: 'Get IT help', reporter: anna, priority: Priority.HIGH, status: 'Resolved', assignee: andreas,
+    createdMinutesAgo: 3 * 24 * 60, respondedAfter: 40, resolvedMinutesAgo: 2 * 24 * 60,
+    replies: [
+      { author: andreas, body: "<p>Our mail relay was rejecting the reset emails. It's fixed; please try again.</p>", minutesAgo: 3 * 24 * 60 - 40 },
+      { author: anna, body: '<p>It worked, thank you!</p>', minutesAgo: 2 * 24 * 60 + 30 },
+    ],
+  });
+  await request({
+    summary: 'Add dark mode to the customer dashboard',
+    description: '<p>Many of us work late shifts; a dark theme would be easier on the eyes.</p>',
+    type: 'Suggest an improvement', reporter: george, priority: Priority.LOW, status: 'Waiting for support',
+    createdMinutesAgo: 35,
+  });
+  await request({
+    summary: 'New starter needs a laptop and accounts',
+    description: '<p>Maria Lopez starts on Monday in Customer Success. She needs a laptop, email, Slack and CRM accounts.</p>',
+    type: 'Get IT help', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for support', assignee: elena,
+    createdMinutesAgo: 5 * 60 + 20, fields: { os: 'Windows' },
+  });
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -304,7 +516,7 @@ async function main() {
   const maria = await byEmail('pm@jiratech.local');
   const andreas = await byEmail('dev@jiratech.local');
   const alex = await byEmail('qa@jiratech.local');
-  const [elena, nikos, sofia, daniel, katerina, marcus, lina] = await Promise.all(PEOPLE.map((p) => byEmail(p.email)));
+  const [elena, nikos, sofia, daniel, katerina, marcus, lina, anna, george] = await Promise.all(PEOPLE.map((p) => byEmail(p.email)));
 
   // ── PAY: Payments Platform ────────────────────────────────────────────────
   const pay = await prisma.project.upsert({
@@ -706,6 +918,8 @@ async function main() {
     [katerina, ProjectRole.ADMIN], [nikos, ProjectRole.MEMBER], [lina, ProjectRole.MEMBER], [andreas, ProjectRole.MEMBER],
     [sofia, ProjectRole.MEMBER], [marcus, ProjectRole.MEMBER], [daniel, ProjectRole.VIEWER], [alex, ProjectRole.VIEWER],
   ]);
+
+  await seedServiceDesk({ elena, andreas, sofia, lina, anna, george });
 
   // ── Saved filters ─────────────────────────────────────────────────────────
   await filter(admin, 'Release blockers', 'labels = release-blocker OR (priority = Highest AND status != CLOSED) ORDER BY priority DESC', true,

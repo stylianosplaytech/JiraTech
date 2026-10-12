@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsEnum, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
 import { IssueStatus } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
@@ -24,6 +24,10 @@ class UpdateStatusDto {
   @IsOptional()
   @IsEnum(IssueStatus)
   category?: IssueStatus;
+
+  @IsOptional()
+  @IsBoolean()
+  pausesSla?: boolean;
 }
 
 class ReorderDto {

@@ -30,6 +30,7 @@ On top of the standard Jira-style features, JiraTech supports the **SPORTS conve
 18. [JQL reference](#18-jql-reference)
 19. [Capabilities available through the API only](#19-capabilities-available-through-the-api-only)
 20. [Screen index](#20-screen-index)
+21. [Service desk and help center](#21-service-desk-and-help-center)
 
 ---
 
@@ -37,14 +38,14 @@ On top of the standard Jira-style features, JiraTech supports the **SPORTS conve
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Frontend | React, Vite, TypeScript, Tailwind CSS, TanStack Query | Single-page app on port **5173** |
+| Frontend | React, Vite, TypeScript, Tailwind CSS, TanStack Query | Single-page app on port **5172** |
 | Backend | NestJS (REST API under `/api`) | Port **3000** |
 | Database | Prisma ORM with **SQLite** (default) or **PostgreSQL** | Chosen by `DATABASE_URL` in `backend/.env` |
 | Auth | JWT (bearer token, 7-day expiry by default) | Token stored in the browser |
 | Email | SMTP, or `.eml` files in `backend/mail-outbox/` when no SMTP host is set | |
 | PDF | jsPDF, generated in the browser | Used by Reports |
 
-Each backend module maps to a feature area: `auth`, `projects`, `issues` (incl. bulk), `workflow`, `search` (JQL), `board`, `comments/history/links` (in issues), `notifications`, `versions`, `components`, `labels`, `custom-fields`, `planning`, `scheduling`, `releases`, `incidents`, `dashboard`, `reports`, `users`, `access` (project permissions).
+Each backend module maps to a feature area: `auth`, `projects`, `issues` (incl. bulk), `workflow`, `search` (JQL), `board`, `comments/history/links` (in issues), `notifications`, `versions`, `components`, `labels`, `custom-fields`, `planning`, `scheduling`, `releases`, `incidents`, `dashboard`, `reports`, `users`, `access` (project permissions), `service-desk` (request types, queues, SLAs and the customer portal).
 
 Project-scoped requests carry the current project in the `X-Project-Key` header, so every screen works on the project selected in the header.
 
@@ -56,6 +57,7 @@ Project-scoped requests carry the current project in the `X-Project-Key` header,
 
 **Project types**
 - *Standard* — free hierarchy and free component naming.
+- *Service desk* — customers raise requests in a help center; agents work queues with SLAs. See [section 21](#21-service-desk-and-help-center).
 - *SPORTS conventions* — ticked at creation ("Enforce SPORTS conventions"). Stories, tasks and defects must sit under an epic, and components must follow the naming rules (team components start with `@`, service / release-train components use `ASSETID (serviceName)`).
 
 **Issue types and hierarchy**
@@ -385,6 +387,8 @@ Each project has **members** with a role, plus **general access** for everyone e
 
 Global admins and the project lead always administer a project. Search, quick search, boards, links and notifications only include what you can see.
 
+**Customers** (the *Customer* user role) have no project role at all: they only use the help center, where they see the requests they raised or that were shared with them. See [section 21](#21-service-desk-and-help-center).
+
 ---
 
 ## 18. JQL reference
@@ -445,3 +449,66 @@ The full endpoint list is in the project [README](../README.md#api).
 | 17 | Reports | `/reports` | [22](screenshots/22-reports-status.png) · [23](screenshots/23-reports-timeline.png) · [24](screenshots/24-reports-priority.png) · [25](screenshots/25-reports-open.png) |
 | 18 | People | `/users` | [26-people](screenshots/26-people.png) |
 | 19 | Page not found | any unknown route | [27-not-found](screenshots/27-not-found.png) |
+| 20 | Queues | `/queues` | — |
+| 21 | Help center | `/portal`, `/portal/:key`, `/portal/requests`, `/portal/requests/:key` | — |
+
+---
+
+## 21. Service desk and help center
+
+A **service desk** project handles requests from **customers**: people outside the delivery teams who raise requests in a simple
+**help center** and follow them there. The project's members are the **agents**, who work the requests from **queues** against **SLA** goals.
+
+### Setting one up
+
+Choose **Service desk** as the project type in **Create project**. The new project starts with:
+
+| | Default |
+|---|---|
+| Workflow | Waiting for support → In Progress → Waiting for customer → Resolved (*Waiting for customer* pauses SLAs) |
+| Request types | Get IT help, Report a bug, Request access, Suggest an improvement |
+| SLA goals | First response / resolution: Highest 30m / 4h · High 1h / 8h · Medium 4h / 24h · Low 8h / 72h · Lowest 24h / 120h |
+| Queues | All open · Unassigned · Assigned to me · Waiting for customer · Resolved in the last 7 days |
+
+Project administrators change all of it in the **Service desk** section of the project page (`/projects/KEY#service-desk`):
+
+- **Request types**: what customers can ask for, the issue type each one creates, and which project fields the portal form asks for
+  (text, number, select or date; each can be required). New fields can be created right in the dialog.
+- **SLA goals**: hours per priority for *time to first response* and *time to resolution*; leave a box empty for no goal.
+- **Queues**: named JQL filters, always limited to the project. Without `ORDER BY`, the request closest to breaching comes first.
+- **Help center access**: *Any customer*, or *Only customers I add* with a list of customers.
+- **Workflow**: the *Pauses SLA* column marks statuses where the resolution clock stops (e.g. *Waiting for customer*).
+
+### Customers
+
+Customers are user accounts with the **Customer** role (create them on the **People** page). They only ever see the help center:
+any other page sends them to it, and the API refuses every agent endpoint for them. They can't be project members or leads,
+and they don't appear in assignee, watcher or @mention pickers.
+
+### The help center (`/portal`)
+
+- **Home**: the service desks the customer can use and their open requests.
+- **Raise a request**: pick a request type, fill in the summary, description and the type's fields.
+- **Requests**: everything they raised or that was shared with them, filterable by open/closed.
+- **A request**: description, field values, the public conversation, status and who it's shared with. Customers reply here;
+  replying to a request that is *waiting for customer* sends it back to the agents automatically.
+
+Customers never see internal notes, SLAs, assignees or history. They're notified (in the app and by email, with a link to
+the request in the help center) when an agent replies publicly or the status changes. Staff can open the help center from the account
+menu, and agents can **raise a request on behalf of** a customer (e.g. one who phoned in).
+
+### Agents
+
+- **Queues** (`/queues`, in the header when the current project is a service desk): each queue's requests with status,
+  *First response* and *Resolution* SLA badges (blue on track, amber under 25% left, red breached, grey paused, green met). Refreshes every minute.
+- **Issue page**: a **Service request** panel with the request type, the customer, both SLA clocks and the customers it's shared with (add more with *Share with a customer*).
+- **Comments**: choose **Reply to customer** (customers see it and are notified) or **Add internal note** (agents only, shown in yellow).
+  The first reply to the customer stops the first-response clock.
+- **JQL**: `requestType = "Report a bug"` finds requests of a type.
+
+### How SLAs are measured
+
+Both clocks start when the request is raised and run around the clock (no business-hours calendar).
+*Time to first response* stops at the first public reply from someone other than the requester, or when the request is resolved.
+*Time to resolution* pauses while the request is in a status that pauses SLAs, stops when it's resolved, and resumes if it's re-opened
+(the time it spent resolved doesn't count).

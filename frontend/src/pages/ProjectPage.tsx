@@ -7,6 +7,7 @@ import { jqlValue } from '../utils';
 import UserPicker from '../components/UserPicker';
 import ProjectPeople, { ACCESS_INFO } from '../components/ProjectPeople';
 import WorkflowEditor from '../components/WorkflowEditor';
+import ServiceDeskSettings from '../components/ServiceDeskSettings';
 import Avatar from '../components/Avatar';
 import { StatusBadge, STATUS_LABELS, typeLabel } from '../components/Badges';
 import { SelectPicker } from '../components/Pickers';
@@ -91,6 +92,12 @@ export default function ProjectPage() {
         )}
         actions={(
           <>
+            {project.type === 'SERVICE_DESK' && (
+              <>
+                <Link to="/queues" className="btn btn-default">Queues</Link>
+                <Link to={`/portal/${project.key}`} className="btn btn-default">Help center</Link>
+              </>
+            )}
             <Link to={searchLink(project.key)} className="btn btn-default">View issues</Link>
             <Link to="/" className="btn btn-default">Board</Link>
             {canAdmin && (
@@ -208,7 +215,9 @@ export default function ProjectPage() {
             )}
           </section>
 
-          <WorkflowEditor projectKey={project.key} canAdmin={canAdmin} />
+          {project.type === 'SERVICE_DESK' && <ServiceDeskSettings projectKey={project.key} canAdmin={canAdmin} />}
+
+          <WorkflowEditor projectKey={project.key} canAdmin={canAdmin} serviceDesk={project.type === 'SERVICE_DESK'} />
 
           <ProjectPeople projectKey={project.key} canAdmin={canAdmin} />
         </div>
@@ -223,7 +232,7 @@ export default function ProjectPage() {
                 <dd>{project.lead ? <span className="flex items-center gap-2"><Avatar name={project.lead.name} size="xs" />{project.lead.name}</span> : '—'}</dd>
               </div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Issues</dt><dd>{total}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Rules</dt><dd>{project.strictHierarchy ? 'SPORTS conventions' : 'Standard'}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Type</dt><dd>{project.type === 'SERVICE_DESK' ? 'Service desk' : project.strictHierarchy ? 'Software (SPORTS conventions)' : 'Software'}</dd></div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Access</dt><dd>{ACCESS_INFO[project.defaultAccess].label}</dd></div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Your role</dt><dd>{project.permissions.role === 'NONE' ? '—' : project.permissions.role.charAt(0) + project.permissions.role.slice(1).toLowerCase()}</dd></div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Created</dt><dd>{new Date(project.createdAt).toLocaleDateString()}</dd></div>
