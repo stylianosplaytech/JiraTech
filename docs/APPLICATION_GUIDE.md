@@ -584,6 +584,27 @@ Read emails are marked as read in the mailbox; a message is never handled twice.
 isn't supported yet; Gmail works with an app password. Server settings: `MAIL_POLL_SECONDS` (default 60) and `MAIL_POLLING=false` to stop
 reading mailboxes (e.g. on a second server instance).
 
+**Mailboxes defined by environment variables.** A desk's email can also be set where the server is hosted (e.g. Render → Environment)
+with variables named after its project key, so it survives a database reset. They're applied every time the server starts; the password
+stays in the environment and is never stored in the database. Such a desk shows an *Environment* label and its settings can't be changed
+or removed in the app, while *Test connection*, *Check now*, *Send a test email* and *Received emails* still work. Removing the variables
+switches the desk's email off at the next start and makes it editable in the app again. Mistakes (a bad address, an unknown project key,
+portal or request type) are reported in the server log at startup. For a desk with the key HELP:
+
+| Variable | Value |
+|---|---|
+| `EMAIL_HELP_ADDRESS` | the address customers write to (required; turns the rest on) |
+| `EMAIL_HELP_IMAP_HOST` | e.g. `imap.gmail.com` |
+| `EMAIL_HELP_IMAP_PASSWORD` | the mailbox password (Gmail: an app password) |
+| `EMAIL_HELP_IMAP_USER` | default: the address |
+| `EMAIL_HELP_IMAP_PORT` | default: `993` |
+| `EMAIL_HELP_IMAP_SECURE` | default: `true` (SSL/TLS); `false` for STARTTLS |
+| `EMAIL_HELP_IMAP_FOLDER` | default: `INBOX` (or a Gmail label) |
+| `EMAIL_HELP_PORTAL` | default portal's link name, e.g. `acme` (default: the first portal) |
+| `EMAIL_HELP_REQUEST_TYPE` | request type name, e.g. `Report a bug` (default: the portal's first) |
+| `EMAIL_HELP_ACCEPT_ANYONE` | default: `true` |
+| `EMAIL_HELP_ENABLED` | default: `true` once the server and password are set |
+
 ### The help center (`/portal`)
 
 - **Home**: the service desks the customer can use and their open requests.

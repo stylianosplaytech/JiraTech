@@ -898,6 +898,8 @@ export interface EmailChannel {
   createCustomers: boolean;
   lastCheckedAt: string | null;
   lastError: string | null;
+  /** Set by environment variables with this prefix (e.g. EMAIL_HELP_): read-only in the app */
+  environmentPrefix: string | null;
 }
 
 export interface EmailChannelSettings {
@@ -907,7 +909,7 @@ export interface EmailChannelSettings {
   pollSeconds: number;
 }
 
-export type EmailChannelPatch = Partial<Omit<EmailChannel, 'hasPassword' | 'lastCheckedAt' | 'lastError' | 'portalId' | 'requestTypeId'>> & {
+export type EmailChannelPatch = Partial<Omit<EmailChannel, 'hasPassword' | 'lastCheckedAt' | 'lastError' | 'portalId' | 'requestTypeId' | 'environmentPrefix'>> & {
   imapPassword?: string;
   portalId?: string;
   requestTypeId?: string;

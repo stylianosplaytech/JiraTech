@@ -883,6 +883,9 @@ model EmailChannel {
   requestTypeId String?
   /// Unknown senders get a customer account; otherwise only existing customers of the service desk are accepted
   createCustomers Boolean @default(true)
+  /// Defined by EMAIL_<KEY>_* environment variables: applied at every start, read-only in the app, and the password
+  /// stays in the environment (imapPassword is null)
+  fromEnvironment Boolean @default(false)
   lastCheckedAt DateTime?
   lastError     String?
   createdAt     DateTime @default(now())

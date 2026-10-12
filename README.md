@@ -200,6 +200,25 @@ MAIL_POLL_SECONDS=60     # how often mailboxes are read
 MAIL_POLLING=false       # don't read mailboxes on this instance
 ```
 
+A service desk's mailbox can instead be defined by environment variables named after its project key, so it survives a database reset
+(e.g. Render's free database expiring). They're applied at every start; the desk then shows *Environment* and can't be edited in the app
+(*Test connection*, *Check now* and *Send a test email* still work). Removing them switches the desk's email off and makes it editable again.
+For HELP:
+
+| Variable | Value |
+|---|---|
+| `EMAIL_HELP_ADDRESS` | the address customers write to (required; turns the rest on) |
+| `EMAIL_HELP_IMAP_HOST` | e.g. `imap.gmail.com` |
+| `EMAIL_HELP_IMAP_PASSWORD` | the mailbox password (Gmail: an app password) |
+| `EMAIL_HELP_IMAP_USER` | default: the address |
+| `EMAIL_HELP_IMAP_PORT` | default: `993` |
+| `EMAIL_HELP_IMAP_SECURE` | default: `true` (SSL/TLS); `false` for STARTTLS |
+| `EMAIL_HELP_IMAP_FOLDER` | default: `INBOX` (or a Gmail label) |
+| `EMAIL_HELP_PORTAL` | default portal's link name, e.g. `acme` (default: the first portal) |
+| `EMAIL_HELP_REQUEST_TYPE` | request type name, e.g. `Report a bug` (default: the portal's first) |
+| `EMAIL_HELP_ACCEPT_ANYONE` | default: `true` |
+| `EMAIL_HELP_ENABLED` | default: `true` once the server and password are set |
+
 ### JQL
 
 ```

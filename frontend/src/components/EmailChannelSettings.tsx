@@ -356,6 +356,7 @@ export default function EmailChannelSettings({ projectKey, requestTypes, canAdmi
                 {c.imapHost && <> · {c.imapUser}@{c.imapHost}:{c.imapPort} / {c.imapFolder}</>}
               </div>
             </div>
+            {c.environmentPrefix && <span className="lozenge bg-[#EAE6FF] text-[#403294]" title={`Set by the ${c.environmentPrefix}* environment variables`}>Environment</span>}
             {c.lastError && c.enabled
               ? <span className="lozenge bg-[#FFEBE6] text-[#BF2600]">Error</span>
               : c.enabled
@@ -371,18 +372,30 @@ export default function EmailChannelSettings({ projectKey, requestTypes, canAdmi
                 The server was started with MAIL_POLLING=false, so mailboxes are only read when you click <em>Check now</em>.
               </div>
             )}
+            {c.environmentPrefix && (
+              <div className="rounded-[3px] bg-[#EAE6FF] text-[#403294] px-3 py-2 text-sm">
+                Set by the <code>{c.environmentPrefix}*</code> environment variables, so it survives a database reset. To change it, edit them where
+                the server is hosted (e.g. Render → Environment); they apply when it restarts.
+                {!complete && <> Add <code>{c.environmentPrefix}IMAP_HOST</code> and <code>{c.environmentPrefix}IMAP_PASSWORD</code> to start receiving.</>}
+              </div>
+            )}
             {canAdmin && (
               <div className="flex flex-wrap gap-2">
-                <button type="button" className="btn btn-default btn-sm" onClick={() => setEditing(true)}><EditIcon size={14} /> Edit settings</button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${c.enabled ? 'btn-default' : 'btn-primary'}`}
-                  disabled={busy || (!c.enabled && !complete)}
-                  title={!c.enabled && !complete ? 'Fill in the mail server, user name and password first' : undefined}
-                  onClick={() => toggle.mutate(!c.enabled)}
-                >
-                  {c.enabled ? 'Turn off' : 'Turn on'}
-                </button>
+                {/* Environment-defined desks are changed where the server is hosted. */}
+                {!c.environmentPrefix && (
+                  <>
+                    <button type="button" className="btn btn-default btn-sm" onClick={() => setEditing(true)}><EditIcon size={14} /> Edit settings</button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${c.enabled ? 'btn-default' : 'btn-primary'}`}
+                      disabled={busy || (!c.enabled && !complete)}
+                      title={!c.enabled && !complete ? 'Fill in the mail server, user name and password first' : undefined}
+                      onClick={() => toggle.mutate(!c.enabled)}
+                    >
+                      {c.enabled ? 'Turn off' : 'Turn on'}
+                    </button>
+                  </>
+                )}
                 <button type="button" className="btn btn-default btn-sm" disabled={busy || !complete} onClick={() => testConnection.mutate()}>
                   {testConnection.isPending ? 'Connecting…' : 'Test connection'}
                 </button>
@@ -390,20 +403,22 @@ export default function EmailChannelSettings({ projectKey, requestTypes, canAdmi
                   {check.isPending ? 'Checking…' : 'Check now'}
                 </button>
                 <button type="button" className="btn btn-default btn-sm" onClick={() => setTesting(true)}>Send a test email</button>
-                <button
-                  type="button"
-                  className="btn btn-subtle btn-sm text-[#DE350B]"
-                  onClick={async () => {
-                    if (await confirm({
-                      title: `Remove ${c.address}?`,
-                      message: 'JiraTech stops reading the mailbox and forgets its settings. Requests raised by email stay.',
-                      confirmLabel: 'Remove',
-                      danger: true,
-                    })) remove.mutate();
-                  }}
-                >
-                  <TrashIcon size={14} /> Remove
-                </button>
+                {!c.environmentPrefix && (
+                  <button
+                    type="button"
+                    className="btn btn-subtle btn-sm text-[#DE350B]"
+                    onClick={async () => {
+                      if (await confirm({
+                        title: `Remove ${c.address}?`,
+                        message: 'JiraTech stops reading the mailbox and forgets its settings. Requests raised by email stay.',
+                        confirmLabel: 'Remove',
+                        danger: true,
+                      })) remove.mutate();
+                    }}
+                  >
+                    <TrashIcon size={14} /> Remove
+                  </button>
+                )}
               </div>
             )}
             <div>

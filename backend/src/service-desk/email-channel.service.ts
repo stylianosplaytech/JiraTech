@@ -15,6 +15,7 @@ import { IssuesService } from '../issues/issues.service';
 import { PortalsService } from './portals.service';
 import { MailerService } from '../mail/mailer.service';
 import { EmailChannelDto, TestEmailDto } from './dto/service-desk.dto';
+import { envChannels, envPassword, envPrefix } from './email-channel-env';
 
 /** How often enabled mailboxes are read (MAIL_POLL_SECONDS, at least 15). MAIL_POLLING=false turns reading off. */
 const POLL_SECONDS = Math.max(15, Number(process.env.MAIL_POLL_SECONDS) || 60);
@@ -68,7 +69,8 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     private mailer: MailerService,
   ) {}
 
-  onModuleInit() {
+  async onModuleInit() {
+    await this.applyEnvironment();
     if (!POLLING) {
       this.logger.log('MAIL_POLLING=false: service desk mailboxes are not read');
       return;
@@ -81,17 +83,70 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
+  /**
+   * Applies the EMAIL_<KEY>_* environment variables (see email-channel-env.ts) to their service desks, so mailboxes
+   * defined there come back after a database reset. Desks whose variables were removed keep their settings but are
+   * switched off and become editable in the app again.
+   */
+  private async applyEnvironment() {
+    const defined = new Set<string>();
+    for (const def of envChannels()) {
+      defined.add(def.key);
+      const p = envPrefix(def.key);
+      if ('error' in def) {
+        this.logger.warn(`${p}*: ${def.error}`);
+        continue;
+      }
+      const project = await this.prisma.project.findUnique({ where: { key: def.key } });
+      if (!project || project.type !== ProjectType.SERVICE_DESK) {
+        this.logger.warn(`${p}*: there is no service desk with the key ${def.key}`);
+        continue;
+      }
+      const portal = def.portal ? await this.prisma.portal.findFirst({ where: { projectId: project.id, slug: def.portal } }) : null;
+      if (def.portal && !portal) this.logger.warn(`${p}PORTAL: ${def.key} has no portal linked as ${def.portal}; using its first portal`);
+      const type = def.requestType ? await this.prisma.requestType.findFirst({ where: { projectId: project.id, name: def.requestType } }) : null;
+      if (def.requestType && !type) this.logger.warn(`${p}REQUEST_TYPE: ${def.key} has no request type called ${def.requestType}; using the portal's first`);
+      const data = {
+        address: def.address,
+        enabled: def.enabled,
+        imapHost: def.imapHost,
+        imapPort: def.imapPort,
+        imapSecure: def.imapSecure,
+        imapUser: def.imapUser,
+        imapPassword: null,
+        imapFolder: def.imapFolder,
+        portalId: portal?.id ?? null,
+        requestTypeId: type?.id ?? null,
+        createCustomers: def.createCustomers,
+        fromEnvironment: true,
+      };
+      try {
+        await this.prisma.emailChannel.upsert({ where: { projectId: project.id }, create: { ...data, projectId: project.id }, update: data });
+        this.logger.log(`${def.key}: ${def.address} set from ${p}*${def.enabled ? '' : ' (off)'}`);
+      } catch (e) {
+        if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e;
+        this.logger.warn(`${p}ADDRESS: another service desk already uses ${def.address}`);
+      }
+    }
+    const released = await this.prisma.emailChannel.updateMany({
+      where: { fromEnvironment: true, project: { key: { notIn: [...defined] } } },
+      data: { fromEnvironment: false, enabled: false },
+    });
+    if (released.count) this.logger.log(`${released.count} service desk mailbox(es) no longer set by environment variables: switched off`);
+  }
+
   // ─── Configuration (agents read, project admins change) ────────────────────
 
   async get(key: string) {
     const project = await this.desk(key);
     const channel = await this.prisma.emailChannel.findUnique({ where: { projectId: project.id } });
-    return { channel: channel ? view(channel) : null, polling: POLLING, pollSeconds: POLL_SECONDS };
+    return { channel: channel ? view(channel, project.key) : null, polling: POLLING, pollSeconds: POLL_SECONDS };
   }
 
   async save(key: string, dto: EmailChannelDto) {
     const project = await this.desk(key);
     const existing = await this.prisma.emailChannel.findUnique({ where: { projectId: project.id } });
+    if (existing?.fromEnvironment) throw setByEnvironment(project.key);
     const address = dto.address?.trim().toLowerCase();
     if (!existing && !address) throw new BadRequestException('Enter the email address customers write to');
     if (address && this.isSystemAddress(address)) {
@@ -128,7 +183,7 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
       const channel = existing
         ? await this.prisma.emailChannel.update({ where: { id: existing.id }, data: { ...data, lastError: data.enabled === false ? null : undefined } })
         : await this.prisma.emailChannel.create({ data: { ...data, address: address!, projectId: project.id } });
-      return view(channel);
+      return view(channel, project.key);
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException(`Another service desk already uses ${address}`);
@@ -140,6 +195,7 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
   /** Received emails' log goes too; the requests they raised stay. */
   async remove(key: string) {
     const project = await this.desk(key);
+    if ((await this.prisma.emailChannel.findUnique({ where: { projectId: project.id } }))?.fromEnvironment) throw setByEnvironment(project.key);
     await this.prisma.emailChannel.deleteMany({ where: { projectId: project.id } });
     return { deleted: true };
   }
@@ -177,8 +233,10 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
   /** Read the mailbox now rather than waiting for the next check. */
   async checkNow(key: string) {
     const channel = await this.channelOf(key);
-    if (!channel.imapHost || !channel.imapUser || !channel.imapPassword) {
-      throw new BadRequestException('Fill in the mail server, user name and password first');
+    if (!ready(channel)) {
+      throw new BadRequestException(channel.fromEnvironment
+        ? `Set ${envPrefix(channel.project.key)}IMAP_HOST and ${envPrefix(channel.project.key)}IMAP_PASSWORD first`
+        : 'Fill in the mail server, user name and password first');
     }
     try {
       return await this.check(channel);
@@ -207,11 +265,11 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
 
   private async checkAll() {
     const channels = await this.prisma.emailChannel.findMany({
-      where: { enabled: true, imapHost: { not: null }, imapUser: { not: null }, imapPassword: { not: null } },
+      where: { enabled: true },
       include: { project: { select: { id: true, key: true, type: true } } },
     });
     for (const channel of channels) {
-      if (channel.project.type !== ProjectType.SERVICE_DESK || this.checking.has(channel.id)) continue;
+      if (channel.project.type !== ProjectType.SERVICE_DESK || !ready(channel) || this.checking.has(channel.id)) continue;
       try {
         await this.check(channel);
       } catch (e) {
@@ -260,9 +318,11 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private client(channel: EmailChannel) {
-    const password = channel.imapPassword ? open(channel.imapPassword) : null;
-    if (channel.imapPassword && password === null) {
+  private client(channel: Channel) {
+    const password = channel.fromEnvironment
+      ? envPassword(channel.project.key)
+      : channel.imapPassword ? open(channel.imapPassword) : null;
+    if (!channel.fromEnvironment && channel.imapPassword && password === null) {
       throw new BadRequestException('The saved password can no longer be read (MAIL_SECRET or JWT_SECRET changed): enter it again');
     }
     const client = new ImapFlow({
@@ -462,7 +522,7 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
 }
 
 /** The settings as the browser sees them: never the password. */
-function view(c: EmailChannel) {
+function view(c: EmailChannel, projectKey: string) {
   return {
     address: c.address,
     enabled: c.enabled,
@@ -470,14 +530,27 @@ function view(c: EmailChannel) {
     imapPort: c.imapPort,
     imapSecure: c.imapSecure,
     imapUser: c.imapUser,
-    hasPassword: !!c.imapPassword,
+    hasPassword: c.fromEnvironment ? !!envPassword(projectKey) : !!c.imapPassword,
     imapFolder: c.imapFolder,
     portalId: c.portalId,
     requestTypeId: c.requestTypeId,
     createCustomers: c.createCustomers,
     lastCheckedAt: c.lastCheckedAt,
     lastError: c.lastError,
+    /** Set by environment variables with this prefix: read-only here */
+    environmentPrefix: c.fromEnvironment ? envPrefix(projectKey) : null,
   };
+}
+
+/** Has everything needed to read the mailbox. */
+function ready(c: Channel) {
+  return !!(c.imapHost && c.imapUser && (c.fromEnvironment ? envPassword(c.project.key) : c.imapPassword));
+}
+
+function setByEnvironment(key: string) {
+  return new BadRequestException(
+    `${key}'s email is set by the ${envPrefix(key)}* environment variables. Change them where the server is hosted (e.g. Render → Environment); they apply when it restarts.`,
+  );
 }
 
 function toIncoming(parsed: ParsedMail, source: Buffer): IncomingMail {
