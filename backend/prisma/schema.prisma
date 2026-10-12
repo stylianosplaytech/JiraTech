@@ -181,7 +181,22 @@ model MailSettings {
   fromAddress  String?
   /// The address people open JiraTech at, used for links in emails (otherwise APP_URL)
   appUrl       String?
+  /// How email is sent: an SMTP server, or a Gmail account through Google's API (HTTPS, for hosts that block SMTP)
+  transport    MailTransport @default(SMTP)
+  /// Google Cloud OAuth client the Gmail account is connected through
+  gmailClientId     String?
+  /// Encrypted like smtpPassword
+  gmailClientSecret String?
+  /// Encrypted; lets JiraTech send as the connected account until it is disconnected or revoked in Google
+  gmailRefreshToken String?
+  /// The connected Gmail address (emails are sent from it)
+  gmailAccount      String?
   updatedAt    DateTime @updatedAt
+}
+
+enum MailTransport {
+  SMTP
+  GMAIL
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────

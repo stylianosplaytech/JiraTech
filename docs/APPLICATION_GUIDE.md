@@ -397,16 +397,35 @@ Global roles: Admin, Developer, Merge Master, Product Manager, Product Owner, Pr
 
 ### Email settings (global admins)
 
-All outgoing email — notifications of every project, replies to service desk customers and welcome emails — goes through one mail server,
-set under **profile menu → Administration → Email settings** (`/settings/email`):
+All outgoing email — notifications of every project, replies to service desk customers and welcome emails — is sent one way, set under
+**profile menu → Administration → Email settings** (`/settings/email`). **Send with** chooses how:
 
+- **Gmail account**: sent through Google's Gmail API over HTTPS (port 443), so it works where outgoing mail ports are blocked, such as on
+  Render's free plan or many company networks. Enter the **Client ID** and **Client secret** of a Google Cloud OAuth client, **Save**, then
+  **Connect Gmail account**: Google asks you to choose the account and allow *Send email on your behalf*, then brings you back. Emails are
+  sent from that account (Gmail always uses its address); the **Sender** name still applies. JiraTech can only send through it, not read
+  it. **Disconnect** stops using it and revokes the access at Google; changing the Client ID disconnects it too. If Google stops accepting
+  the connection (revoked, password changed, or the app left in *Testing*), *Send test email* says so: connect again.
+  One-time setup in Google Cloud (the page shows these steps and the exact redirect URI to copy):
+
+  1. In [Google Cloud](https://console.cloud.google.com/), signed in as the Gmail account that should send, create a project.
+  2. **APIs & Services → Library → Gmail API → Enable**.
+  3. **OAuth consent screen**: app name, your email, audience *External* (or *Internal* for Google Workspace), then **Publish app**
+     (*In production*). In *Testing*, Google ends the connection after 7 days.
+  4. **Credentials → Create credentials → OAuth client ID → Web application**, with the authorized redirect URI
+     `https://<your address>/api/mail-settings/google/callback` (one per address you use, e.g. your Render URL and
+     `http://localhost:5172`). Email settings shows the exact value with a copy button.
+  5. In Email settings choose **Gmail account**, paste the Client ID and secret, **Save**, then **Connect Gmail account** and allow
+     *Send email on your behalf* (for your own unverified app: *Advanced → Go to JiraTech*).
 - **Mail server (SMTP)**: server, port, security (STARTTLS, usually port 587, or SSL/TLS, port 465), user name and password. The password
   is stored encrypted (key: `MAIL_SECRET`, or `JWT_SECRET`) and never shown again; leave the field empty to keep it.
 - **Sender**: the name and address emails come from. Most servers only accept an address they own.
 - **Link to JiraTech**: the web address links in emails use (otherwise `APP_URL`, otherwise `http://localhost:5172`).
 - **Send a test email** sends one with the saved settings and shows the mail server's reason if it fails (wrong password, wrong port…).
 
-The banner at the top says what is in use. With no server set there, the `SMTP_*` settings in `backend/.env` are used; with neither,
+The banner at the top says what is in use. With nothing set there, a Gmail account in the `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`,
+`GMAIL_REFRESH_TOKEN` and `GMAIL_USER` environment variables is used (survives a database reset; see the README for getting the token),
+then the `SMTP_*` settings in `backend/.env`; with none of them,
 emails are written as `.eml` files to `backend/mail-outbox/` (local development). Each service desk's own *incoming* address is set
 separately on its project page (section 21).
 

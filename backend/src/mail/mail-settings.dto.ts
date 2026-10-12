@@ -1,9 +1,28 @@
 import {
-  IsBoolean, IsEmail, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf,
+  IsBoolean, IsEmail, IsEnum, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf,
 } from 'class-validator';
+import { MailTransport } from '@prisma/client';
 
 /** Outgoing email settings. Fields left out keep their value; '' clears the optional ones. */
 export class MailSettingsDto {
+  /** SMTP server, or a Gmail account through Google's API */
+  @IsOptional()
+  @IsEnum(MailTransport)
+  transport?: MailTransport;
+
+  /** Google Cloud OAuth client ID; changing it disconnects the Gmail account */
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  @Matches(/^([A-Za-z0-9._-]+\.apps\.googleusercontent\.com)?$/, { message: 'The Client ID looks like 1234-abc.apps.googleusercontent.com' })
+  gmailClientId?: string;
+
+  /** Write-only; '' removes it */
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  gmailClientSecret?: string;
+
   /** '' goes back to the SMTP_* environment variables (or the mail-outbox folder) */
   @IsOptional()
   @IsString()
@@ -55,4 +74,11 @@ export class MailSettingsDto {
 export class TestMailDto {
   @IsEmail({}, { message: 'Enter the address to send the test to' })
   to!: string;
+}
+
+export class GoogleStartDto {
+  /** The address the admin uses JiraTech at; Google sends them back there */
+  @Matches(/^https?:\/\/[^\s/]+$/, { message: 'origin must look like https://jiratech.example.com' })
+  @MaxLength(300)
+  origin!: string;
 }

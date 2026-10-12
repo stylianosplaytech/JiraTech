@@ -166,9 +166,30 @@ Opening an issue marks its notifications as read.
 Each notification is also emailed unless you turn off *Email notifications* in the profile menu.
 
 **Outgoing email** for the whole application — every project's notifications, replies to service desk customers and welcome emails —
-is set by a global admin under **profile menu → Email settings** (`/settings/email`): SMTP server, port, security, login, sender name and
-address, and the web address used for links in emails, with a *Send test email* button. The SMTP password is stored encrypted
-(`MAIL_SECRET`, or `JWT_SECRET`). Without a server there, the SMTP settings in `backend/.env` are used:
+is set by a global admin under **profile menu → Email settings** (`/settings/email`), with a *Send test email* button. It sends either
+through a **Gmail account** using Google's API over HTTPS (works on hosts that block mail ports, such as Render's free plan) or through an
+**SMTP server**, plus the sender name and the web address used for links in emails. Passwords, secrets and tokens are stored encrypted
+(`MAIL_SECRET`, or `JWT_SECRET`) and never shown again.
+
+**Sending with Gmail** (one-time setup, about 10 minutes):
+
+1. In [Google Cloud](https://console.cloud.google.com/), signed in as the Gmail account that should send, create a project.
+2. **APIs & Services → Library → Gmail API → Enable**.
+3. **OAuth consent screen**: app name, your email, audience *External* (or *Internal* for Google Workspace), then **Publish app**
+   (*In production*). In *Testing*, Google ends the connection after 7 days.
+4. **Credentials → Create credentials → OAuth client ID → Web application**, with the authorized redirect URI
+   `https://<your address>/api/mail-settings/google/callback` (one per address you use, e.g. your Render URL and
+   `http://localhost:5172`). Email settings shows the exact value with a copy button.
+5. In Email settings choose **Gmail account**, paste the Client ID and secret, **Save**, then **Connect Gmail account** and allow
+   *Send email on your behalf* (for your own unverified app: *Advanced → Go to JiraTech*).
+
+The connection can only send email (scope `gmail.send`); it can't read the mailbox. *Disconnect* revokes it at Google. To keep it through a
+database reset, set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` and `GMAIL_USER` (the account's address) instead; a
+refresh token for your own OAuth client can be obtained with Google's
+[OAuth 2.0 Playground](https://developers.google.com/oauthplayground) (gear icon → *Use your own OAuth credentials*, scope
+`https://www.googleapis.com/auth/gmail.send`; add `https://developers.google.com/oauthplayground` as a redirect URI).
+
+With nothing set in Email settings, the `GMAIL_*` variables are used, otherwise the SMTP settings in `backend/.env`:
 
 ```
 SMTP_HOST=smtp.example.com

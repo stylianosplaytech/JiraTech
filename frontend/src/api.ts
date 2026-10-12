@@ -79,6 +79,10 @@ export const api = {
   getMailSettings: () => request<MailSettings>('/mail-settings'),
   /** Fields left out keep their value; '' clears (smtpPassword is write-only). */
   saveMailSettings: (data: MailSettingsPatch) => request<MailSettings>('/mail-settings', { method: 'PUT', body: JSON.stringify(data) }),
+  /** "Connect Gmail account": the Google sign-in page to open. */
+  startGmailConnect: (origin: string) =>
+    request<{ url: string; redirectUri: string }>('/mail-settings/google/start', { method: 'POST', body: JSON.stringify({ origin }) }),
+  disconnectGmail: () => request<MailSettings>('/mail-settings/google/disconnect', { method: 'POST' }),
   sendTestMail: (to: string) =>
     request<{ sent: boolean; source: MailSource; file: string | null }>('/mail-settings/test', { method: 'POST', body: JSON.stringify({ to }) }),
   updateUser: (id: string, data: { email?: string; name?: string; password?: string; role?: string }) =>
@@ -348,15 +352,24 @@ export interface Invitation {
   expiresAt: string;
 }
 
-/** Where outgoing email is configured: Email settings, the SMTP_* environment variables, or neither (files in backend/mail-outbox). */
-export type MailSource = 'settings' | 'environment' | 'outbox';
+/**
+ * Where outgoing email is configured: Email settings (Gmail account or SMTP server), the GMAIL_* or SMTP_* environment
+ * variables, or none of them (files in backend/mail-outbox).
+ */
+export type MailSource = 'gmail' | 'settings' | 'gmail-environment' | 'environment' | 'outbox';
 
 export interface MailSettings {
+  /** SMTP server, or a Gmail account through Google's API */
+  transport: 'SMTP' | 'GMAIL';
   smtpHost: string | null;
   smtpPort: number;
   smtpSecure: boolean;
   smtpUser: string | null;
   hasPassword: boolean;
+  gmailClientId: string | null;
+  hasGmailSecret: boolean;
+  /** The connected Gmail account */
+  gmailAccount: string | null;
   fromName: string | null;
   fromAddress: string | null;
   appUrl: string | null;
@@ -365,10 +378,11 @@ export interface MailSettings {
   from: string;
   /** Where links in emails point */
   effectiveAppUrl: string;
-  environment: { smtpHost: string | null; mailFrom: string | null; appUrl: string | null };
+  environment: { smtpHost: string | null; gmailUser: string | null; mailFrom: string | null; appUrl: string | null };
 }
 
 export type MailSettingsPatch = {
+  transport?: 'SMTP' | 'GMAIL'; gmailClientId?: string; gmailClientSecret?: string;
   smtpHost?: string; smtpPort?: number; smtpSecure?: boolean; smtpUser?: string; smtpPassword?: string;
   fromName?: string; fromAddress?: string; appUrl?: string;
 };
