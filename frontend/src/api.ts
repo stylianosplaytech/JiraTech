@@ -61,8 +61,22 @@ export const api = {
     const qs = params.toString();
     return request<User[]>(`/users${qs ? `?${qs}` : ''}`);
   },
-  createUser: (data: { email: string; name: string; password: string; role: string }) =>
-    request<User>('/users', { method: 'POST', body: JSON.stringify(data) }),
+  /** Without a password, sendInvite (the default) emails them a link to choose their own. */
+  createUser: (data: { email: string; name: string; password?: string; role: string; sendInvite?: boolean }) =>
+    request<User & { invitation: Invitation | null }>('/users', { method: 'POST', body: JSON.stringify(data) }),
+  /** Emails a new welcome link to choose a password. */
+  inviteUser: (id: string) => request<Invitation>(`/users/${id}/invite`, { method: 'POST' }),
+  // ─── Welcome links (no login needed) ───────────────────────────────────────
+  getPasswordLink: (token: string) =>
+    request<{ name: string; email: string; customer: boolean }>(`/auth/password-links/${encodeURIComponent(token)}`),
+  setPassword: (token: string, password: string) =>
+    request<{ accessToken: string; user: User }>('/auth/set-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
+  // ─── Outgoing email for the whole application (global admins) ─────────────
+  getMailSettings: () => request<MailSettings>('/mail-settings'),
+  /** Fields left out keep their value; '' clears (smtpPassword is write-only). */
+  saveMailSettings: (data: MailSettingsPatch) => request<MailSettings>('/mail-settings', { method: 'PUT', body: JSON.stringify(data) }),
+  sendTestMail: (to: string) =>
+    request<{ sent: boolean; source: MailSource; file: string | null }>('/mail-settings/test', { method: 'POST', body: JSON.stringify({ to }) }),
   updateUser: (id: string, data: { email?: string; name?: string; password?: string; role?: string }) =>
     request<User>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getIssues: (params?: Record<string, string>) => {
@@ -320,7 +334,40 @@ export interface User {
   email: string;
   name: string;
   role: string;
+  /** Added without a password and hasn't chosen one from the welcome email yet */
+  invitePending?: boolean;
 }
+
+/** A welcome email: `sent` is false when it couldn't be delivered (see Email settings). */
+export interface Invitation {
+  sent: boolean;
+  expiresAt: string;
+}
+
+/** Where outgoing email is configured: Email settings, the SMTP_* environment variables, or neither (files in backend/mail-outbox). */
+export type MailSource = 'settings' | 'environment' | 'outbox';
+
+export interface MailSettings {
+  smtpHost: string | null;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string | null;
+  hasPassword: boolean;
+  fromName: string | null;
+  fromAddress: string | null;
+  appUrl: string | null;
+  source: MailSource;
+  /** The sender in use, e.g. "JiraTech" <jira@example.com> */
+  from: string;
+  /** Where links in emails point */
+  effectiveAppUrl: string;
+  environment: { smtpHost: string | null; mailFrom: string | null; appUrl: string | null };
+}
+
+export type MailSettingsPatch = {
+  smtpHost?: string; smtpPort?: number; smtpSecure?: boolean; smtpUser?: string; smtpPassword?: string;
+  fromName?: string; fromAddress?: string; appUrl?: string;
+};
 
 export interface Component {
   id: string;

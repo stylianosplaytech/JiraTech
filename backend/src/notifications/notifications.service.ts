@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { NotificationType, Prisma, ProjectType, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { MailerService } from './mailer.service';
+import { MailerService } from '../mail/mailer.service';
 import { AccessService } from '../access/access.service';
 import { extractMentions, mentionKeys, Mentions, toPlainText } from '../common/rich-text';
 
@@ -57,7 +57,6 @@ function newMentions(before: string | null | undefined, after: string | null | u
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
-  private readonly appUrl = (process.env.APP_URL ?? 'http://localhost:5172').replace(/\/$/, '');
 
   constructor(private prisma: PrismaService, private mailer: MailerService, private access: AccessService) {}
 
@@ -320,7 +319,8 @@ export class NotificationsService {
       portal ? this.prisma.emailChannel.findFirst({ where: { projectId: issue.projectId, enabled: true }, select: { address: true } }) : null,
     ]);
     const who = actor?.name ?? 'Someone';
-    const url = portal ? `${this.appUrl}/portal/requests/${issue.key}` : `${this.appUrl}/browse/${issue.key}`;
+    const appUrl = this.mailer.appUrl();
+    const url = portal ? `${appUrl}/portal/requests/${issue.key}` : `${appUrl}/browse/${issue.key}`;
     const noun = portal ? 'request' : 'issue';
     const reason = portal ? 'you raised or were added to this request' : 'you are involved in this issue';
     const replyHint = channel ? 'Reply to this email to add a comment to the request.' : null;

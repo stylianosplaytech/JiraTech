@@ -82,7 +82,7 @@ Parent rules are enforced by the server — for example, a *Release Candidate* c
 
 ![Login](screenshots/01-login.png)
 
-Sign in with email and password. A successful login stores a JWT in the browser; signing out (account menu) clears it. Accounts are created by an administrator on the **People** page — there is no self-registration.
+Sign in with email and password. A successful login stores a JWT in the browser; signing out (account menu) clears it. Accounts are created by an administrator on the **People** page — there is no self-registration. New people get a welcome email with a link to choose their own password (section 15).
 
 Default administrator: `admin@jiratech.local` / `admin123`. Demo users (after `db:seed:demo`) share the same password, e.g. `elena@` (team lead), `nikos@` (developer), `sofia@` (QA), `daniel@` (release manager), `katerina@` (product owner).
 
@@ -352,7 +352,19 @@ still running don't count yet.
 
 ![People](screenshots/26-people.png)
 
-Everyone who can sign in and be an assignee, reporter or watcher. Search by name or email. Administrators can **Add person** (full name, email, password, role) and **Edit** people (including resetting the password).
+Everyone who can sign in and be an assignee, reporter or watcher. Search by name or email. Administrators can **Add person** (full name, email, role) and **Edit** people (including resetting the password).
+
+**Welcome emails.** *Add person* sends the new person a **welcome email** (on by default) with a link to choose their own password:
+
+- The link opens **Choose your password** (`/set-password`), which greets them by name. Passwords need at least 8 characters. Saving logs
+  them straight in: staff land on the board, customers in the help center.
+- A link works for **7 days** and **once**; sending a new one cancels the previous one. An expired or used link says so and asks them to
+  contact an administrator.
+- Until they choose a password nobody can log in as them, and the list shows them as **Invited** with **Resend** (a new link).
+- **Edit → Email them a link to choose a new password** sends the same kind of link to anyone, e.g. someone who forgot their password.
+- Untick *Send a welcome email* to type a password for them instead (at least 6 characters).
+- The email goes out through the **Email settings** (section 16). If it can't be sent, the person is still added and you're told to check
+  the settings and use *Resend*.
 
 Global roles: Admin, Developer, Merge Master, Product Manager, Product Owner, Program Manager, Project Manager, QA Specialist, Release Manager, Scrum Master, Team Lead. **Admin** administers every project and manages people; **Project / Program / Product Manager** can also create projects; the other roles describe the person's job. What someone can do inside a project is set by their **project role** (see section 17).
 
@@ -372,7 +384,22 @@ Global roles: Admin, Developer, Merge Master, Product Manager, Product Owner, Pr
 - **Direct** tab: assignments, mentions, watcher invitations. **Watching** tab: everything.
 - *Only show unread*, *Mark all as read*, and per-item read/unread.
 - You're never notified about your own actions; each change produces at most one notification per person.
-- Each notification is also emailed unless you switch off *Email notifications* in the account menu. Without an SMTP server configured, emails are written as `.eml` files to `backend/mail-outbox/`.
+- Each notification is also emailed unless you switch off *Email notifications* in the account menu.
+
+### Email settings (global admins)
+
+All outgoing email — notifications of every project, replies to service desk customers and welcome emails — goes through one mail server,
+set under **profile menu → Administration → Email settings** (`/settings/email`):
+
+- **Mail server (SMTP)**: server, port, security (STARTTLS, usually port 587, or SSL/TLS, port 465), user name and password. The password
+  is stored encrypted (key: `MAIL_SECRET`, or `JWT_SECRET`) and never shown again; leave the field empty to keep it.
+- **Sender**: the name and address emails come from. Most servers only accept an address they own.
+- **Link to JiraTech**: the web address links in emails use (otherwise `APP_URL`, otherwise `http://localhost:5172`).
+- **Send a test email** sends one with the saved settings and shows the mail server's reason if it fails (wrong password, wrong port…).
+
+The banner at the top says what is in use. With no server set there, the `SMTP_*` settings in `backend/.env` are used; with neither,
+emails are written as `.eml` files to `backend/mail-outbox/` (local development). Each service desk's own *incoming* address is set
+separately on its project page (section 21).
 
 ---
 
@@ -455,6 +482,8 @@ The full endpoint list is in the project [README](../README.md#api).
 | 16 | Dashboard | `/dashboard` | [21-dashboard](screenshots/21-dashboard.png) |
 | 17 | Reports | `/reports` | [22](screenshots/22-reports-status.png) · [23](screenshots/23-reports-timeline.png) · [24](screenshots/24-reports-priority.png) · [25](screenshots/25-reports-open.png) |
 | 18 | People | `/users` | [26-people](screenshots/26-people.png) |
+| 18a | Email settings (admins) | `/settings/email` | — |
+| 18b | Choose your password (welcome link, no login) | `/set-password?token=…` | — |
 | 19 | Page not found | any unknown route | [27-not-found](screenshots/27-not-found.png) |
 | 20 | Queues | `/queues` | — |
 | 21 | Help center | `/portal`, `/portal/:slug`, `/portal/requests`, `/portal/requests/:key` | — |
@@ -533,7 +562,7 @@ JiraTech reads that address's mailbox over **IMAP** (every minute by default) an
   Only people who can see the request may reply to it;
 - skips out-of-office replies, delivery reports, mailing-list mail and mail from JiraTech's own address, so notifications can't loop.
 
-**Accept emails from anyone**: unknown senders get a customer account (no password; an admin can set one on the People page) and access to
+**Accept emails from anyone**: unknown senders get a customer account (no password; an admin can send them a link to choose one from the People page) and access to
 the default portal. Untick it to accept only existing customers of the service desk — do this when the default portal belongs to one client
 company. Each address can belong to one service desk only. While the channel is on, emails to customers are sent with it as **Reply-To**.
 

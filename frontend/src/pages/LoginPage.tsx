@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
@@ -33,21 +33,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#FAFBFC] px-4">
-      <div className="flex items-center gap-2 mb-8">
-        <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
-          <defs>
-            <linearGradient id="login-g" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#2684FF" />
-              <stop offset="1" stopColor="#0052CC" />
-            </linearGradient>
-          </defs>
-          <path d="M12 2 22 12 12 22 2 12Z" fill="url(#login-g)" />
-          <path d="M12 7.5 16.5 12 12 16.5 7.5 12Z" fill="white" />
-        </svg>
-        <span className="text-2xl font-semibold text-jira-navy">JiraTech</span>
-      </div>
-
+    <AuthShell
+      footer={(
+        <p className="text-xs text-jira-muted mt-6 text-center max-w-[400px]">
+          Development accounts: admin@jiratech.local, dev@jiratech.local, qa@jiratech.local — see backend/prisma/seed.ts for the password.
+        </p>
+      )}
+    >
       <form onSubmit={handleSubmit} className="bg-white rounded-[3px] shadow-modal px-10 py-8 w-full max-w-[400px]">
         <h1 className="text-base font-semibold text-center text-jira-subtle mb-6">Log in to continue</h1>
 
@@ -68,10 +60,29 @@ export default function LoginPage() {
           {loading ? 'Logging in…' : 'Log in'}
         </button>
       </form>
+    </AuthShell>
+  );
+}
 
-      <p className="text-xs text-jira-muted mt-6 text-center max-w-[400px]">
-        Development accounts: admin@jiratech.local, dev@jiratech.local, qa@jiratech.local — see backend/prisma/seed.ts for the password.
-      </p>
+/** The logo above a centred card: the login and set-password pages. */
+export function AuthShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#FAFBFC] px-4">
+      <div className="flex items-center gap-2 mb-8">
+        <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
+          <defs>
+            <linearGradient id="login-g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#2684FF" />
+              <stop offset="1" stopColor="#0052CC" />
+            </linearGradient>
+          </defs>
+          <path d="M12 2 22 12 12 22 2 12Z" fill="url(#login-g)" />
+          <path d="M12 7.5 16.5 12 12 16.5 7.5 12Z" fill="white" />
+        </svg>
+        <span className="text-2xl font-semibold text-jira-navy">JiraTech</span>
+      </div>
+      {children}
+      {footer}
     </div>
   );
 }

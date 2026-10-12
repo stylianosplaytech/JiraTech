@@ -4,10 +4,12 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
     PassportModule,
+    UsersModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET ?? 'jiratech-dev-secret-change-in-production',
       signOptions: { expiresIn: process.env.JWT_EXPIRES_IN ?? '7d' },

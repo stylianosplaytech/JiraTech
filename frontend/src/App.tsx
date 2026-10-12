@@ -5,6 +5,8 @@ import { ProjectProvider } from './project';
 import { EmptyState, Spinner } from './components/ui';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
+import SetPasswordPage from './pages/SetPasswordPage';
+import EmailSettingsPage from './pages/EmailSettingsPage';
 import BoardPage from './pages/BoardPage';
 import SearchPage from './pages/SearchPage';
 import IssueDetailPage from './pages/IssueDetailPage';
@@ -65,6 +67,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/set-password" element={<SetPasswordPage />} />
       <Route path="/portal/*" element={<ProtectedRoute>{deciding ? <Spinner /> : <Portal user={user} />}</ProtectedRoute>} />
       <Route
         path="/*"
@@ -92,6 +95,7 @@ export default function App() {
                     <Route path="/reports" element={<ReportsPage />} />
                     <Route path="/planning" element={<PlanningPage />} />
                     <Route path="/users" element={<UsersPage />} />
+                    <Route path="/settings/email" element={<EmailSettingsPage />} />
                     <Route path="*" element={<EmptyState title="Page not found" action={<Link to="/" className="btn btn-default">Go to the board</Link>}>The page you're looking for doesn't exist.</EmptyState>} />
                   </Routes>
                 </Layout>

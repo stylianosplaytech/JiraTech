@@ -13,6 +13,7 @@ import { contains } from '../common/text-match';
 import { open, seal } from '../common/secret-box';
 import { IssuesService } from '../issues/issues.service';
 import { PortalsService } from './portals.service';
+import { MailerService } from '../mail/mailer.service';
 import { EmailChannelDto, TestEmailDto } from './dto/service-desk.dto';
 
 /** How often enabled mailboxes are read (MAIL_POLL_SECONDS, at least 15). MAIL_POLLING=false turns reading off. */
@@ -64,6 +65,7 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     private access: AccessService,
     private issues: IssuesService,
     private portals: PortalsService,
+    private mailer: MailerService,
   ) {}
 
   onModuleInit() {
@@ -437,9 +439,7 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
 
   /** Mail from JiraTech's own addresses is never handled, so notifications can't loop back in. */
   private isSystemAddress(email: string) {
-    const own = [process.env.MAIL_FROM ?? 'no-reply@jiratech.local', process.env.SMTP_USER ?? '']
-      .map((a) => (/<([^>]+)>/.exec(a)?.[1] ?? a).trim().toLowerCase());
-    return own.includes(email.toLowerCase());
+    return [this.mailer.fromAddress(), process.env.SMTP_USER?.toLowerCase()].includes(email.toLowerCase());
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────

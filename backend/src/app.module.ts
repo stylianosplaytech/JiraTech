@@ -20,12 +20,14 @@ import { VersionsModule } from './versions/versions.module';
 import { ProjectsModule } from './projects/projects.module';
 import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { MailModule } from './mail/mail.module';
 import { ServiceDeskModule } from './service-desk/service-desk.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 
 @Module({
   imports: [
     PrismaModule,
+    MailModule,
     AccessModule,
     WorkflowModule,
     HealthModule,

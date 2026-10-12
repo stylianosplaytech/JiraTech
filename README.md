@@ -164,7 +164,11 @@ The **Direct** tab shows assignments, mentions and watcher invitations; **Watchi
 Opening an issue marks its notifications as read.
 
 Each notification is also emailed unless you turn off *Email notifications* in the profile menu.
-Configure SMTP in `backend/.env`:
+
+**Outgoing email** for the whole application — every project's notifications, replies to service desk customers and welcome emails —
+is set by a global admin under **profile menu → Email settings** (`/settings/email`): SMTP server, port, security, login, sender name and
+address, and the web address used for links in emails, with a *Send test email* button. The SMTP password is stored encrypted
+(`MAIL_SECRET`, or `JWT_SECRET`). Without a server there, the SMTP settings in `backend/.env` are used:
 
 ```
 SMTP_HOST=smtp.example.com
@@ -176,13 +180,18 @@ MAIL_FROM="JiraTech <jira@example.com>"
 APP_URL=https://jiratech.example.com   # used for links in emails
 ```
 
-Without `SMTP_HOST`, emails are written as `.eml` files to `backend/mail-outbox/` so you can open them locally.
+Without either, emails are written as `.eml` files to `backend/mail-outbox/` so you can open them locally.
+
+**Welcome emails.** When an admin adds a person on the **People** page, they get a welcome email with a link to choose their own password
+(valid for 7 days, usable once; customers then land in the help center). People who haven't chosen one yet show as *Invited*, with
+*Resend*; *Edit* has *Email them a link to choose a new password* for anyone who forgot theirs. Untick *Send a welcome email* to set a
+password for them instead.
 
 **Incoming email (service desks).** Each service desk can have its own address, read over IMAP: new emails become requests and replies
 (subject containing the key, e.g. `(HELP-12)`) become comments. Configure it on the project page under *Service desk → Email*. Optional settings:
 
 ```
-MAIL_SECRET=...          # encrypts stored mailbox passwords (defaults to JWT_SECRET)
+MAIL_SECRET=...          # encrypts mail passwords saved in the app (defaults to JWT_SECRET)
 MAIL_POLL_SECONDS=60     # how often mailboxes are read
 MAIL_POLLING=false       # don't read mailboxes on this instance
 ```

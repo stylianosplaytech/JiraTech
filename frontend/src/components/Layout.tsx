@@ -9,7 +9,7 @@ import QuickSearch from './QuickSearch';
 import NotificationBell from './NotificationBell';
 import Avatar from './Avatar';
 import { Dropdown, Modal, useToast } from './ui';
-import { ChevronDownIcon, LogoutIcon, MenuIcon, MessageIcon, PlusIcon, XIcon } from './Icons';
+import { ChevronDownIcon, LogoutIcon, MailIcon, MenuIcon, MessageIcon, PlusIcon, XIcon } from './Icons';
 import CreateIssueForm from './CreateIssueForm';
 
 const NAV = [
@@ -207,6 +207,12 @@ export default function Layout({ children, user, loading }: { children: React.Re
                       </div>
                     </div>
                     <EmailPreference />
+                    {user.role === 'ADMIN' && (
+                      <div className="border-t border-jira-border mt-1 pt-1">
+                        <div className="menu-heading">Administration</div>
+                        <Link to="/settings/email" className="menu-item"><MailIcon size={14} /> Email settings</Link>
+                      </div>
+                    )}
                     <div className="border-t border-jira-border mt-1 pt-1">
                       <Link to="/portal" className="menu-item">Help center</Link>
                       <button type="button" className="menu-item" onClick={logout}><LogoutIcon size={14} /> Log out</button>

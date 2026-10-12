@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 
@@ -16,6 +17,11 @@ export class AuthService {
     if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    return this.session(user);
+  }
+
+  /** A logged-in session for this user, as returned by login. */
+  session(user: { id: string; email: string; name: string; role: UserRole }) {
     const payload = { sub: user.id, email: user.email, role: user.role };
     return {
       accessToken: this.jwt.sign(payload),

@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type User } from '../api';
 import { humanize } from '../utils';
 import Avatar from '../components/Avatar';
 import { SelectPicker } from '../components/Pickers';
 import OrganizationsPanel from '../components/OrganizationsPanel';
-import { EditIcon, PlusIcon, SearchIcon } from '../components/Icons';
+import { EditIcon, MailIcon, PlusIcon, SearchIcon } from '../components/Icons';
 import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
 
 const ROLES = [
@@ -15,7 +15,7 @@ const ROLES = [
   'SCRUM_MASTER', 'TEAM_LEAD', 'CUSTOMER',
 ];
 
-const EMPTY_FORM = { email: '', name: '', password: '', role: 'DEVELOPER' };
+const EMPTY_FORM = { email: '', name: '', password: '', role: 'DEVELOPER', sendInvite: true };
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
@@ -34,26 +34,44 @@ export default function UsersPage() {
   });
 
   const save = useMutation({
-    mutationFn: () => (dialog?.mode === 'edit'
-      ? api.updateUser(dialog.user.id, {
-        email: form.email, name: form.name, role: form.role, ...(form.password ? { password: form.password } : {}),
-      })
-      : api.createUser(form)),
+    mutationFn: async () => {
+      if (dialog?.mode === 'edit') {
+        const u = await api.updateUser(dialog.user.id, {
+          email: form.email, name: form.name, role: form.role, ...(form.password ? { password: form.password } : {}),
+        });
+        return { ...u, invitation: null };
+      }
+      return api.createUser({
+        email: form.email, name: form.name, role: form.role, sendInvite: form.sendInvite, ...(form.sendInvite ? {} : { password: form.password }),
+      });
+    },
     onSuccess: (u) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast(dialog?.mode === 'edit' ? `${u.name} updated` : `${u.name} added`);
+      if (dialog?.mode === 'edit') toast(`${u.name} updated`);
+      else if (!u.invitation) toast(`${u.name} added`);
+      else if (u.invitation.sent) toast(`${u.name} added. A welcome email to choose their password is on its way to ${u.email}.`);
+      else toast(`${u.name} added, but the welcome email couldn't be sent. Check Email settings, then use Resend.`, 'error');
       setDialog(null);
     },
+  });
+  const invite = useMutation({
+    mutationFn: (u: User) => api.inviteUser(u.id),
+    onSuccess: (r, u) => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      if (r.sent) toast(`Email sent to ${u.email} with a link to choose a password`);
+      else toast("The email couldn't be sent. Check Email settings.", 'error');
+    },
+    onError: (e) => toast(errorMessage(e), 'error'),
   });
 
   const open = (d: NonNullable<typeof dialog>) => {
     save.reset();
-    setForm(d.mode === 'edit' ? { email: d.user.email, name: d.user.name, password: '', role: d.user.role } : EMPTY_FORM);
+    setForm(d.mode === 'edit' ? { email: d.user.email, name: d.user.name, password: '', role: d.user.role, sendInvite: false } : EMPTY_FORM);
     setDialog(d);
   };
 
   const editing = dialog?.mode === 'edit';
-  const valid = form.name.trim() && form.email.trim() && (editing || form.password.length >= 6);
+  const valid = form.name.trim() && form.email.trim() && (editing || form.sendInvite || form.password.length >= 6);
 
   return (
     <div>
@@ -91,16 +109,27 @@ export default function UsersPage() {
           <div className="overflow-x-auto">
             <table className="data-table">
               <thead>
-                <tr><th>Name</th><th>Email</th><th>Role</th>{isAdmin && <th className="w-24" />}</tr>
+                <tr><th>Name</th><th>Email</th><th>Role</th>{isAdmin && <th className="w-48" />}</tr>
               </thead>
               <tbody>
                 {users?.map((user) => (
                   <tr key={user.id}>
-                    <td><span className="flex items-center gap-3"><Avatar name={user.name} size="md" /><span className="font-medium">{user.name}</span></span></td>
+                    <td>
+                      <span className="flex items-center gap-3">
+                        <Avatar name={user.name} size="md" />
+                        <span className="font-medium">{user.name}</span>
+                        {user.invitePending && <span className="lozenge bg-[#FFFAE6] text-[#7A5C00]" title="Added without a password; they haven't chosen one from the welcome email yet">Invited</span>}
+                      </span>
+                    </td>
                     <td className="text-jira-subtle">{user.email}</td>
                     <td><span className={`lozenge ${user.role === 'CUSTOMER' ? 'bg-[#EAE6FF] text-[#403294]' : 'bg-jira-gray-hover text-[#42526E]'}`}>{humanize(user.role)}</span></td>
                     {isAdmin && (
-                      <td className="text-right">
+                      <td className="text-right whitespace-nowrap">
+                        {user.invitePending && (
+                          <button type="button" onClick={() => invite.mutate(user)} disabled={invite.isPending} className="btn btn-subtle btn-sm" title="Send the welcome email again with a new link">
+                            <MailIcon size={13} /> Resend
+                          </button>
+                        )}
                         <button type="button" onClick={() => open({ mode: 'edit', user })} className="btn btn-subtle btn-sm"><EditIcon size={13} /> Edit</button>
                       </td>
                     )}
@@ -136,11 +165,30 @@ export default function UsersPage() {
               <span className="field-label">Email (used to log in) <span className="text-[#DE350B]">*</span></span>
               <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" placeholder="name@company.com" />
             </label>
-            <label className="block">
-              <span className="field-label">{editing ? 'New password' : <>Password <span className="text-[#DE350B]">*</span></>}</span>
-              <input type="password" autoComplete="new-password" required={!editing} minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input" />
-              <span className="field-help">{editing ? 'Leave blank to keep the current password.' : 'At least 6 characters.'}</span>
-            </label>
+            {!editing && (
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="checkbox" className="mt-1" checked={form.sendInvite} onChange={(e) => setForm({ ...form, sendInvite: e.target.checked })} />
+                <span>
+                  Send a welcome email
+                  <span className="field-help mt-0">
+                    They get a link to choose their own password (valid for 7 days), sent with the <Link to="/settings/email" className="link">Email settings</Link>.
+                    Untick to set a password for them.
+                  </span>
+                </span>
+              </label>
+            )}
+            {(editing || !form.sendInvite) && (
+              <label className="block">
+                <span className="field-label">{editing ? 'New password' : <>Password <span className="text-[#DE350B]">*</span></>}</span>
+                <input type="password" autoComplete="new-password" required={!editing} minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input" />
+                <span className="field-help">{editing ? 'Leave blank to keep the current password.' : 'At least 6 characters.'}</span>
+              </label>
+            )}
+            {dialog.mode === 'edit' && (
+              <button type="button" className="btn btn-link btn-sm px-0" disabled={invite.isPending} onClick={() => invite.mutate(dialog.user)}>
+                <MailIcon size={13} /> Email them a link to choose a new password
+              </button>
+            )}
             <div>
               <span className="field-label">Role</span>
               <SelectPicker variant="field" value={form.role} onChange={(role) => role && setForm({ ...form, role })} options={ROLES.map((r) => ({ id: r, label: humanize(r), hint: r === 'CUSTOMER' ? 'Help center only' : undefined }))} />

@@ -126,6 +126,8 @@ model User {
   role         UserRole @default(DEVELOPER)
   /// Send an email for each notification (in-app notifications are always on)
   emailNotifications Boolean @default(true)
+  /// Added without a password and invited by email to choose one; false once they have
+  invitePending Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -146,6 +148,40 @@ model User {
   customerOf       ProjectCustomer[]
   organizations    OrganizationMember[]
   portalAccess     PortalCustomer[]
+  passwordTokens   PasswordToken[]
+}
+
+/** A one-time link for choosing a password (the welcome email); deleted once used. Only a hash of the token is stored. */
+model PasswordToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/**
+ * Outgoing email for the whole application (notifications of every project, welcome emails). A single row.
+ * When it has no SMTP server, the SMTP_* environment variables are used, and without those emails go to backend/mail-outbox.
+ */
+model MailSettings {
+  id           String   @id @default("default")
+  smtpHost     String?
+  smtpPort     Int      @default(587)
+  /// TLS from the start (port 465); otherwise STARTTLS when the server offers it
+  smtpSecure   Boolean  @default(false)
+  smtpUser     String?
+  /// Encrypted with MAIL_SECRET (or JWT_SECRET); never sent to the browser
+  smtpPassword String?
+  fromName     String?
+  fromAddress  String?
+  /// The address people open JiraTech at, used for links in emails (otherwise APP_URL)
+  appUrl       String?
+  updatedAt    DateTime @updatedAt
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────
