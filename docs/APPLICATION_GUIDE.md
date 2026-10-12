@@ -321,7 +321,7 @@ Plan-progress dashboard for the current project.
 
 ## 14. Reports
 
-Four management reports for the current project over a chosen period (From / To dates, or *Last 3 / 6 / 12 months*). **Download PDF** produces an A4 PDF with all four reports, each starting on a new page.
+Four management reports for the current project over a chosen period (From / To dates, or *Last 3 / 6 / 12 months*), plus an **SLA performance** report for service desk projects. **Download PDF** produces an A4 PDF with all of them, each starting on a new page.
 
 **Status dashboard** — Monthly Project Status Report: project, report date, overall status, % complete; donuts for issue status, type and priority; pending items by type; closed by last assignee; closed per month (stories, bugs, tasks) over 12 months.
 
@@ -338,6 +338,13 @@ Four management reports for the current project over a chosen period (From / To 
 **Open issues** — every open issue in the period with key, summary, type, status, priority, assignee and age.
 
 ![Reports — open issues](screenshots/25-reports-open.png)
+
+**SLA performance** (service desk projects only) — for requests raised in the period: requests, % meeting the first-response and
+resolution goals, and open requests already breached; a donut per clock (met, missed, breached while open, at risk, on track, paused) with
+the average time once each clock stopped; compliance by portal and by priority (goal vs. average time, % met — green from 90%, amber from
+70%, red below); the resolution SLA met vs. missed per month over 12 months (by resolution date); and a table of open requests that are
+breached or have under a quarter of their goal left, most urgent first. "% met" counts met against missed or already breached; clocks
+still running don't count yet.
 
 ---
 

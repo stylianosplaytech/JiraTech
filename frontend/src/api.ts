@@ -614,7 +614,43 @@ export interface ReportIssueRow {
   ageDays: number;
 }
 
+export interface SlaOutcomes {
+  met: number;
+  missed: number;
+  /** Still open and past the goal */
+  breached: number;
+  atRisk: number;
+  onTrack: number;
+  paused: number;
+  noGoal: number;
+  /** Met as a share of met + missed + breached; null when none decided yet */
+  metPct: number | null;
+  /** Average time once the clock stopped */
+  avgMinutes: number | null;
+}
+
+/** Service desks only: how SLA goals were kept. */
+export interface SlaReport {
+  goalsSet: boolean;
+  requests: number;
+  firstResponse: SlaOutcomes;
+  resolution: SlaOutcomes;
+  byPriority: {
+    priority: string; requests: number;
+    firstResponseGoal: number | null; firstResponseAvg: number | null; firstResponseMetPct: number | null;
+    resolutionGoal: number | null; resolutionAvg: number | null; resolutionMetPct: number | null;
+  }[];
+  byPortal: { name: string; requests: number; firstResponseMetPct: number | null; resolutionMetPct: number | null }[];
+  perMonth: { month: string; met: number; missed: number }[];
+  attention: {
+    key: string; summary: string; priority: string; statusName: string; portal: string | null; organization: string | null;
+    assignee: string | null; createdAt: string; firstResponse: SlaClock | null; resolution: SlaClock | null;
+  }[];
+}
+
 export interface ReportData {
+  /** Service desks only */
+  sla: SlaReport | null;
   project: { key: string; name: string };
   period: { from: string; to: string };
   generatedAt: string;

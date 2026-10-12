@@ -126,7 +126,8 @@ see each request's portal and company. Customers only ever see requests they rai
 own organization — never another company's. Organizations group customers by company (People → *Organizations*, managed by global admins);
 link them to portals on the project page. A customer with a single portal lands straight in it; others choose from a list. When raising
 a request, customers can **share it with their organization** (the default) or keep it private; the requester and agents can change this
-later. JQL: `portal = acme`, `organization = "Acme Retail"`. Service desks from before portals existed were given one portal automatically,
+later. JQL: `portal = acme`, `organization = "Acme Retail"`. **Reports → SLA performance** (service desks only, also in the PDF) shows SLA compliance by clock,
+portal, priority and month, and the open requests that are breached or at risk. Service desks from before portals existed were given one portal automatically,
 linked by their project key, so old `/portal/KEY` links keep working.
 
 ### Workflows
