@@ -377,6 +377,15 @@ Everyone who can sign in and be an assignee, reporter or watcher. Search by name
 
 Global roles: Admin, Developer, Merge Master, Product Manager, Product Owner, Program Manager, Project Manager, QA Specialist, Release Manager, Scrum Master, Team Lead. **Admin** administers every project and manages people; **Project / Program / Product Manager** can also create projects; the other roles describe the person's job. What someone can do inside a project is set by their **project role** (see section 17).
 
+The page has three tabs: **People**, **Organizations** (customer companies, section 21) and **Recipients**.
+
+**Recipient groups (Recipients tab).** A recipient group gathers people, whole organizations and other email addresses (people without an
+account, e.g. a supplier) under one name, such as *All retail customers*. Global admins create, edit and delete them; everyone on staff can
+see them. In the email window of a service desk request (section 21), typing in **To, Cc or Bcc** searches people, organizations and
+recipient groups together. A group or organization becomes one chip, e.g. *All retail customers (12)*, and the email goes to everyone in it
+at the moment it is sent (an organization's current members). On the request the email reads *To: All retail customers (12)*; *Details*
+lists everyone. People reached through a group or organization don't become participants of the request; people added one by one still do.
+
 ---
 
 ## 16. Notifications and email
@@ -659,7 +668,7 @@ sender wrote it (earlier quoted messages folded behind **•••**) and its at
 - **Reply** answers the sender (or their Reply-To); replying to an email you sent goes to the same people again. **Reply all** (shown
   when the email went to others too) adds everyone else in To and Cc, except the service desk itself. **Forward** sends it on, with its
   attachments ticked. **Send email** (next to *Add internal note*, or on the *Emails* tab) starts a new one, to the customer by default.
-- The email window has To, Cc and Bcc (type an address and press Enter, or pick someone on the request), the subject (always carrying
+- The email window has To, Cc and Bcc (type an address and press Enter, or search people, organizations and recipient groups), the subject (always carrying
   the key, e.g. `Re: [HELP-12] …`), the text, *Include the original message*, and files from the request or uploaded. **Show on the
   customer's portal** (ticked except for forwards) decides whether it also appears there as a reply or stays an internal note; only
   public emails make their recipients participants. An unsent draft is kept in the browser until it is sent or discarded.

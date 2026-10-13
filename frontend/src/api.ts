@@ -329,6 +329,12 @@ export const api = {
 
   // ─── Customer organizations (global admins change them) ────────────────────
   getOrganizations: () => request<Organization[]>('/organizations'),
+  getRecipientGroups: () => request<RecipientGroup[]>('/recipient-groups'),
+  createRecipientGroup: (data: RecipientGroupPayload) =>
+    request<RecipientGroup>('/recipient-groups', { method: 'POST', body: JSON.stringify(data) }),
+  updateRecipientGroup: (id: string, data: RecipientGroupPayload) =>
+    request<RecipientGroup>(`/recipient-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteRecipientGroup: (id: string) => request<{ deleted: boolean }>(`/recipient-groups/${id}`, { method: 'DELETE' }),
   createOrganization: (name: string) =>
     request<Organization>('/organizations', { method: 'POST', body: JSON.stringify({ name }) }),
   renameOrganization: (id: string, name: string) =>
@@ -564,6 +570,34 @@ export interface Comment {
 export interface EmailAddress {
   email: string;
   name?: string | null;
+  /** The recipient group or organization it was reached through */
+  via?: string | null;
+}
+
+/** A recipient group or organization picked as a whole in To, Cc or Bcc. */
+export interface RecipientRefPayload {
+  type: 'group' | 'organization';
+  id: string;
+}
+
+export interface RecipientGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  users: { id: string; name: string; email: string }[];
+  organizations: { id: string; name: string; memberCount: number }[];
+  addresses: EmailAddress[];
+  /** Everyone it reaches right now */
+  recipients: EmailAddress[];
+  updatedAt: string;
+}
+
+export interface RecipientGroupPayload {
+  name: string;
+  description?: string;
+  userIds: string[];
+  organizationIds: string[];
+  addresses: EmailAddress[];
 }
 
 /** An email received on a service desk request, or sent from it. */
@@ -604,6 +638,9 @@ export interface SendEmailPayload {
   to: EmailAddress[];
   cc?: EmailAddress[];
   bcc?: EmailAddress[];
+  toGroups?: RecipientRefPayload[];
+  ccGroups?: RecipientRefPayload[];
+  bccGroups?: RecipientRefPayload[];
   subject: string;
   html: string;
   includeQuote?: boolean;

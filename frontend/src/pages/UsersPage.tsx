@@ -6,6 +6,7 @@ import { humanize } from '../utils';
 import Avatar from '../components/Avatar';
 import { SelectPicker } from '../components/Pickers';
 import OrganizationsPanel from '../components/OrganizationsPanel';
+import RecipientGroupsPanel from '../components/RecipientGroupsPanel';
 import CustomerPortals from '../components/CustomerPortals';
 import { EditIcon, MailIcon, PlusIcon, SearchIcon } from '../components/Icons';
 import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
@@ -25,7 +26,7 @@ export default function UsersPage() {
   const [dialog, setDialog] = useState<{ mode: 'create' } | { mode: 'edit'; user: User } | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'organizations' ? 'organizations' : 'people';
+  const tab = params.get('tab') === 'organizations' ? 'organizations' : params.get('tab') === 'recipients' ? 'recipients' : 'people';
 
   const { data: currentUser } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -81,7 +82,7 @@ export default function UsersPage() {
         actions={isAdmin && tab === 'people' && <button type="button" onClick={() => open({ mode: 'create' })} className="btn btn-primary"><PlusIcon size={14} /> Add person</button>}
       >
         <div className="flex gap-1 mt-3 border-b border-jira-border" role="tablist">
-          {([['people', 'People'], ['organizations', 'Organizations']] as const).map(([value, label]) => (
+          {([['people', 'People'], ['organizations', 'Organizations'], ['recipients', 'Recipients']] as const).map(([value, label]) => (
             <button
               key={value}
               type="button"
@@ -105,7 +106,7 @@ export default function UsersPage() {
         )}
       </PageHeader>
 
-      {tab === 'organizations' ? <OrganizationsPanel isAdmin={isAdmin} /> : isLoading ? <Spinner /> : (
+      {tab === 'organizations' ? <OrganizationsPanel isAdmin={isAdmin} /> : tab === 'recipients' ? <RecipientGroupsPanel isAdmin={isAdmin} /> : isLoading ? <Spinner /> : (
         <>
           <div className="overflow-x-auto">
             <table className="data-table">

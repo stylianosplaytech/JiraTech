@@ -5,10 +5,18 @@ import Avatar from '../Avatar';
 import { AlertIcon, ForwardIcon, MailIcon, PaperclipIcon, ReplyAllIcon, ReplyIcon } from '../Icons';
 import { useToast } from '../ui';
 import EmailFrame, { hasQuotedText } from './EmailFrame';
-import { canReplyAll, formatAddress } from './recipients';
+import { canReplyAll, describeAddresses, formatAddress } from './recipients';
 
-const list = (l: EmailAddress[]) => l.map(formatAddress).join(', ');
-const short = (l: EmailAddress[]) => l.map((a) => a.name || a.email).join(', ');
+/** Everyone in full; those reached through a group or organization listed under its name. */
+function list(l: EmailAddress[]) {
+  const groups = new Map<string, EmailAddress[]>();
+  for (const a of l) if (a.via) groups.set(a.via, [...(groups.get(a.via) ?? []), a]);
+  return [
+    ...l.filter((a) => !a.via).map(formatAddress),
+    ...[...groups].map(([name, members]) => `${name} (${members.length}): ${members.map((a) => a.email).join(', ')}`),
+  ].join('; ');
+}
+const short = describeAddresses;
 
 /** An email on a request, shown the way a mail client would, with Reply / Reply all / Forward. */
 export default function EmailCard({

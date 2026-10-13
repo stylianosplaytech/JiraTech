@@ -9,6 +9,7 @@ import { contains } from '../common/text-match';
 import { sanitizeRich, toPlainText } from '../common/rich-text';
 import { IssuesService } from '../issues/issues.service';
 import { MailerService } from '../mail/mailer.service';
+import { RecipientGroupsService } from '../recipient-groups/recipient-groups.service';
 import { CATEGORY_NAMES } from '../workflow/workflow.service';
 import { SendEmailDto } from './dto';
 import {
@@ -55,6 +56,7 @@ export class IssueEmailService {
     private access: AccessService,
     private issues: IssuesService,
     private mailer: MailerService,
+    private recipientGroups: RecipientGroupsService,
   ) {}
 
   // ─── Reading ───────────────────────────────────────────────────────────────
@@ -80,10 +82,13 @@ export class IssueEmailService {
   async send(idOrKey: string, user: AuthUser, dto: SendEmailDto) {
     const issue = await this.issue(idOrKey);
     if (user.role === UserRole.CUSTOMER) throw new ForbiddenException('Only agents can send emails from a request');
-    const to = dedupe(dto.to);
-    const cc = dedupe(dto.cc ?? [], to);
-    const bcc = dedupe(dto.bcc ?? [], [...to, ...cc]);
-    if (!to.length) throw new BadRequestException('Add at least one recipient');
+    // Groups and organizations become their members now; someone also picked on their own keeps that (they come first).
+    const [toGroups, ccGroups, bccGroups] = await Promise.all([dto.toGroups, dto.ccGroups, dto.bccGroups]
+      .map((refs) => (refs?.length ? this.recipientGroups.expand(refs) : Promise.resolve([] as Address[]))));
+    const to = dedupe([...dto.to, ...toGroups]);
+    const cc = dedupe([...(dto.cc ?? []), ...ccGroups], to);
+    const bcc = dedupe([...(dto.bcc ?? []), ...bccGroups], [...to, ...cc]);
+    if (!to.length) throw new BadRequestException(dto.toGroups?.length ? 'Nobody is in the groups or organizations in To' : 'Add at least one recipient');
 
     const original = dto.replyToId
       ? await this.prisma.issueEmail.findFirst({ where: { id: dto.replyToId, issueId: issue.id } })
@@ -110,7 +115,7 @@ export class IssueEmailService {
     const channel = await this.prisma.emailChannel.findUnique({ where: { projectId: issue.projectId } });
     const recipients = [...to, ...cc, ...bcc].map((a) => a.email);
     const internal = !!dto.internal;
-    const summaryLine = `${forward ? 'Forwarded' : 'Emailed'} to ${to.map((a) => a.name || a.email).join(', ')}`;
+    const summaryLine = `${forward ? 'Forwarded' : 'Emailed'} to ${describe(to)}`;
     // The comment is what the portal and SLAs see; agents see the email in its place.
     const comment = await this.issues.addComment(issue.id, user, body || `<p>${escapeHtml(summaryLine)}</p>`, { internal, emailed: recipients });
 
@@ -142,8 +147,8 @@ export class IssueEmailService {
     });
 
     // Whoever it went to can follow the request and answer it, as when they write in themselves. A supplier an
-    // internal email was forwarded to stays out of it.
-    if (!internal) await this.addParticipants(issue.id, [...to, ...cc], { createCustomers: !!channel?.createCustomers });
+    // internal email was forwarded to stays out of it, and so does everyone reached through a group or organization.
+    if (!internal) await this.addParticipants(issue.id, [...to, ...cc].filter((a) => !a.via), { createCustomers: !!channel?.createCustomers });
     return this.deliver(email);
   }
 
@@ -367,9 +372,20 @@ function dedupe(list: Address[], except: Address[] = []): Address[] {
     const email = a.email.trim().toLowerCase();
     if (!email || seen.has(email)) continue;
     seen.add(email);
-    out.push({ email, name: a.name?.trim() || null });
+    out.push({ email, name: a.name?.trim() || null, ...(a.via ? { via: a.via } : {}) });
   }
   return out;
+}
+
+/** "Erin, All customers (12)": people by name, groups and organizations by theirs. */
+function describe(list: Address[]) {
+  const parts: string[] = [];
+  const groups = new Map<string, number>();
+  for (const a of list) {
+    if (a.via) groups.set(a.via, (groups.get(a.via) ?? 0) + 1);
+    else parts.push(a.name || a.email);
+  }
+  return [...parts, ...[...groups].map(([name, n]) => `${name} (${n})`)].join(', ');
 }
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? '';

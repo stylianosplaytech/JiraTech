@@ -1,5 +1,29 @@
 import type { EmailAddress, EmailMode, IssueEmail } from '../../api';
 
+/** A recipient group or organization picked as a whole; it is sent to everyone in it at the time. */
+export interface RecipientRef {
+  type: 'group' | 'organization';
+  id: string;
+  name: string;
+  /** Who it reaches now (shown on the chip) */
+  recipients: EmailAddress[];
+}
+
+export type Recipient = EmailAddress | RecipientRef;
+
+export const isRef = (r: Recipient): r is RecipientRef => 'type' in r;
+
+/** "Erin, All customers (12)": people by name, groups and organizations by theirs. */
+export function describeAddresses(list: EmailAddress[]) {
+  const parts: string[] = [];
+  const groups = new Map<string, number>();
+  for (const a of list) {
+    if (a.via) groups.set(a.via, (groups.get(a.via) ?? 0) + 1);
+    else parts.push(a.name || a.email);
+  }
+  return [...parts, ...[...groups].map(([name, n]) => `${name} (${n})`)].join(', ');
+}
+
 /** Each address once (ignoring case), leaving out JiraTech's own and any in `except`. */
 export function cleanAddresses(list: EmailAddress[], own: string[], except: EmailAddress[] = []): EmailAddress[] {
   const seen = new Set([...own, ...except.map((a) => a.email)].map((e) => e.toLowerCase()));
@@ -8,7 +32,7 @@ export function cleanAddresses(list: EmailAddress[], own: string[], except: Emai
     const email = a.email.trim().toLowerCase();
     if (!email || seen.has(email)) continue;
     seen.add(email);
-    out.push({ email, name: a.name ?? null });
+    out.push({ email, name: a.name ?? null, ...(a.via ? { via: a.via } : {}) });
   }
   return out;
 }

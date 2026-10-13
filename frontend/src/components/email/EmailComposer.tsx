@@ -7,7 +7,9 @@ import { SelectPicker } from '../Pickers';
 import { AlertIcon, PaperclipIcon } from '../Icons';
 import { Modal, errorMessage, useDialogs, useToast } from '../ui';
 import AddressInput from './AddressInput';
-import { cleanAddresses, defaultSubject, replyRecipients, subjectWithKey } from './recipients';
+import {
+  cleanAddresses, defaultSubject, describeAddresses, isRef, replyRecipients, subjectWithKey, type Recipient, type RecipientRef,
+} from './recipients';
 
 export interface ComposeRequest {
   mode: EmailMode;
@@ -16,9 +18,9 @@ export interface ComposeRequest {
 }
 
 interface Draft {
-  to: EmailAddress[];
-  cc: EmailAddress[];
-  bcc: EmailAddress[];
+  to: Recipient[];
+  cc: Recipient[];
+  bcc: Recipient[];
   subject: string;
   html: string;
 }
@@ -67,15 +69,15 @@ export default function EmailComposer({
     const recipients = original && (mode === 'reply' || mode === 'replyAll')
       ? replyRecipients(original, mode, own)
       : { to: mode === 'new' && issue.reporter?.email ? cleanAddresses([{ email: issue.reporter.email, name: issue.reporter.name }], own) : [], cc: [] };
-    return { ...recipients, bcc: [], subject: defaultSubject(mode, issue, original), html: '' };
+    return { ...recipients, bcc: [] as Recipient[], subject: defaultSubject(mode, issue, original), html: '' };
     // Only when the window opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [restored] = useState(() => !!readDraft(key));
 
-  const [to, setTo] = useState(initial.to);
-  const [cc, setCc] = useState(initial.cc);
-  const [bcc, setBcc] = useState(initial.bcc);
+  const [to, setTo] = useState<Recipient[]>(initial.to);
+  const [cc, setCc] = useState<Recipient[]>(initial.cc);
+  const [bcc, setBcc] = useState<Recipient[]>(initial.bcc);
   const [showCc, setShowCc] = useState(initial.cc.length > 0);
   const [showBcc, setShowBcc] = useState(initial.bcc.length > 0);
   const [subject, setSubject] = useState(initial.subject);
@@ -100,14 +102,23 @@ export default function EmailComposer({
     enabled: !!issue.project?.key,
   });
 
-  // Everyone on the request or in its emails, to suggest as recipients.
+  const { data: users = [] } = useQuery({ queryKey: ['users', 'all', ''], queryFn: () => api.getUsers(undefined, 'all') });
+  const { data: organizations = [] } = useQuery({ queryKey: ['organizations'], queryFn: api.getOrganizations });
+  const { data: groups = [] } = useQuery({ queryKey: ['recipient-groups'], queryFn: api.getRecipientGroups });
+  const refs = useMemo<RecipientRef[]>(() => [
+    ...groups.map((g) => ({ type: 'group' as const, id: g.id, name: g.name, recipients: g.recipients })),
+    ...organizations.map((o) => ({ type: 'organization' as const, id: o.id, name: o.name, recipients: o.members.map((m) => ({ email: m.user.email, name: m.user.name })) })),
+  ], [groups, organizations]);
+
+  // Everyone on the request or in its emails first, then everyone else with an account, to suggest as recipients.
   const suggestions = useMemo(() => {
     const people: EmailAddress[] = [];
     if (issue.reporter?.email) people.push({ email: issue.reporter.email, name: issue.reporter.name });
     for (const w of issue.watchers ?? []) people.push({ email: w.user.email, name: w.user.name });
     for (const e of data.emails) people.push({ email: e.fromEmail, name: e.direction === 'INBOUND' ? e.fromName : null }, ...e.to, ...e.cc);
-    return cleanAddresses(people, own);
-  }, [issue.reporter, issue.watchers, data.emails, own]);
+    for (const u of users) people.push({ email: u.email, name: u.name });
+    return cleanAddresses(people.map(({ email, name }) => ({ email, name })), own);
+  }, [issue.reporter, issue.watchers, data.emails, users, own]);
 
   const files = useMemo(() => {
     const all = [...(issue.attachments ?? []), ...uploaded];
@@ -122,7 +133,8 @@ export default function EmailComposer({
       return;
     }
     try {
-      const rendered = await api.renderEmailTemplate(issue.id, id, to[0]?.email);
+      const firstPerson = to.find((r) => !isRef(r)) as EmailAddress | undefined;
+      const rendered = await api.renderEmailTemplate(issue.id, id, firstPerson?.email);
       if (editorRef.current) editorRef.current.commands.setContent(rendered.html, true);
       else setHtml(rendered.html);
       if (rendered.subject && mode === 'new') setSubject(subjectWithKey(rendered.subject, issue.key));
@@ -141,13 +153,18 @@ export default function EmailComposer({
     onError: (e) => toast(errorMessage(e), 'error'),
   });
 
+  const people = (list: Recipient[]) => list.filter((r): r is EmailAddress => !isRef(r));
+  const picked = (list: Recipient[]) => list.filter(isRef).map(({ type, id }) => ({ type, id }));
   const send = useMutation({
     mutationFn: () => api.sendIssueEmail(issue.id, {
       mode,
       replyToId: original?.id,
-      to,
-      cc: showCc ? cc : [],
-      bcc: showBcc ? bcc : [],
+      to: people(to),
+      cc: showCc ? people(cc) : [],
+      bcc: showBcc ? people(bcc) : [],
+      toGroups: picked(to),
+      ccGroups: showCc ? picked(cc) : [],
+      bccGroups: showBcc ? picked(bcc) : [],
       subject,
       html,
       includeQuote: !!original && (mode === 'forward' || includeQuote),
@@ -160,7 +177,7 @@ export default function EmailComposer({
       queryClient.invalidateQueries({ queryKey: ['issue-emails', issue.id] });
       queryClient.invalidateQueries({ queryKey: ['issue'] });
       if (email.status === 'FAILED') toast(`Saved on the request but not sent: ${email.error ?? 'the mail server refused it'}`, 'error');
-      else toast(`Email sent to ${email.to.map((a) => a.name || a.email).join(', ')}`);
+      else toast(`Email sent to ${describeAddresses(email.to)}`);
       onClose();
     },
     onError: (e) => toast(errorMessage(e), 'error'),
@@ -178,7 +195,8 @@ export default function EmailComposer({
     }
   };
 
-  const recipientName = to[0] ? (to[0].name || to[0].email) : null;
+  const first = to[0] && !isRef(to[0]) ? to[0] : null;
+  const recipientName = first ? (first.name || first.email) : null;
   const title = mode === 'reply' && recipientName ? `Reply to ${recipientName}` : TITLES[mode];
 
   return (
@@ -222,7 +240,7 @@ export default function EmailComposer({
 
           <label className="field-label pt-2.5 mb-0" htmlFor="email-to">To</label>
           <div>
-            <AddressInput id="email-to" value={to} onChange={setTo} suggestions={suggestions} autoFocus={mode === 'forward' || to.length === 0} />
+            <AddressInput id="email-to" value={to} onChange={setTo} suggestions={suggestions} refs={refs} autoFocus={mode === 'forward' || to.length === 0} />
             {(!showCc || !showBcc) && (
               <div className="flex gap-2 mt-1 text-xs">
                 {!showCc && <button type="button" className="text-jira-blue hover:underline" onClick={() => setShowCc(true)}>Add Cc</button>}
@@ -234,13 +252,13 @@ export default function EmailComposer({
           {showCc && (
             <>
               <label className="field-label pt-2.5 mb-0" htmlFor="email-cc">Cc</label>
-              <AddressInput id="email-cc" value={cc} onChange={setCc} suggestions={suggestions} />
+              <AddressInput id="email-cc" value={cc} onChange={setCc} suggestions={suggestions} refs={refs} />
             </>
           )}
           {showBcc && (
             <>
               <label className="field-label pt-2.5 mb-0" htmlFor="email-bcc">Bcc</label>
-              <AddressInput id="email-bcc" value={bcc} onChange={setBcc} suggestions={suggestions} />
+              <AddressInput id="email-bcc" value={bcc} onChange={setBcc} suggestions={suggestions} refs={refs} />
             </>
           )}
 

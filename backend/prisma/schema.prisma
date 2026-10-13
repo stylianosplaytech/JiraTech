@@ -158,6 +158,7 @@ model User {
   passwordTokens   PasswordToken[]
   emailsSent       IssueEmail[]
   emailTemplates   EmailTemplate[]
+  recipientGroups  RecipientGroupUser[]
 }
 
 /** A one-time link for choosing a password (the welcome email); deleted once used. Only a hash of the token is stored. */
@@ -797,6 +798,7 @@ model Organization {
   projects ProjectOrganization[]
   portals  PortalOrganization[]
   issues   Issue[]
+  recipientGroups RecipientGroupOrganization[]
 }
 
 model OrganizationMember {
@@ -1054,4 +1056,41 @@ model EmailTemplate {
   createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([projectId])
+}
+
+/**
+ * A named list of recipients agents can put in an email's To, Cc or Bcc in one go: people, whole organizations (their
+ * members when the email is sent) and addresses of people without an account. Managed by global admins.
+ */
+model RecipientGroup {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  /// JSON array of {email, name}: people without an account, e.g. a supplier
+  addresses   String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users         RecipientGroupUser[]
+  organizations RecipientGroupOrganization[]
+}
+
+model RecipientGroupUser {
+  groupId String
+  userId  String
+
+  group RecipientGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+}
+
+model RecipientGroupOrganization {
+  groupId        String
+  organizationId String
+
+  group        RecipientGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, organizationId])
 }

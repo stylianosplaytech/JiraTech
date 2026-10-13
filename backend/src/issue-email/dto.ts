@@ -11,6 +11,21 @@ export class AddressDto {
   @IsString()
   @MaxLength(120)
   name?: string;
+
+  /** Reached through this recipient group or organization (replying to all of an earlier email keeps it) */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  via?: string;
+}
+
+/** A recipient group or organization picked as a whole in an email's To, Cc or Bcc. */
+export class RecipientRefDto {
+  @IsIn(['group', 'organization'])
+  type!: 'group' | 'organization';
+
+  @IsString()
+  id!: string;
 }
 
 export const EMAIL_MODES = ['reply', 'replyAll', 'forward', 'new'] as const;
@@ -26,24 +41,46 @@ export class SendEmailDto {
   replyToId?: string;
 
   @IsArray()
-  @ArrayMaxSize(50)
+  @ArrayMaxSize(500)
   @ValidateNested({ each: true })
   @Type(() => AddressDto)
   to!: AddressDto[];
 
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(50)
+  @ArrayMaxSize(500)
   @ValidateNested({ each: true })
   @Type(() => AddressDto)
   cc?: AddressDto[];
 
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(50)
+  @ArrayMaxSize(500)
   @ValidateNested({ each: true })
   @Type(() => AddressDto)
   bcc?: AddressDto[];
+
+  /** Recipient groups and organizations picked as a whole: everyone in them, as they are when it is sent */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => RecipientRefDto)
+  toGroups?: RecipientRefDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => RecipientRefDto)
+  ccGroups?: RecipientRefDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => RecipientRefDto)
+  bccGroups?: RecipientRefDto[];
 
   @IsString()
   @MaxLength(255)

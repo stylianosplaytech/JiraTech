@@ -3,6 +3,8 @@ import sanitizeHtml from 'sanitize-html';
 export interface Address {
   email: string;
   name?: string | null;
+  /** The recipient group or organization it was reached through, when picked as a whole */
+  via?: string | null;
 }
 
 /** HTML received by email can be as large as a newsletter; past this only the text version is kept. */
