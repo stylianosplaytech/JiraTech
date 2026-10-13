@@ -166,6 +166,14 @@ export const api = {
   getNotificationPreferences: () => request<{ emailNotifications: boolean }>('/notifications/preferences'),
   setNotificationPreferences: (prefs: { emailNotifications: boolean }) =>
     request<{ emailNotifications: boolean }>('/notifications/preferences', { method: 'PATCH', body: JSON.stringify(prefs) }),
+  getNotificationScheme: () => request<GlobalNotificationScheme>('/notification-scheme'),
+  saveNotificationScheme: (scheme: NotificationScheme | null) => (scheme
+    ? request<GlobalNotificationScheme>('/notification-scheme', { method: 'PUT', body: JSON.stringify({ scheme }) })
+    : request<GlobalNotificationScheme>('/notification-scheme', { method: 'DELETE' })),
+  getProjectNotificationScheme: (key: string) => request<ProjectNotificationScheme>(`/projects/${key}/notification-scheme`),
+  saveProjectNotificationScheme: (key: string, scheme: NotificationScheme | null) => (scheme
+    ? request<ProjectNotificationScheme>(`/projects/${key}/notification-scheme`, { method: 'PUT', body: JSON.stringify({ scheme }) })
+    : request<ProjectNotificationScheme>(`/projects/${key}/notification-scheme`, { method: 'DELETE' })),
 
   getProjects: () => request<Project[]>('/projects'),
   getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
@@ -501,7 +509,28 @@ export interface WorkLog {
 }
 
 export type NotificationType =
-  | 'ASSIGNED' | 'MENTIONED' | 'COMMENTED' | 'STATUS_CHANGED' | 'UPDATED' | 'WATCHING' | 'DELETED';
+  | 'CREATED' | 'ASSIGNED' | 'MENTIONED' | 'COMMENTED' | 'STATUS_CHANGED' | 'UPDATED' | 'WATCHING' | 'DELETED';
+
+export type SchemeEvent =
+  | 'ISSUE_CREATED' | 'ISSUE_UPDATED' | 'ISSUE_ASSIGNED' | 'STATUS_CHANGED' | 'COMMENTED' | 'MENTIONED' | 'WATCHER_ADDED' | 'ISSUE_DELETED';
+export type SchemeRecipient = 'CONCERNED' | 'REPORTER' | 'ASSIGNEE' | 'WATCHERS' | 'PROJECT_ADMINS';
+/** Who is emailed about each issue event */
+export type NotificationScheme = Record<SchemeEvent, SchemeRecipient[]>;
+
+export interface GlobalNotificationScheme {
+  scheme: NotificationScheme;
+  /** Nothing saved: the built-in defaults apply */
+  isDefault: boolean;
+  defaults: NotificationScheme;
+}
+
+export interface ProjectNotificationScheme {
+  /** The scheme in force for the project */
+  scheme: NotificationScheme;
+  /** The project has no scheme of its own and uses the global one */
+  inherited: boolean;
+  global: NotificationScheme;
+}
 
 export interface AppNotification {
   id: string;

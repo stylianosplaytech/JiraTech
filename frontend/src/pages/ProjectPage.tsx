@@ -8,6 +8,7 @@ import UserPicker from '../components/UserPicker';
 import ProjectPeople, { ACCESS_INFO } from '../components/ProjectPeople';
 import WorkflowEditor from '../components/WorkflowEditor';
 import ServiceDeskSettings from '../components/ServiceDeskSettings';
+import ProjectNotifications from '../components/ProjectNotifications';
 import Avatar from '../components/Avatar';
 import { StatusBadge, STATUS_LABELS, typeLabel } from '../components/Badges';
 import { SelectPicker } from '../components/Pickers';
@@ -220,6 +221,8 @@ export default function ProjectPage() {
           <WorkflowEditor projectKey={project.key} canAdmin={canAdmin} serviceDesk={project.type === 'SERVICE_DESK'} />
 
           <ProjectPeople projectKey={project.key} canAdmin={canAdmin} />
+
+          <ProjectNotifications projectKey={project.key} canAdmin={canAdmin} />
         </div>
 
         <aside className="space-y-4">

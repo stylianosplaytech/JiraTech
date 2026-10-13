@@ -13,6 +13,7 @@ const POLL_MS = 30_000;
 function sentence(n: AppNotification) {
   const who = n.actor?.name ?? 'Someone';
   switch (n.type) {
+    case 'CREATED': return <><b>{who}</b> created an issue</>;
     case 'ASSIGNED': return <><b>{who}</b> assigned an issue to you</>;
     case 'MENTIONED': return <><b>{who}</b> mentioned you</>;
     case 'COMMENTED': return <><b>{who}</b> commented</>;

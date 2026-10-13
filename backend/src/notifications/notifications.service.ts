@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../mail/mailer.service';
 import { AccessService } from '../access/access.service';
 import { extractMentions, mentionKeys, Mentions, toPlainText } from '../common/rich-text';
+import { NotificationSchemeService, SchemeEvent } from './notification-scheme.service';
 
 const STATUS_NAMES: Record<string, string> = {
   BACKLOG: 'Backlog', TO_DO: 'To Do', DOING: 'In Progress', CLOSED: 'Closed',
@@ -17,6 +18,7 @@ const PRECEDENCE: NotificationType[] = [
   NotificationType.STATUS_CHANGED,
   NotificationType.COMMENTED,
   NotificationType.UPDATED,
+  NotificationType.CREATED,
   NotificationType.DELETED,
 ];
 
@@ -40,6 +42,24 @@ interface IssueRef {
 
 type Recipients = Map<string, { type: NotificationType; detail?: string | null }>;
 
+interface IssueWithPeople extends IssueRef {
+  reporterId: string | null;
+  assigneeId: string | null;
+  watchers: { userId: string }[];
+}
+
+/** An event an action fired: the project's notification scheme says who is emailed about it. */
+interface Fired {
+  event: SchemeEvent;
+  /** The notification given to people only the scheme brings in (e.g. project admins) */
+  type: NotificationType;
+  detail?: string | null;
+  /** The people the event is about (mentioned, or added as a watcher) */
+  concerned?: string[];
+  /** On ISSUE_ASSIGNED the previous assignee counts as an assignee too */
+  previousAssigneeId?: string | null;
+}
+
 function excerpt(text: string, max = 160) {
   const flat = toPlainText(text).replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
@@ -59,7 +79,12 @@ function newMentions(before: string | null | undefined, after: string | null | u
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private prisma: PrismaService, private mailer: MailerService, private access: AccessService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mailer: MailerService,
+    private access: AccessService,
+    private schemes: NotificationSchemeService,
+  ) {}
 
   // ─── Events (called by IssuesService after its changes are committed) ──────
 
@@ -67,12 +92,14 @@ export class NotificationsService {
     await this.safely(async () => {
       const issue = await this.issueWithPeople(issueId);
       const r: Recipients = new Map();
+      const fired: Fired[] = [{ event: 'ISSUE_CREATED', type: NotificationType.CREATED }];
       if (issue.assigneeId) {
         await this.watch(issue.id, issue.assigneeId);
         this.add(r, issue.assigneeId, NotificationType.ASSIGNED);
+        fired.push({ event: 'ISSUE_ASSIGNED', type: NotificationType.CREATED });
       }
-      await this.addMentions(r, issue.id, extractMentions(issue.description), excerpt(issue.description ?? ''));
-      await this.dispatch(issue, actorId, r);
+      fired.push(...await this.addMentions(r, issue.id, extractMentions(issue.description), excerpt(issue.description ?? '')));
+      await this.dispatch(issue, actorId, r, fired);
     });
   }
 
@@ -90,6 +117,16 @@ export class NotificationsService {
       const issue = await this.issueWithPeople(issueId);
       const r: Recipients = new Map();
       const fieldList = change.fields.map((f) => FIELD_NAMES[f] ?? f).join(', ');
+      const fired: Fired[] = [];
+      const others = change.fields.filter((f) => f !== 'assignee');
+      if (others.length) {
+        fired.push({ event: 'ISSUE_UPDATED', type: NotificationType.UPDATED, detail: others.map((f) => FIELD_NAMES[f] ?? f).join(', ') });
+      }
+      if (change.previousAssigneeId !== issue.assigneeId) {
+        fired.push({
+          event: 'ISSUE_ASSIGNED', type: NotificationType.UPDATED, detail: FIELD_NAMES.assignee, previousAssigneeId: change.previousAssigneeId,
+        });
+      }
 
       for (const userId of this.audience(issue)) this.add(r, userId, NotificationType.UPDATED, fieldList);
       if (change.previousAssigneeId && change.previousAssigneeId !== issue.assigneeId) {
@@ -101,9 +138,9 @@ export class NotificationsService {
       }
       if (change.fields.includes('description')) {
         const added = newMentions(change.previousDescription, issue.description);
-        await this.addMentions(r, issue.id, added, excerpt(issue.description ?? ''));
+        fired.push(...await this.addMentions(r, issue.id, added, excerpt(issue.description ?? '')));
       }
-      await this.dispatch(issue, actorId, r);
+      await this.dispatch(issue, actorId, r, fired);
     });
   }
 
@@ -113,7 +150,7 @@ export class NotificationsService {
       const r: Recipients = new Map();
       const detail = `${STATUS_NAMES[from] ?? from} → ${STATUS_NAMES[to] ?? to}`;
       for (const userId of this.audience(issue)) this.add(r, userId, NotificationType.STATUS_CHANGED, detail);
-      await this.dispatch(issue, actorId, r);
+      await this.dispatch(issue, actorId, r, [{ event: 'STATUS_CHANGED', type: NotificationType.STATUS_CHANGED, detail }]);
     });
   }
 
@@ -124,8 +161,9 @@ export class NotificationsService {
       const r: Recipients = new Map();
       const text = excerpt(body);
       for (const userId of this.audience(issue)) this.add(r, userId, NotificationType.COMMENTED, text);
-      await this.addMentions(r, issue.id, extractMentions(body), text);
-      await this.dispatch(issue, actorId, r, emailed);
+      const fired: Fired[] = [{ event: 'COMMENTED', type: NotificationType.COMMENTED, detail: text }];
+      fired.push(...await this.addMentions(r, issue.id, extractMentions(body), text));
+      await this.dispatch(issue, actorId, r, fired, emailed);
     });
   }
 
@@ -135,8 +173,7 @@ export class NotificationsService {
       if (!added.ids.length && !added.emails.length) return;
       const issue = await this.issueWithPeople(issueId);
       const r: Recipients = new Map();
-      await this.addMentions(r, issue.id, added, excerpt(after));
-      await this.dispatch(issue, actorId, r);
+      await this.dispatch(issue, actorId, r, await this.addMentions(r, issue.id, added, excerpt(after)));
     });
   }
 
@@ -146,7 +183,7 @@ export class NotificationsService {
       const issue = await this.issueWithPeople(issueId);
       const r: Recipients = new Map();
       this.add(r, userId, NotificationType.WATCHING);
-      await this.dispatch(issue, actorId, r);
+      await this.dispatch(issue, actorId, r, [{ event: 'WATCHER_ADDED', type: NotificationType.WATCHING, concerned: [userId] }]);
     });
   }
 
@@ -156,7 +193,7 @@ export class NotificationsService {
       const issue = await this.issueWithPeople(issueId);
       const r: Recipients = new Map();
       for (const userId of this.audience(issue)) this.add(r, userId, NotificationType.DELETED);
-      await this.dispatch(issue, actorId, r);
+      await this.dispatch(issue, actorId, r, [{ event: 'ISSUE_DELETED', type: NotificationType.DELETED }]);
     });
   }
 
@@ -271,8 +308,9 @@ export class NotificationsService {
     }
   }
 
-  private async addMentions(r: Recipients, issueId: string, mentions: Mentions, detail: string) {
-    if (!mentions.ids.length && !mentions.emails.length) return;
+  /** Notifies the people mentioned, and returns the MENTIONED event for emailing them (none if nobody was). */
+  private async addMentions(r: Recipients, issueId: string, mentions: Mentions, detail: string): Promise<Fired[]> {
+    if (!mentions.ids.length && !mentions.emails.length) return [];
     // Mentions never pull customers into a request (they aren't told about internal activity anyway).
     const users = await this.prisma.user.findMany({
       where: { OR: [{ id: { in: mentions.ids } }, { email: { in: mentions.emails } }], role: { not: UserRole.CUSTOMER } },
@@ -282,6 +320,7 @@ export class NotificationsService {
       await this.watch(issueId, u.id);
       this.add(r, u.id, NotificationType.MENTIONED, detail);
     }
+    return users.length ? [{ event: 'MENTIONED', type: NotificationType.MENTIONED, detail, concerned: users.map((u) => u.id) }] : [];
   }
 
   private watch(issueId: string, userId: string) {
@@ -292,7 +331,8 @@ export class NotificationsService {
     });
   }
 
-  private async dispatch(issue: IssueRef, actorId: string, recipients: Recipients, emailed: string[] = []) {
+  private async dispatch(issue: IssueWithPeople, actorId: string, recipients: Recipients, fired: Fired[], emailed: string[] = []) {
+    const emailTo = await this.emailTargets(issue, recipients, fired);
     recipients.delete(actorId); // never notify people about their own actions
     // People who lost access to the project (or never had it) aren't told about its issues.
     const allowed = await this.access.filterBrowsers(issue.projectId, [...recipients.keys()]);
@@ -306,14 +346,44 @@ export class NotificationsService {
         })),
     );
     // Email in the background so the user's request isn't slowed down by SMTP.
-    void this.email(created.map((n) => n.id), actorId, issue, false, emailed);
+    void this.email(created.map((n) => n.id), actorId, issue, false, emailed, emailTo);
+  }
+
+  /**
+   * Who the project's notification scheme emails about these events. Everyone involved still gets the in-app
+   * notification; people only the scheme brings in (e.g. project admins) get one too, so the email has something behind it.
+   */
+  private async emailTargets(issue: IssueWithPeople, r: Recipients, fired: Fired[]) {
+    const to = new Set<string>();
+    if (!fired.length) return to;
+    const scheme = await this.schemes.effective(issue.projectId);
+    let admins: string[] | undefined;
+    for (const f of fired) {
+      for (const recipient of scheme[f.event]) {
+        let ids: (string | null | undefined)[];
+        switch (recipient) {
+          case 'CONCERNED': ids = f.concerned ?? []; break;
+          case 'REPORTER': ids = [issue.reporterId]; break;
+          case 'ASSIGNEE': ids = [issue.assigneeId, f.previousAssigneeId]; break;
+          case 'WATCHERS': ids = issue.watchers.map((w) => w.userId); break;
+          case 'PROJECT_ADMINS': ids = admins ??= await this.schemes.projectAdmins(issue.projectId); break;
+        }
+        for (const id of ids) {
+          if (!id) continue;
+          to.add(id);
+          if (!r.has(id)) this.add(r, id, f.type, f.detail);
+        }
+      }
+    }
+    return to;
   }
 
   /** `portal`: the recipients are service desk customers, so link to their request in the help center. */
-  private async email(ids: string[], actorId: string, issue: IssueRef, portal = false, emailed: string[] = []) {
+  /** `only`: the users to email (the notification scheme's choice); everyone when omitted. */
+  private async email(ids: string[], actorId: string, issue: IssueRef, portal = false, emailed: string[] = [], only?: Set<string>) {
     const [notifications, actor, channel] = await Promise.all([
       this.prisma.notification.findMany({
-        where: { id: { in: ids }, user: { emailNotifications: true } },
+        where: { id: { in: ids }, user: { emailNotifications: true }, ...(only ? { userId: { in: [...only] } } : {}) },
         include: { user: { select: { email: true, name: true } } },
       }),
       this.prisma.user.findUnique({ where: { id: actorId }, select: { name: true } }),
@@ -343,6 +413,7 @@ export class NotificationsService {
 
   sentence(type: NotificationType, who: string, key: string) {
     switch (type) {
+      case NotificationType.CREATED: return `${who} created ${key}`;
       case NotificationType.ASSIGNED: return `${who} assigned ${key} to you`;
       case NotificationType.MENTIONED: return `${who} mentioned you on ${key}`;
       case NotificationType.COMMENTED: return `${who} commented on ${key}`;

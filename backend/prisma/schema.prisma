@@ -201,6 +201,9 @@ model MailSettings {
   gmailRefreshToken String?
   /// The connected Gmail address (emails are sent from it)
   gmailAccount      String?
+  /// Who is emailed about each issue event, as JSON {event: [recipient, ...]}; null = the built-in defaults.
+  /// A project can override it (Project.notificationScheme).
+  notificationScheme String?
   updatedAt    DateTime @updatedAt
 }
 
@@ -229,6 +232,8 @@ model Project {
   portalWelcome   String?
   portalColor     String?
   portalLogo      String?
+  /// Who is emailed about each issue event in this project (JSON, like MailSettings.notificationScheme); null = the global one
+  notificationScheme String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -629,6 +634,7 @@ model SavedFilter {
 // ─── Notifications ───────────────────────────────────────────────────────────
 
 enum NotificationType {
+  CREATED
   ASSIGNED
   MENTIONED
   COMMENTED

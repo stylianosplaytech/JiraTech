@@ -9,7 +9,7 @@ import QuickSearch from './QuickSearch';
 import NotificationBell from './NotificationBell';
 import Avatar from './Avatar';
 import { Dropdown, Modal, useToast } from './ui';
-import { ChevronDownIcon, LogoutIcon, MailIcon, MenuIcon, MessageIcon, PlusIcon, XIcon } from './Icons';
+import { BellIcon, ChevronDownIcon, LogoutIcon, MailIcon, MenuIcon, MessageIcon, PlusIcon, XIcon } from './Icons';
 import CreateIssueForm from './CreateIssueForm';
 
 const NAV = [
@@ -212,6 +212,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
                         <div className="menu-heading">Administration</div>
                         <Link to="/settings/email" className="menu-item"><MailIcon size={14} /> Email settings</Link>
                         <Link to="/settings/email-templates" className="menu-item"><MessageIcon size={14} /> Email templates</Link>
+                        <Link to="/settings/notifications" className="menu-item"><BellIcon size={14} /> Email notifications</Link>
                       </div>
                     )}
                     <div className="border-t border-jira-border mt-1 pt-1">
