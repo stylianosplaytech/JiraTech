@@ -432,7 +432,11 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
       portal = usable.find((p) => p.id === theirs?.portalId) ?? usable.find((p) => p.id === fallback.id) ?? usable[0];
     }
     if (!portal || !user) {
-      if (!channel.createCustomers) throw new Ignored(`${from} isn't a customer of this service desk`);
+      if (!channel.createCustomers) {
+        throw new Ignored(user
+          ? `${from} can't use any of this service desk's portals (removed from them, or not added to one)`
+          : `${from} isn't a customer of this service desk`);
+      }
       if (user && await this.prisma.portalExclusion.findUnique({ where: { portalId_userId: { portalId: fallback.id, userId: user.id } } })) {
         throw new Ignored(`${from} has been removed from ${fallback.name}`);
       }
