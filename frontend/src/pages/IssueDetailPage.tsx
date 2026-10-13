@@ -1,42 +1,24 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, formatMinutes, isEpicType, type UpdateIssuePayload } from '../api';
+import { api, type UpdateIssuePayload } from '../api';
 import { useProject } from '../project';
 import { timeAgo } from '../utils';
-import { PriorityIcon, StatusBadge, STATUS_LABELS, TypeBadge, typeLabel } from '../components/Badges';
+import { StatusBadge, TypeBadge } from '../components/Badges';
 import {
-  ChevronDownIcon, ClockIcon, CopyIcon, EyeIcon, LinkIcon, MoreIcon, MoveIcon, PaperclipIcon, SubtaskIcon, TrashIcon, XIcon,
+  ClockIcon, CopyIcon, EyeIcon, LinkIcon, MoreIcon, MoveIcon, PaperclipIcon, SubtaskIcon, TrashIcon, XIcon,
 } from '../components/Icons';
 import { Dropdown, EmptyState, Modal, Spinner, errorMessage, useDialogs, useToast } from '../components/ui';
-import { MultiPicker, SelectPicker } from '../components/Pickers';
 import { InlineText, InlineTextarea } from '../components/InlineEdit';
 import UserPicker from '../components/UserPicker';
 import Avatar from '../components/Avatar';
-import CustomFieldRows from '../components/CustomFieldsPanel';
+import { IssueDetailsFields, StatusDropdown } from '../components/IssueFields';
 import IssueLinks from '../components/IssueLinks';
 import ActivitySection from '../components/ActivitySection';
 import RequestPanel from '../components/RequestPanel';
 import MoveIssueDialog from '../components/MoveIssueDialog';
 
 
-const STATUS_BUTTON: Record<string, string> = {
-  BACKLOG: 'bg-[#091E420F] text-jira-navy hover:bg-[#091E4224]',
-  TO_DO: 'bg-[#091E420F] text-jira-navy hover:bg-[#091E4224]',
-  DOING: 'bg-jira-blue text-white hover:bg-jira-blue-hover',
-  CLOSED: 'bg-[#00875A] text-white hover:bg-[#006644]',
-};
-
-const PRIORITIES = ['HIGHEST', 'HIGH', 'MEDIUM', 'LOW', 'LOWEST'];
-
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[120px_1fr] items-start gap-2 py-1">
-      <span className="text-jira-subtle font-medium text-[13px] pt-[7px]">{label}</span>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
@@ -91,16 +73,7 @@ export default function IssueDetailPage() {
       .catch(() => undefined);
   }, [issueId, queryClient]);
 
-  const { data: transitions = [] } = useQuery({
-    queryKey: ['transitions', issue?.id, issue?.workflowStatus?.id],
-    queryFn: () => api.getTransitions(issue!.id),
-    enabled: !!issue?.id && !!issue.permissions?.canEdit,
-  });
-
   const sameProject = issue?.project?.key === projectKey;
-  const { data: labels } = useQuery({ queryKey: ['labels'], queryFn: () => api.getLabels(), enabled: sameProject });
-  const { data: components } = useQuery({ queryKey: ['components'], queryFn: () => api.getComponents(), enabled: sameProject });
-  const { data: versions } = useQuery({ queryKey: ['versions'], queryFn: () => api.getVersions(), enabled: sameProject });
   const { data: teams } = useQuery({ queryKey: ['components', 'TEAM'], queryFn: () => api.getComponents('TEAM'), enabled: sameProject });
 
   const refresh = () => {
@@ -176,21 +149,11 @@ export default function IssueDetailPage() {
 
   const strict = issue.project?.strictHierarchy !== false;
   const isIncident = strict && (issue.type === 'DEFECT' || issue.type === 'TASK');
-  const epicParent = issue.parent && isEpicType(issue.parent.type) ? issue.parent : null;
   const isWatching = issue.watchers?.some((w) => w.userId === currentUser?.id) ?? false;
   // The server sends what this user may do in the issue's project.
   const canEdit = issue.permissions?.canEdit ?? false;
   const canDelete = issue.permissions?.canDelete ?? false;
   const roleName = issue.permissions?.role === 'VIEWER' ? 'viewer' : 'limited';
-
-  const fixIds = issue.versions?.filter((v) => v.isFix).map((v) => v.versionId) ?? [];
-  const affectsIds = issue.versions?.filter((v) => !v.isFix).map((v) => v.versionId) ?? [];
-  const versionOptions = (versions ?? []).map((v) => ({ id: v.id, label: v.name, hint: v.released ? 'Released' : undefined }));
-
-  const loggedMinutes = issue.workLogs?.reduce((sum, w) => sum + w.timeSpentMinutes, 0) ?? 0;
-  const estimatedMinutes = (issue.estimate ?? 0) * 60;
-  const remainingMinutes = issue.remainingEstimate != null ? issue.remainingEstimate * 60 : Math.max(0, estimatedMinutes - loggedMinutes);
-  const totalBar = Math.max(estimatedMinutes, loggedMinutes + remainingMinutes, 1);
 
   const children = issue.children ?? [];
   const doneChildren = children.filter((c) => c.status === 'CLOSED').length;
@@ -418,48 +381,7 @@ export default function IssueDetailPage() {
         {/* ─── Sidebar ─── */}
         <aside className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            <Dropdown
-              width="w-60"
-              trigger={({ toggle }) => (
-                <button
-                  type="button"
-                  onClick={toggle}
-                  disabled={transition.isPending || !canEdit}
-                  title={canEdit ? undefined : 'You need member access to change the status'}
-                  className={`btn font-semibold disabled:opacity-100 disabled:cursor-default ${STATUS_BUTTON[issue.status] ?? 'btn-default'}`}
-                >
-                  {issue.workflowStatus?.name ?? STATUS_LABELS[issue.status] ?? issue.status}
-                  {canEdit && <ChevronDownIcon size={14} />}
-                </button>
-              )}
-            >
-              {(close) => (
-                <>
-                  <div className="menu-heading">Move to</div>
-                  {transitions.length === 0 && (
-                    <p className="px-3 py-2 text-xs text-jira-muted">The workflow has no transitions out of this status.</p>
-                  )}
-                  {transitions.flatMap((t) => (t.category === 'CLOSED'
-                    // Done statuses need a resolution: offer both.
-                    ? [
-                      { key: `${t.id}-done`, label: t.name, hint: 'Done', statusId: t.id, resolution: 'COMPLETED', category: t.category },
-                      { key: `${t.id}-rejected`, label: t.name, hint: "Won't do", statusId: t.id, resolution: 'REJECTED', category: t.category },
-                    ]
-                    : [{ key: t.id, label: t.name, hint: undefined as string | undefined, statusId: t.id, resolution: undefined as string | undefined, category: t.category }]
-                  )).map((o) => (
-                    <button
-                      key={o.key}
-                      type="button"
-                      className="menu-item justify-between"
-                      onClick={() => { close(); transition.mutate({ statusId: o.statusId, resolution: o.resolution }); }}
-                    >
-                      <StatusBadge status={o.category} name={o.label} />
-                      {o.hint && <span className="text-xs text-jira-muted">{o.hint}</span>}
-                    </button>
-                  ))}
-                </>
-              )}
-            </Dropdown>
+            <StatusDropdown issue={issue} canEdit={canEdit} pending={transition.isPending} onTransition={(t) => transition.mutate(t)} />
             {issue.resolution && (
               <span className="text-sm text-jira-subtle">
                 Resolution: <span className="text-jira-navy">{issue.resolution === 'COMPLETED' ? 'Done' : 'Rejected'}</span>
@@ -473,146 +395,14 @@ export default function IssueDetailPage() {
           <div className="card">
             <div className="card-header"><h2 className="card-title">Details</h2></div>
             <div className="px-4 py-2">
-              <DetailRow label="Assignee">
-                <UserPicker
-                  variant="inline"
-                  disabled={!canEdit}
-                  value={issue.assignee?.id}
-                  selected={issue.assignee}
-                  onChange={(assigneeId) => update.mutate({ assigneeId: assigneeId ?? '' })}
-                  currentUserId={currentUser?.id}
-                />
-              </DetailRow>
-              <DetailRow label="Reporter">
-                <UserPicker
-                  variant="inline"
-                  disabled={!canEdit}
-                  value={issue.reporter?.id}
-                  selected={issue.reporter}
-                  onChange={(reporterId) => reporterId && update.mutate({ reporterId })}
-                  allowClear={false}
-                  placeholder="None"
-                />
-              </DetailRow>
-              <DetailRow label="Priority">
-                <SelectPicker
-                  disabled={!canEdit}
-                  value={issue.priority}
-                  onChange={(priority) => priority && update.mutate({ priority })}
-                  searchable={false}
-                  options={PRIORITIES.map((p) => ({ id: p, label: p.charAt(0) + p.slice(1).toLowerCase(), icon: <PriorityIcon priority={p} /> }))}
-                />
-              </DetailRow>
-              <DetailRow label="Labels">
-                <MultiPicker
-                  disabled={!canEdit}
-                  commitOnClose
-                  value={issue.labels?.map((l) => l.label.id) ?? []}
-                  onChange={(labelIds) => update.mutate({ labelIds })}
-                  options={(labels ?? []).map((l) => ({ id: l.id, label: l.name }))}
-                  onCreate={async (name) => {
-                    const l = await api.createLabel(name);
-                    queryClient.invalidateQueries({ queryKey: ['labels'] });
-                    return { id: l.id, label: l.name };
-                  }}
-                  createLabel="Create label"
-                  emptyText="No labels yet — type to create one"
-                />
-              </DetailRow>
-              <DetailRow label="Components">
-                <MultiPicker
-                  disabled={!canEdit}
-                  commitOnClose
-                  value={issue.components?.map((c) => c.component.id) ?? []}
-                  onChange={(componentIds) => update.mutate({ componentIds })}
-                  options={(components ?? []).map((c) => ({ id: c.id, label: c.name, hint: typeLabel(c.type) }))}
-                  emptyText="This project has no components"
-                />
-              </DetailRow>
-              <DetailRow label="Fix versions">
-                <MultiPicker
-                  disabled={!canEdit}
-                  commitOnClose
-                  value={fixIds}
-                  onChange={(fixVersionIds) => update.mutate({ fixVersionIds })}
-                  options={versionOptions}
-                  emptyText="This project has no versions"
-                />
-              </DetailRow>
-              <DetailRow label="Affects versions">
-                <MultiPicker
-                  disabled={!canEdit}
-                  commitOnClose
-                  value={affectsIds}
-                  onChange={(affectsVersionIds) => update.mutate({ affectsVersionIds })}
-                  options={versionOptions}
-                  emptyText="This project has no versions"
-                />
-              </DetailRow>
-              {issue.parent && (
-                <DetailRow label={epicParent ? 'Epic' : 'Parent'}>
-                  <Link to={`/browse/${issue.parent.key}`} className="flex items-center gap-2 px-2 py-[7px] link">
-                    {issue.parent.type && <TypeBadge type={issue.parent.type} />}
-                    <span className="truncate">{issue.parent.key} {epicParent?.epicName ?? issue.parent.summary}</span>
-                  </Link>
-                </DetailRow>
-              )}
-              {isEpicType(issue.type) && (
-                <DetailRow label="Epic name">
-                  <InlineText readOnly={!canEdit} value={issue.epicName ?? ''} onSave={(epicName) => update.mutate({ epicName })} className="mx-0" />
-                </DetailRow>
-              )}
-              {issue.sprint && (
-                <DetailRow label="Sprint"><span className="block px-2 py-[7px]">{issue.sprint.name}</span></DetailRow>
-              )}
-              <DetailRow label="Estimate">
-                <InlineText
-                  readOnly={!canEdit}
-                  type="number"
-                  value={issue.estimate != null ? String(issue.estimate) : ''}
-                  display={issue.estimate != null ? `${issue.estimate}h` : undefined}
-                  placeholder="None"
-                  onSave={(v) => v !== '' && update.mutate({ estimate: Number(v) })}
-                  validate={(v) => (v !== '' && (isNaN(Number(v)) || Number(v) < 0) ? 'Enter hours, e.g. 4 or 1.5' : null)}
-                  className="mx-0"
-                />
-              </DetailRow>
-              <DetailRow label="Time tracking">
-                <button type="button" onClick={() => setLogTimeOpen(true)} disabled={!canEdit} className="w-full text-left px-2 py-1.5 rounded-[3px] hover:bg-jira-gray-hover disabled:hover:bg-transparent disabled:cursor-default" title={canEdit ? 'Log time' : undefined}>
-                  <div className="h-1.5 rounded-full bg-jira-gray-hover overflow-hidden flex">
-                    <div className="bg-jira-blue" style={{ width: `${(loggedMinutes / totalBar) * 100}%` }} />
-                  </div>
-                  <div className="flex justify-between text-xs text-jira-muted mt-1">
-                    <span>{loggedMinutes ? `${formatMinutes(loggedMinutes)} logged` : 'No time logged'}</span>
-                    <span>{formatMinutes(remainingMinutes)} remaining</span>
-                  </div>
-                </button>
-              </DetailRow>
-              {strict && (
-                <DetailRow label="RAG">
-                  <div className="flex gap-1 px-2 py-1.5">
-                    {(['GREEN', 'AMBER', 'RED'] as const).map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => updateRag.mutate(r)}
-                        disabled={!canEdit}
-                        className={`px-2 py-0.5 rounded-[3px] text-xs font-semibold border-2 ${issue.ragStatus === r ? 'border-jira-navy' : 'border-transparent opacity-60 hover:opacity-100'}
-                          ${r === 'GREEN' ? 'bg-[#E3FCEF] text-[#006644]' : r === 'AMBER' ? 'bg-[#FFFAE6] text-[#974F0C]' : 'bg-[#FFEBE6] text-[#BF2600]'}`}
-                      >
-                        {r.charAt(0) + r.slice(1).toLowerCase()}
-                      </button>
-                    ))}
-                  </div>
-                </DetailRow>
-              )}
-              <DetailRow label="Blocked">
-                <label className="flex items-center gap-2 px-2 py-[7px] cursor-pointer">
-                  <input type="checkbox" disabled={!canEdit} checked={!!issue.blocked} onChange={(e) => update.mutate({ blocked: e.target.checked })} />
-                  <span className="text-jira-subtle">{issue.blocked ? 'Yes' : 'No'}</span>
-                </label>
-              </DetailRow>
-              <CustomFieldRows issue={issue} Row={DetailRow} readOnly={!canEdit} />
+              <IssueDetailsFields
+                issue={issue}
+                canEdit={canEdit}
+                currentUserId={currentUser?.id}
+                onUpdate={(data) => update.mutate(data)}
+                onUpdateRag={(r) => updateRag.mutate(r)}
+                onLogTime={() => setLogTimeOpen(true)}
+              />
             </div>
           </div>
 

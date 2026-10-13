@@ -1,6 +1,7 @@
 import {
-  createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode,
+  createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertIcon, CheckIcon, XIcon } from './Icons';
 
 // ─── Click-outside / Escape helper ───────────────────────────────────────────
@@ -46,6 +47,68 @@ export function Dropdown({
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Floating popover ────────────────────────────────────────────────────────
+
+/** Where a floating popover opens: below an element, or at a point (right-click). */
+export type PopoverAnchor = DOMRect | { x: number; y: number };
+
+/**
+ * A popover rendered on document.body at a fixed position, so scrolling or overflow-hidden parents (board
+ * columns) never clip it. Flips above / to the left when it would run off the screen. Events don't leak to
+ * the React parent, so a popover opened from a card doesn't also "click" the card.
+ */
+export function FloatingPopover({
+  anchor, onClose, children, width = 240, align = 'left',
+}: {
+  anchor: PopoverAnchor;
+  onClose: () => void;
+  children: ReactNode;
+  width?: number;
+  align?: 'left' | 'right';
+}) {
+  const ref = useDismiss<HTMLDivElement>(true, onClose);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = 'width' in anchor ? anchor : null;
+    const h = el.offsetHeight;
+    let left = rect ? (align === 'right' ? rect.right - width : rect.left) : (anchor as { x: number }).x;
+    let top = rect ? rect.bottom + 4 : (anchor as { y: number }).y;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, (rect ? rect.top - 4 : top) - h);
+    left = Math.min(Math.max(8, left), window.innerWidth - width - 8);
+    setPos({ left, top });
+  }, [anchor, align, width, ref]);
+
+  // A fixed popover would drift from its anchor when the page scrolls: close it instead.
+  useEffect(() => {
+    const onScroll = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onClose);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onClose);
+    };
+  }, [onClose, ref]);
+
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+  return createPortal(
+    <div
+      ref={ref}
+      className="popover fixed max-w-[calc(100vw-1rem)]"
+      style={{ width, left: pos?.left ?? -9999, top: pos?.top ?? -9999 }}
+      onClick={stop}
+      onMouseDown={stop}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onKeyDown={stop}
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }
 

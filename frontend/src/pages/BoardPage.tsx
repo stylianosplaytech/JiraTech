@@ -1,12 +1,13 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import type { BoardData, Issue } from '../api';
 import { useProject } from '../project';
-import { PriorityIcon, RagDot, TypeBadge } from '../components/Badges';
 import { SearchIcon } from '../components/Icons';
 import Avatar from '../components/Avatar';
+import BoardCard, { type CardEdit } from '../components/BoardCard';
+import IssuePanel from '../components/IssuePanel';
 import { Modal, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
 
 type Column = BoardData['columns'][number];
@@ -31,8 +32,13 @@ function withMove(board: BoardData, { issue, to, resolution }: MoveRequest): Boa
   };
 }
 
+/** The board with one card changed in place. */
+function withIssue(board: BoardData, id: string, patch: Partial<Issue>): BoardData {
+  return { columns: board.columns.map((c) => ({ ...c, issues: c.issues.map((i) => (i.id === id ? { ...i, ...patch } : i)) })) };
+}
+
 export default function BoardPage() {
-  const { project } = useProject();
+  const { project, projectKey } = useProject();
   const queryClient = useQueryClient();
   const toast = useToast();
   const [filter, setFilter] = useState('');
@@ -42,6 +48,22 @@ export default function BoardPage() {
   const [pendingDone, setPendingDone] = useState<{ issue: Issue; to: Column } | null>(null);
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const { data, isLoading } = useQuery({ queryKey: ['board'], queryFn: () => api.getBoard() });
+  // What this user may do here: cards of a view-only project don't offer editing.
+  const { data: projectDetail } = useQuery({
+    queryKey: ['project', projectKey],
+    queryFn: () => api.getProject(projectKey!),
+    enabled: !!projectKey,
+  });
+  const canEdit = projectDetail?.permissions.canEdit ?? false;
+  const showRag = projectDetail?.strictHierarchy !== false;
+
+  // The card open in the quick-edit panel lives in the URL, so it survives a reload and Back closes it.
+  const [params, setParams] = useSearchParams();
+  const openKey = params.get('issue');
+  const openIssue = useCallback((key: string | null) => {
+    setParams((p) => { const next = new URLSearchParams(p); if (key) next.set('issue', key); else next.delete('issue'); return next; }, { replace: !!openKey });
+  }, [setParams, openKey]);
+  const closePanel = useCallback(() => openIssue(null), [openIssue]);
 
   // Where the dragged card may go, per the project's workflow (usually already prefetched on hover).
   const { data: allowed } = useQuery({
@@ -75,6 +97,41 @@ export default function BoardPage() {
       queryClient.invalidateQueries({ queryKey: ['search'] });
     },
   });
+
+  /** Edits a card in place straight away and puts it back if the server refuses. */
+  const optimistic = <T,>(fn: (vars: T) => Promise<unknown>, patch: (vars: T) => { issue: Issue; preview: Partial<Issue> }) => ({
+    mutationFn: fn,
+    onMutate: async (vars: T) => {
+      await queryClient.cancelQueries({ queryKey: ['board'] });
+      const previous = queryClient.getQueryData<BoardData>(['board']);
+      const { issue, preview } = patch(vars);
+      if (previous) queryClient.setQueryData(['board'], withIssue(previous, issue.id, preview));
+      return { previous };
+    },
+    onError: (e: unknown, vars: T, ctx?: { previous?: BoardData }) => {
+      if (ctx?.previous) queryClient.setQueryData(['board'], ctx.previous);
+      toast(`${patch(vars).issue.key} was not changed: ${errorMessage(e)}`, 'error');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['board'] });
+      queryClient.invalidateQueries({ queryKey: ['issue'] });
+      queryClient.invalidateQueries({ queryKey: ['history'] });
+      queryClient.invalidateQueries({ queryKey: ['search'] });
+    },
+  });
+  const edit = useMutation(optimistic(
+    ({ issue, data }: { issue: Issue } & CardEdit) => api.updateIssue(issue.id, data),
+    ({ issue, preview }) => ({ issue, preview }),
+  ));
+  const rag = useMutation(optimistic(
+    ({ issue, ragStatus }: { issue: Issue; ragStatus: string }) => api.updateRag(issue.id, ragStatus),
+    ({ issue, ragStatus }) => ({ issue, preview: { ragStatus } }),
+  ));
+
+  const transitionTo = (issue: Issue, statusId: string, resolution?: string) => {
+    const to = data?.columns.find((c) => c.statusId === statusId);
+    if (to) move.mutate({ issue, to, resolution });
+  };
 
   const q = filter.trim().toLowerCase();
   const visible = (issues: Issue[]) =>
@@ -136,12 +193,16 @@ export default function BoardPage() {
               <Avatar name={me.name} size="xs" /> Only my issues
             </button>
           )}
-          <span className="hidden md:inline text-xs text-jira-muted ml-auto">Drag a card to another column to change its status</span>
+          <span className="hidden md:inline text-xs text-jira-muted ml-auto">
+            {canEdit
+              ? 'Click a card to edit it · click its priority or avatar to change them · right-click for quick actions · drag to change status'
+              : 'Click a card to see its details'}
+          </span>
         </div>
       </PageHeader>
 
       {isLoading ? <Spinner /> : (
-        <div className="grid gap-2 items-start overflow-x-auto pb-2 max-sm:snap-x max-sm:snap-mandatory" style={{ gridTemplateColumns: `repeat(${Math.max(data?.columns.length ?? 4, 1)}, minmax(200px, 1fr))` }}>
+        <div className={`grid gap-2 items-start overflow-x-auto pb-2 max-sm:snap-x max-sm:snap-mandatory ${openKey ? 'xl:mr-[460px]' : ''}`} style={{ gridTemplateColumns: `repeat(${Math.max(data?.columns.length ?? 4, 1)}, minmax(200px, 1fr))` }}>
           {data?.columns.map((col) => {
             const doneColumn = col.status === 'CLOSED';
             const issues = visible(col.issues);
@@ -176,41 +237,26 @@ export default function BoardPage() {
                 </div>
                 <div className="px-2 pb-2 space-y-1.5">
                   {issues.map((issue) => (
-                    <Link
+                    <BoardCard
                       key={issue.id}
-                      to={`/browse/${issue.key}`}
-                      draggable
-                      onMouseEnter={() => prefetchTransitions(issue)}
+                      issue={issue}
+                      canEdit={canEdit}
+                      showRag={showRag}
+                      me={me}
+                      selected={openKey === issue.key}
+                      dragging={dragging?.issue.id === issue.id}
+                      onOpen={() => openIssue(issue.key)}
+                      onEdit={(e) => edit.mutate({ issue, ...e })}
+                      onRag={(ragStatus) => rag.mutate({ issue, ragStatus })}
+                      onTransition={(statusId, resolution) => transitionTo(issue, statusId, resolution)}
+                      onHover={() => prefetchTransitions(issue)}
                       onDragStart={(e) => {
                         e.dataTransfer.effectAllowed = 'move';
                         e.dataTransfer.setData('text/plain', issue.key);
                         setDragging({ issue, from: col.statusId });
                       }}
                       onDragEnd={endDrag}
-                      className={`block bg-white rounded-[3px] shadow-card p-3 hover:bg-[#FAFBFC] transition-colors cursor-grab active:cursor-grabbing ${
-                        dragging?.issue.id === issue.id ? 'opacity-40' : ''}`}
-                    >
-                      <p className="leading-snug text-jira-navy mb-2 line-clamp-3">{issue.summary}</p>
-                      {issue.components && issue.components.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {issue.components.slice(0, 3).map((c) => (
-                            <span key={c.component.id} className="lozenge bg-jira-gray-hover text-jira-subtle normal-case font-semibold">{c.component.name}</span>
-                          ))}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1.5">
-                        <TypeBadge type={issue.type} />
-                        <span className={`text-xs font-medium text-jira-subtle ${issue.status === 'CLOSED' ? 'line-through' : ''}`}>{issue.key}</span>
-                        {issue.blocked && <span className="lozenge bg-[#FFEBE6] text-[#BF2600]">Blocked</span>}
-                        <span className="ml-auto flex items-center gap-1.5">
-                          <RagDot status={issue.ragStatus === 'GREEN' ? undefined : issue.ragStatus} />
-                          <PriorityIcon priority={issue.priority} />
-                          {issue.assignee
-                            ? <Avatar name={issue.assignee.name} size="xs" />
-                            : <span className="w-5 h-5 rounded-full border border-dashed border-jira-muted" title="Unassigned" />}
-                        </span>
-                      </div>
-                    </Link>
+                    />
                   ))}
                   {issues.length === 0 && (
                     <p className="text-xs text-jira-muted text-center py-6">
@@ -223,6 +269,8 @@ export default function BoardPage() {
           })}
         </div>
       )}
+
+      {openKey && <IssuePanel issueKey={openKey} onClose={closePanel} />}
 
       {pendingDone && (
         <Modal
