@@ -1,7 +1,7 @@
 import {
   Injectable, BadRequestException, NotFoundException, ConflictException, ForbiddenException,
 } from '@nestjs/common';
-import { IssueStatus, IssueResolution, LinkType, IssueType, Prisma, ProjectType, UserRole } from '@prisma/client';
+import { IssueStatus, IssueResolution, IssueSource, LinkType, IssueType, Prisma, ProjectType, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { isValidParentChild } from '../common/issue-rules';
 import { ISSUE_INCLUDE } from '../common/issue-include';
@@ -113,7 +113,7 @@ export class IssuesService {
     dto: CreateIssueDto,
     user: AuthUser,
     headerProjectKey?: string,
-    portal?: { requestTypeId: string; reporterId?: string; organizationId?: string | null; portalId?: string },
+    portal?: { requestTypeId: string; reporterId?: string; organizationId?: string | null; portalId?: string; source?: IssueSource },
   ) {
     const reporterId = user.id;
     let parent: { id: string; type: IssueType; projectId: string } | null = null;
@@ -163,6 +163,7 @@ export class IssuesService {
           requestTypeId: portal?.requestTypeId,
           organizationId: portal?.organizationId ?? undefined,
           portalId: portal?.portalId,
+          source: portal?.source,
           components: dto.componentIds?.length
             ? { create: dto.componentIds.map((componentId) => ({ componentId })) }
             : undefined,
@@ -417,8 +418,9 @@ export class IssuesService {
   /**
    * In service desk projects a comment is either a reply the customer sees or an internal note (agents only).
    * Customers can't write internal notes, and elsewhere every comment is an ordinary one.
+   * `emailed`: addresses that already got it as an email (an email reply), so they aren't notified about it by email.
    */
-  async addComment(idOrKey: string, author: AuthUser, body: string, opts: { internal?: boolean } = {}) {
+  async addComment(idOrKey: string, author: AuthUser, body: string, opts: { internal?: boolean; emailed?: string[] } = {}) {
     const authorId = author.id;
     const issue = await this.prisma.issue.findFirst({
       where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
@@ -461,8 +463,8 @@ export class IssuesService {
       });
       return comment;
     });
-    await this.notifications.commentAdded(issueId, authorId, text);
-    if (!internal) await this.notifications.requestCommented(issueId, authorId, text);
+    await this.notifications.commentAdded(issueId, authorId, text, opts.emailed);
+    if (!internal) await this.notifications.requestCommented(issueId, authorId, text, opts.emailed);
     return created;
   }
 

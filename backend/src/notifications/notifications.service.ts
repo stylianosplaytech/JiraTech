@@ -116,14 +116,15 @@ export class NotificationsService {
     });
   }
 
-  async commentAdded(issueId: string, actorId: string, body: string) {
+  /** `emailed`: addresses that got the comment as a real email (sent or received), so aren't emailed about it again. */
+  async commentAdded(issueId: string, actorId: string, body: string, emailed: string[] = []) {
     await this.safely(async () => {
       const issue = await this.issueWithPeople(issueId);
       const r: Recipients = new Map();
       const text = excerpt(body);
       for (const userId of this.audience(issue)) this.add(r, userId, NotificationType.COMMENTED, text);
       await this.addMentions(r, issue.id, extractMentions(body), text);
-      await this.dispatch(issue, actorId, r);
+      await this.dispatch(issue, actorId, r, emailed);
     });
   }
 
@@ -161,8 +162,8 @@ export class NotificationsService {
   // ─── Service desk customers: public activity only, linking to the portal ──
 
   /** A public reply on a request. Internal notes never reach this. */
-  async requestCommented(issueId: string, actorId: string, body: string) {
-    await this.safely(() => this.toCustomers(issueId, actorId, NotificationType.COMMENTED, excerpt(body)));
+  async requestCommented(issueId: string, actorId: string, body: string, emailed: string[] = []) {
+    await this.safely(() => this.toCustomers(issueId, actorId, NotificationType.COMMENTED, excerpt(body), emailed));
   }
 
   async requestStatusChanged(issueId: string, actorId: string, to: string) {
@@ -170,7 +171,7 @@ export class NotificationsService {
   }
 
   /** The customers on a request (its reporter and participants), other than the actor. */
-  private async toCustomers(issueId: string, actorId: string, type: NotificationType, detail: string) {
+  private async toCustomers(issueId: string, actorId: string, type: NotificationType, detail: string, emailed: string[] = []) {
     const issue = await this.prisma.issue.findUniqueOrThrow({
       where: { id: issueId },
       include: {
@@ -188,7 +189,7 @@ export class NotificationsService {
       this.prisma.notification.create({
         data: { userId, actorId, issueId: issue.id, issueKey: issue.key, issueSummary: issue.summary, type, detail },
       })));
-    void this.email(created.map((n) => n.id), actorId, issue, true);
+    void this.email(created.map((n) => n.id), actorId, issue, true, emailed);
   }
 
   // ─── Reading ───────────────────────────────────────────────────────────────
@@ -290,7 +291,7 @@ export class NotificationsService {
     });
   }
 
-  private async dispatch(issue: IssueRef, actorId: string, recipients: Recipients) {
+  private async dispatch(issue: IssueRef, actorId: string, recipients: Recipients, emailed: string[] = []) {
     recipients.delete(actorId); // never notify people about their own actions
     // People who lost access to the project (or never had it) aren't told about its issues.
     const allowed = await this.access.filterBrowsers(issue.projectId, [...recipients.keys()]);
@@ -304,11 +305,11 @@ export class NotificationsService {
         })),
     );
     // Email in the background so the user's request isn't slowed down by SMTP.
-    void this.email(created.map((n) => n.id), actorId, issue);
+    void this.email(created.map((n) => n.id), actorId, issue, false, emailed);
   }
 
   /** `portal`: the recipients are service desk customers, so link to their request in the help center. */
-  private async email(ids: string[], actorId: string, issue: IssueRef, portal = false) {
+  private async email(ids: string[], actorId: string, issue: IssueRef, portal = false, emailed: string[] = []) {
     const [notifications, actor, channel] = await Promise.all([
       this.prisma.notification.findMany({
         where: { id: { in: ids }, user: { emailNotifications: true } },
@@ -318,13 +319,14 @@ export class NotificationsService {
       // Customers reply to the service desk's own address; the reply is added to the request (the key is in the subject).
       portal ? this.prisma.emailChannel.findFirst({ where: { projectId: issue.projectId, enabled: true }, select: { address: true } }) : null,
     ]);
+    const skip = new Set(emailed.map((e) => e.toLowerCase()));
     const who = actor?.name ?? 'Someone';
     const appUrl = this.mailer.appUrl();
     const url = portal ? `${appUrl}/portal/requests/${issue.key}` : `${appUrl}/browse/${issue.key}`;
     const noun = portal ? 'request' : 'issue';
     const reason = portal ? 'you raised or were added to this request' : 'you are involved in this issue';
     const replyHint = channel ? 'Reply to this email to add a comment to the request.' : null;
-    for (const n of notifications) {
+    for (const n of notifications.filter((x) => !skip.has(x.user.email.toLowerCase()))) {
       const line = this.sentence(n.type, who, issue.key);
       const ok = await this.mailer.send({
         to: n.user.email,

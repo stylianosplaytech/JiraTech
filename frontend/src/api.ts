@@ -130,6 +130,24 @@ export const api = {
   deleteComment: (id: string, commentId: string) =>
     request(`/issues/${id}/comments/${commentId}`, { method: 'DELETE' }),
   getHistory: (id: string) => request<HistoryEntry[]>(`/issues/${id}/history`),
+  getIssueEmails: (id: string) => request<IssueEmails>(`/issues/${id}/emails`),
+  sendIssueEmail: (id: string, data: SendEmailPayload) =>
+    request<IssueEmail>(`/issues/${id}/emails`, { method: 'POST', body: JSON.stringify(data) }),
+  retryIssueEmail: (id: string, emailId: string) =>
+    request<IssueEmail>(`/issues/${id}/emails/${emailId}/retry`, { method: 'POST' }),
+  renderEmailTemplate: (id: string, templateId: string, to?: string) =>
+    request<{ subject: string | null; html: string }>(`/issues/${id}/emails/render-template`, { method: 'POST', body: JSON.stringify({ templateId, to }) }),
+  /** `project`: the templates offered on that service desk; `scope` narrows it to the global or its own ones. */
+  getEmailTemplates: (opts: { project?: string; scope?: 'global' | 'project' } = {}) => {
+    const qs = new URLSearchParams(Object.entries(opts).filter(([, v]) => v) as [string, string][]).toString();
+    return request<EmailTemplate[]>(`/email-templates${qs ? `?${qs}` : ''}`);
+  },
+  createEmailTemplate: (data: EmailTemplatePayload) =>
+    request<EmailTemplate>('/email-templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateEmailTemplate: (templateId: string, data: EmailTemplatePayload) =>
+    request<EmailTemplate>(`/email-templates/${templateId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteEmailTemplate: (templateId: string) =>
+    request<{ deleted: boolean }>(`/email-templates/${templateId}`, { method: 'DELETE' }),
   deleteAttachment: (id: string, attachmentId: string) =>
     request(`/issues/${id}/attachments/${attachmentId}`, { method: 'DELETE' }),
 
@@ -543,6 +561,75 @@ export interface Comment {
   author: { id: string; name: string; email: string };
 }
 
+export interface EmailAddress {
+  email: string;
+  name?: string | null;
+}
+
+/** An email received on a service desk request, or sent from it. */
+export interface IssueEmail {
+  id: string;
+  /** The comment it is shown in place of (null for the email that raised the request) */
+  commentId: string | null;
+  direction: 'INBOUND' | 'OUTBOUND';
+  fromEmail: string;
+  fromName: string | null;
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  bcc: EmailAddress[];
+  replyTo: string | null;
+  subject: string;
+  /** Sanitized; shown in a sandboxed frame */
+  html: string;
+  status: 'SENT' | 'FAILED';
+  error: string | null;
+  createdAt: string;
+  sentBy: { id: string; name: string } | null;
+  attachments: { id: string; filename: string; mimeType: string; size: number }[];
+}
+
+export interface IssueEmails {
+  emails: IssueEmail[];
+  /** JiraTech's own addresses, left out of Reply all */
+  ownAddresses: string[];
+  /** Set when replies come back to the request (an enabled email channel) */
+  channelAddress: string | null;
+}
+
+export type EmailMode = 'reply' | 'replyAll' | 'forward' | 'new';
+
+export interface SendEmailPayload {
+  mode: EmailMode;
+  replyToId?: string;
+  to: EmailAddress[];
+  cc?: EmailAddress[];
+  bcc?: EmailAddress[];
+  subject: string;
+  html: string;
+  includeQuote?: boolean;
+  attachmentIds?: string[];
+  internal?: boolean;
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string | null;
+  body: string;
+  /** null: a global template */
+  projectId: string | null;
+  updatedAt: string;
+  createdBy: { id: string; name: string } | null;
+}
+
+export interface EmailTemplatePayload {
+  name: string;
+  subject?: string;
+  body: string;
+  /** Only when creating a service desk's own template */
+  projectKey?: string;
+}
+
 export interface HistoryEntry {
   id: string;
   field: string;
@@ -576,6 +663,8 @@ export interface Issue {
   workflowStatus?: WorkflowStatusRef | null;
   project?: { id: string; key: string; name: string; strictHierarchy?: boolean; leadId?: string | null; type?: ProjectType };
   requestType?: { id: string; name: string } | null;
+  /** Service desks: how the request came in */
+  source?: 'EMAIL' | 'PORTAL' | null;
   permissions?: Permissions;
   reporterId?: string;
   _count?: { comments: number; children: number };

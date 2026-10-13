@@ -17,6 +17,16 @@ export interface MailMessage {
   html: string;
   /** Where replies go, e.g. the service desk's own address so they come back as comments */
   replyTo?: string;
+  /** Emails written on a request: everyone else it goes to (`to` may then list several addresses, comma-separated) */
+  cc?: string[];
+  bcc?: string[];
+  /** Threading headers, with angle brackets */
+  messageId?: string;
+  inReplyTo?: string;
+  references?: string[];
+  attachments?: { filename: string; path: string; contentType?: string }[];
+  /** Shown instead of the usual sender name (the address stays the one email is sent from) */
+  fromName?: string;
 }
 
 interface Smtp {
@@ -211,12 +221,18 @@ export class MailerService implements OnModuleInit {
 
   /** Never throws: a mail failure must not break the action that triggered it. */
   async send(message: MailMessage): Promise<boolean> {
+    return (await this.sendReporting(message)) === null;
+  }
+
+  /** Like send, but says why it failed (null when it was sent), for emails an agent writes and may retry. */
+  async sendReporting(message: MailMessage): Promise<string | null> {
     try {
       await this.deliver(message);
-      return true;
+      return null;
     } catch (e) {
-      this.logger.warn(`Could not send email to ${message.to}: ${friendlyError(e, this.smtp())}`);
-      return false;
+      const error = friendlyError(e, this.smtp());
+      this.logger.warn(`Could not send email to ${message.to}: ${error}`);
+      return error;
     }
   }
 
@@ -244,7 +260,8 @@ export class MailerService implements OnModuleInit {
   }
 
   private async deliver(message: MailMessage) {
-    const mail = { from: this.from(), ...message };
+    const { fromName, ...rest } = message;
+    const mail = { from: fromName ? `"${fromName.replace(/["\\\r\n]/g, '')}" <${this.fromAddress()}>` : this.from(), ...rest };
     const g = this.gmail();
     if (g) {
       const { message: raw } = await this.preview.sendMail(mail);
@@ -257,7 +274,7 @@ export class MailerService implements OnModuleInit {
     }
     const info = await this.preview.sendMail(mail);
     fs.mkdirSync(this.outboxDir, { recursive: true });
-    const safeTo = message.to.replace(/[^a-z0-9@._-]/gi, '_');
+    const safeTo = message.to.split(',')[0].trim().replace(/[^a-z0-9@._-]/gi, '_');
     const file = path.join(this.outboxDir, `${new Date().toISOString().replace(/[:.]/g, '-')}_${safeTo}.eml`);
     fs.writeFileSync(file, info.message as Buffer);
   }

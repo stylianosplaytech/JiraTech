@@ -1,19 +1,18 @@
 import {
   BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit,
 } from '@nestjs/common';
-import { EmailChannel, EmailOutcome, Portal, Prisma, ProjectType, UserRole } from '@prisma/client';
-import { createHash, randomBytes, randomUUID } from 'crypto';
-import * as bcrypt from 'bcrypt';
+import { EmailChannel, EmailOutcome, IssueSource, Portal, Prisma, ProjectType, UserRole } from '@prisma/client';
+import { createHash, randomUUID } from 'crypto';
 import { ImapFlow } from 'imapflow';
-import { simpleParser, type ParsedMail } from 'mailparser';
+import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccessService } from '../access/access.service';
-import { AuthUser } from '../common/auth-user';
-import { contains } from '../common/text-match';
 import { open, seal } from '../common/secret-box';
 import { IssuesService } from '../issues/issues.service';
 import { PortalsService } from './portals.service';
 import { MailerService } from '../mail/mailer.service';
+import { IssueEmailService, InboundEmail } from '../issue-email/issue-email.service';
+import { Address, sanitizeEmailHtml, textToHtml } from '../issue-email/email-html';
 import { EmailChannelDto, TestEmailDto } from './dto/service-desk.dto';
 import { envChannels, envPassword, envPrefix } from './email-channel-env';
 
@@ -31,8 +30,16 @@ interface IncomingMail {
   messageId: string;
   fromEmail: string | null;
   fromName: string | null;
+  to: Address[];
+  cc: Address[];
+  /** Where the sender wants replies to go, when not to From */
+  replyTo: string | null;
   subject: string;
   text: string;
+  /** Sanitized; empty for plain-text emails */
+  html: string;
+  inReplyTo: string | null;
+  references: string[];
   attachments: { filename: string; contentType: string; content: Buffer }[];
   /** Out-of-office replies, bounces, mailing lists: answering them could start a mail loop. */
   automatic: boolean;
@@ -51,8 +58,9 @@ class Ignored extends Error {}
 
 /**
  * A service desk's email channel: each project can have its own address. Its mailbox is read over IMAP every
- * minute; a new email raises a request through the sender's portal, and a reply whose subject carries an existing
- * request's key (as every notification does) is added to that request as a comment.
+ * minute; a new email raises a request through the sender's portal, and a reply to one of a request's emails (by its
+ * threading headers) or whose subject carries an existing request's key (as every notification does) is added to that
+ * request as a comment. Each is kept as an email on the request, and the people it was copied to become participants.
  */
 @Injectable()
 export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
@@ -67,6 +75,7 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     private issues: IssuesService,
     private portals: PortalsService,
     private mailer: MailerService,
+    private issueEmails: IssueEmailService,
   ) {}
 
   async onModuleInit() {
@@ -253,8 +262,14 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
       messageId: `test-${randomUUID()}`,
       fromEmail: dto.from.trim().toLowerCase(),
       fromName: dto.fromName?.trim() || null,
+      to: [{ email: channel.address }],
+      cc: [],
+      replyTo: null,
       subject: dto.subject,
       text: dto.body,
+      html: '',
+      inReplyTo: null,
+      references: [],
       attachments: [],
       automatic: false,
     }, true);
@@ -383,28 +398,36 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     if (mail.automatic) throw new Ignored('Automatic reply, delivery report or mailing list email');
     if (this.isSystemAddress(from)) throw new Ignored('Sent by JiraTech itself');
 
-    // A reply: the subject carries the key of one of this desk's requests, e.g. "Re: [JiraTech] (HELP-12) Printer jam".
+    // A reply to an email sent from or received on a request, found by its threading headers.
+    const threaded = await this.issueEmails.threadOf(channel.projectId, mail);
+    if (threaded) return this.reply(channel, threaded, from, mail);
+    // Or the subject carries the key of one of this desk's requests, e.g. "Re: [JiraTech] (HELP-12) Printer jam".
     const match = new RegExp(`(?:^|[^A-Za-z0-9])(${escapeRegExp(channel.project.key)}-\\d+)(?![0-9])`, 'i').exec(mail.subject);
     if (match) {
       const issue = await this.prisma.issue.findUnique({ where: { key: match[1].toUpperCase() }, select: { key: true, projectId: true } });
-      if (issue?.projectId === channel.projectId) return this.reply(issue.key, from, mail);
+      if (issue?.projectId === channel.projectId) return this.reply(channel, issue.key, from, mail);
     }
     return this.raise(channel, from, mail);
   }
 
-  private async reply(key: string, from: string, mail: IncomingMail): Promise<EmailResult> {
+  private async reply(channel: Channel, key: string, from: string, mail: IncomingMail): Promise<EmailResult> {
     const user = await this.findUser(from);
     if (!user) throw new Ignored(`${from} isn't a customer or agent of this service desk, so the reply to ${key} wasn't added`);
     const text = stripQuotedReply(mail.text);
     const saved = mail.attachments.filter(fits);
     if (!text && !saved.length) throw new Ignored(`Empty reply to ${key}`);
+    let commentId: string;
     try {
-      await this.portals.comment(key, user, text || `Sent ${saved.length === 1 ? 'an attachment' : 'attachments'}: ${saved.map((a) => a.filename).join(', ')}`);
+      // Everyone it was sent to already has it, so they aren't also notified about the comment.
+      const body = text || `Sent ${saved.length === 1 ? 'an attachment' : 'attachments'}: ${saved.map((a) => a.filename).join(', ')}`;
+      commentId = (await this.portals.reply(key, user, body, { emailed: [from, ...mail.to.map((a) => a.email), ...mail.cc.map((a) => a.email)] })).id;
     } catch (e) {
       if (e instanceof NotFoundException) throw new Ignored(`${from} can't see ${key}, so their reply wasn't added`);
       throw e;
     }
-    await this.attach(key, user.id, saved);
+    const attachmentIds = await this.attach(key, user.id, saved);
+    await this.issueEmails.recordInbound(key, commentId, inbound(mail, from), attachmentIds);
+    await this.issueEmails.addParticipants(key, [...mail.to, ...mail.cc], { createCustomers: channel.createCustomers });
     return { outcome: EmailOutcome.COMMENTED, detail: skippedNote(mail.attachments), issueKey: key };
   }
 
@@ -463,45 +486,28 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
       { type: type.issueType, summary, description: description ?? undefined, projectKey: channel.project.key },
       user,
       undefined,
-      { requestTypeId: type.id, reporterId: user.id, organizationId, portalId: portal.id },
+      { requestTypeId: type.id, reporterId: user.id, organizationId, portalId: portal.id, source: IssueSource.EMAIL },
     );
-    await this.attach(issue.key, user.id, mail.attachments.filter(fits));
+    const attachmentIds = await this.attach(issue.key, user.id, mail.attachments.filter(fits));
+    await this.issueEmails.recordInbound(issue.key, null, inbound(mail, from), attachmentIds);
+    await this.issueEmails.addParticipants(issue.key, [...mail.to, ...mail.cc], { createCustomers: channel.createCustomers });
     return { outcome: EmailOutcome.CREATED, detail: skippedNote(mail.attachments), issueKey: issue.key };
   }
 
   private async attach(key: string, userId: string, attachments: IncomingMail['attachments']) {
+    const ids: string[] = [];
     for (const a of attachments) {
-      await this.issues.addAttachment(key, userId, { originalname: a.filename, mimetype: a.contentType, size: a.content.length, buffer: a.content });
+      ids.push((await this.issues.addAttachment(key, userId, { originalname: a.filename, mimetype: a.contentType, size: a.content.length, buffer: a.content })).id);
     }
+    return ids;
   }
 
-  /** Email addresses are matched ignoring case. */
-  private async findUser(email: string): Promise<AuthUser | null> {
-    const candidates = await this.prisma.user.findMany({
-      where: { email: contains(email) },
-      select: { id: true, email: true, name: true, role: true },
-      take: 20,
-    });
-    return candidates.find((u) => u.email.toLowerCase() === email.toLowerCase()) ?? null;
+  private findUser(email: string) {
+    return this.issueEmails.findUser(email);
   }
 
-  /** They can't log in until an admin sets a password on the People page; they still get email updates. */
-  private async createCustomer(email: string, name: string | null): Promise<AuthUser> {
-    try {
-      return await this.prisma.user.create({
-        data: {
-          email,
-          name: name?.trim().slice(0, 100) || email.split('@')[0],
-          role: UserRole.CUSTOMER,
-          passwordHash: await bcrypt.hash(randomBytes(24).toString('hex'), 10),
-        },
-        select: { id: true, email: true, name: true, role: true },
-      });
-    } catch (e) {
-      // Created at the same moment by another email from them.
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return (await this.findUser(email))!;
-      throw e;
-    }
+  private createCustomer(email: string, name: string | null) {
+    return this.issueEmails.createCustomer(email, name);
   }
 
   /** Mail from JiraTech's own addresses is never handled, so notifications can't loop back in. */
@@ -575,13 +581,49 @@ function toIncoming(parsed: ParsedMail, source: Buffer): IncomingMail {
     messageId: parsed.messageId ?? createHash('sha256').update(source).digest('hex'),
     fromEmail: sender,
     fromName: from?.name || null,
+    to: addresses(parsed.to),
+    cc: addresses(parsed.cc),
+    replyTo: parsed.replyTo?.value[0]?.address?.toLowerCase() ?? null,
     subject: parsed.subject ?? '',
     text: parsed.text ?? '',
+    html: sanitizeEmailHtml(parsed.html || ''),
+    inReplyTo: parsed.inReplyTo ?? null,
+    references: typeof parsed.references === 'string' ? parsed.references.split(/\s+/) : parsed.references ?? [],
     // Images embedded in the body (e.g. signature logos) aren't attachments.
     attachments: parsed.attachments
       .filter((a) => !a.related || a.contentDisposition === 'attachment')
       .map((a, i) => ({ filename: a.filename || `attachment-${i + 1}`, contentType: a.contentType || 'application/octet-stream', content: a.content })),
     automatic,
+  };
+}
+
+/** Everyone in a To or Cc header, groups opened up. */
+function addresses(field: AddressObject | AddressObject[] | undefined): Address[] {
+  const out: Address[] = [];
+  const add = (list: AddressObject['value']) => {
+    for (const a of list) {
+      if (a.group) add(a.group);
+      else if (a.address) out.push({ email: a.address.toLowerCase(), name: a.name || null });
+    }
+  };
+  for (const f of [field ?? []].flat()) add(f.value);
+  return out;
+}
+
+/** The email as it is kept on the request (plain-text emails shown as such). */
+function inbound(mail: IncomingMail, from: string): InboundEmail {
+  return {
+    messageId: mail.messageId,
+    inReplyTo: mail.inReplyTo,
+    references: mail.references,
+    fromEmail: from,
+    fromName: mail.fromName,
+    to: mail.to,
+    cc: mail.cc,
+    replyTo: mail.replyTo,
+    subject: mail.subject,
+    html: mail.html || textToHtml(mail.text),
+    text: mail.text,
   };
 }
 

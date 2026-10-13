@@ -586,9 +586,13 @@ JiraTech reads that address's mailbox over **IMAP** (every minute by default) an
 - turns each **new email** into a request from the sender: the subject becomes the summary, the text the description, and attachments
   (up to 20 MB each) are attached. It is raised through the portal of the sender's organization; otherwise through the channel's
   **default portal**, with the chosen **request type** (or the portal's first);
-- adds a **reply** to the existing request as a comment when the subject carries the request's key, e.g. `Re: [JiraTech] (HELP-12) …`.
+- adds a **reply** to the existing request as a comment when it answers one of the request's emails (its *In-Reply-To* / *References*
+  headers) or the subject carries the request's key, e.g. `Re: [JiraTech] (HELP-12) …`.
   Quoted earlier messages are trimmed. A customer replying to a request *waiting for customer* sends it back to the agents, as on the portal.
   Only people who can see the request may reply to it;
+- keeps each email on the request (shown as an email in its activity) and makes the people in its **To and Cc** request participants:
+  they see the request in the help center, get its updates and can reply. Unknown addresses get a customer account when *Accept emails
+  from anyone* is on; people removed from the request's portal are left out;
 - skips out-of-office replies, delivery reports, mailing-list mail and mail from JiraTech's own address, so notifications can't loop.
 
 **Accept emails from anyone**: unknown senders get a customer account (no password; an admin can send them a link to choose one from the People page) and access to
@@ -643,7 +647,34 @@ menu, and agents can **raise a request on behalf of** a customer (e.g. one who p
 - **Issue page**: a **Service request** panel with the request type, the customer, both SLA clocks and the customers it's shared with (add more with *Share with a customer*).
 - **Comments**: choose **Reply to customer** (customers see it and are notified) or **Add internal note** (agents only, shown in yellow).
   The first reply to the customer stops the first-response clock.
+- **Emails** (see below): answer customers by email from the request, with templates.
 - **JQL**: `requestType = "Report a bug"` finds requests of a type; `organization = "Acme Retail"` those shared with an organization.
+
+### Emails on a request
+
+A request raised by email says **Raised via: Email** in its *Service request* panel (*Help center* for portal requests). Every email
+received or sent on it is shown in **Activity** as an email: sender, To, Cc, subject (*Details* shows the full headers), the body as the
+sender wrote it (earlier quoted messages folded behind **•••**) and its attachments. *Show: Emails* lists only the emails.
+
+- **Reply** answers the sender (or their Reply-To); replying to an email you sent goes to the same people again. **Reply all** (shown
+  when the email went to others too) adds everyone else in To and Cc, except the service desk itself. **Forward** sends it on, with its
+  attachments ticked. **Send email** (next to *Add internal note*, or on the *Emails* tab) starts a new one, to the customer by default.
+- The email window has To, Cc and Bcc (type an address and press Enter, or pick someone on the request), the subject (always carrying
+  the key, e.g. `Re: [HELP-12] …`), the text, *Include the original message*, and files from the request or uploaded. **Show on the
+  customer's portal** (ticked except for forwards) decides whether it also appears there as a reply or stays an internal note; only
+  public emails make their recipients participants. An unsent draft is kept in the browser until it is sent or discarded.
+- The email is sent from the address in Email settings, named after the agent and the desk (e.g. *Anna Smith (IT Help Desk)*), with the
+  desk's address as Reply-To and threading headers, so the answer comes back to the request. Without an enabled email address on the
+  desk the window warns that answers won't come back. People who got the email aren't also sent the usual "commented" notification.
+- An email the mail server refused is marked **Not sent**, with the reason and **Try again**. Deleting the comment deletes its email.
+- Emails received before this feature existed show as ordinary comments.
+
+**Templates.** Pick one at the top of the email window: its text (and, for a new email, its subject) replaces what you wrote, with the
+placeholders filled in for the request: `{{customer.name}}`, `{{customer.firstName}}`, `{{customer.email}}` (the first recipient, or the
+request's customer), `{{agent.name}}`, `{{agent.firstName}}`, `{{agent.email}}`, `{{issue.key}}`, `{{issue.summary}}`, `{{issue.status}}`,
+`{{issue.priority}}`, `{{issue.assignee}}`, `{{request.type}}`, `{{request.link}}` (the request in the help center) and `{{project.name}}`.
+Global admins manage **global templates**, offered on every service desk, under *Account menu → Administration → Email templates*;
+project admins add a desk's own under *Service desk → Email templates* on the project page (*Insert placeholder* adds them).
 
 ### How SLAs are measured
 

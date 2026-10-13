@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import SetPasswordPage from './pages/SetPasswordPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import EmailSettingsPage from './pages/EmailSettingsPage';
+import EmailTemplatesPage from './pages/EmailTemplatesPage';
 import BoardPage from './pages/BoardPage';
 import SearchPage from './pages/SearchPage';
 import IssueDetailPage from './pages/IssueDetailPage';
@@ -98,6 +99,7 @@ export default function App() {
                     <Route path="/planning" element={<PlanningPage />} />
                     <Route path="/users" element={<UsersPage />} />
                     <Route path="/settings/email" element={<EmailSettingsPage />} />
+                    <Route path="/settings/email-templates" element={<EmailTemplatesPage />} />
                     <Route path="*" element={<EmptyState title="Page not found" action={<Link to="/" className="btn btn-default">Go to the board</Link>}>The page you're looking for doesn't exist.</EmptyState>} />
                   </Routes>
                 </Layout>

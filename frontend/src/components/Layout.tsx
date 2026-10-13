@@ -211,6 +211,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
                       <div className="border-t border-jira-border mt-1 pt-1">
                         <div className="menu-heading">Administration</div>
                         <Link to="/settings/email" className="menu-item"><MailIcon size={14} /> Email settings</Link>
+                        <Link to="/settings/email-templates" className="menu-item"><MessageIcon size={14} /> Email templates</Link>
                       </div>
                     )}
                     <div className="border-t border-jira-border mt-1 pt-1">

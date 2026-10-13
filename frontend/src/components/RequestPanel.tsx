@@ -4,7 +4,7 @@ import { api, type Issue } from '../api';
 import { SlaRow } from './SlaBadge';
 import { SelectPicker } from './Pickers';
 import Avatar from './Avatar';
-import { XIcon } from './Icons';
+import { MailIcon, MessageIcon, XIcon } from './Icons';
 import { errorMessage, useToast } from './ui';
 
 /** Service desk side panel on an issue: request type, customer, SLAs and the customers it's shared with. */
@@ -49,6 +49,12 @@ export default function RequestPanel({ issue, canEdit }: { issue: Issue; canEdit
           <span>{info?.portal ? <a href={`/portal/${info.portal.slug}`} target="_blank" rel="noopener noreferrer" className="link">{info.portal.name}</a> : <span className="text-jira-muted">None</span>}</span>
           <span className="text-jira-subtle font-medium">Request type</span>
           <span>{issue.requestType?.name ?? <span className="text-jira-muted">None (raised outside the portal)</span>}</span>
+          <span className="text-jira-subtle font-medium">Raised via</span>
+          <span className="flex items-center gap-1.5">
+            {issue.source === 'EMAIL' ? <><MailIcon size={14} className="text-jira-subtle" /> Email</>
+              : issue.source === 'PORTAL' ? <><MessageIcon size={14} className="text-jira-subtle" /> Help center</>
+                : <span className="text-jira-muted">Not recorded</span>}
+          </span>
           <span className="text-jira-subtle font-medium">Customer</span>
           <span className="flex items-center gap-2 min-w-0">
             {issue.reporter ? <><Avatar name={issue.reporter.name} size="xs" /><span className="truncate">{issue.reporter.name}</span></> : '—'}

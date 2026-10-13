@@ -107,6 +107,12 @@ enum EscalationAction {
   REOPEN
 }
 
+/// How a service desk request came in (null for ordinary issues and requests from before this was recorded)
+enum IssueSource {
+  EMAIL
+  PORTAL
+}
+
 enum CustomFieldType {
   TEXT
   NUMBER
@@ -150,6 +156,8 @@ model User {
   portalAccess     PortalCustomer[]
   portalExclusions PortalExclusion[]
   passwordTokens   PasswordToken[]
+  emailsSent       IssueEmail[]
+  emailTemplates   EmailTemplate[]
 }
 
 /** A one-time link for choosing a password (the welcome email); deleted once used. Only a hash of the token is stored. */
@@ -241,6 +249,7 @@ model Project {
   organizations         ProjectOrganization[]
   portals               Portal[]
   emailChannel          EmailChannel?
+  emailTemplates        EmailTemplate[]
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -406,6 +415,8 @@ model Issue {
   organizationId    String?
   /// Service desks: the portal it was raised through
   portalId          String?
+  /// Service desks: raised by email or on the portal
+  source            IssueSource?
   /// SLA clocks: first public reply by an agent, when it was resolved, and time spent paused
   firstRespondedAt  DateTime?
   resolvedAt        DateTime?
@@ -438,6 +449,7 @@ model Issue {
   comments          Comment[]
   history           IssueHistory[]
   notifications     Notification[]
+  emails            IssueEmail[]
 
   @@index([projectId, type])
   @@index([projectId, status])
@@ -503,6 +515,7 @@ model Attachment {
 
   issue      Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
   uploadedBy User  @relation(fields: [uploadedById], references: [id])
+  emails     IssueEmailAttachment[]
 }
 
 // ─── Work Logs ───────────────────────────────────────────────────────────────
@@ -562,6 +575,8 @@ model Comment {
 
   issue  Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
   author User  @relation(fields: [authorId], references: [id])
+  /// Set when the comment is an email received or sent on a service desk request
+  email  IssueEmail?
 
   @@index([issueId, createdAt])
 }
@@ -958,4 +973,85 @@ model EmailMessage {
 
   @@unique([channelId, messageId])
   @@index([channelId, receivedAt])
+}
+
+// ─── Emails on service desk requests ─────────────────────────────────────────
+
+enum EmailDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum EmailStatus {
+  SENT
+  FAILED
+}
+
+/**
+ * An email received on a request or sent from it. Each is also shown as a comment (commentId; deleting the comment
+ * deletes the email), except the email that raised the request, whose text became its description.
+ */
+model IssueEmail {
+  id         String         @id @default(cuid())
+  issueId    String
+  commentId  String?        @unique
+  direction  EmailDirection
+  /// The Message-ID header, without angle brackets; replies point at it with In-Reply-To / References
+  messageId  String
+  inReplyTo  String?
+  /// Space-separated Message-IDs of the earlier emails in the thread
+  references String?
+  fromEmail  String
+  fromName   String?
+  /// JSON arrays of {email, name}
+  to         String         @default("[]")
+  cc         String         @default("[]")
+  bcc        String         @default("[]")
+  /// Where replies should go when the sender asked for somewhere else than From
+  replyTo    String?
+  subject    String
+  /// Sanitized HTML, quoted earlier messages included (as the email was sent or received)
+  html       String
+  text       String         @default("")
+  sentById   String?
+  status     EmailStatus    @default(SENT)
+  error      String?
+  createdAt  DateTime       @default(now())
+
+  issue       Issue                  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  comment     Comment?               @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  sentBy      User?                  @relation(fields: [sentById], references: [id], onDelete: SetNull)
+  attachments IssueEmailAttachment[]
+
+  @@index([issueId, createdAt])
+  @@index([messageId])
+}
+
+model IssueEmailAttachment {
+  emailId      String
+  attachmentId String
+
+  email      IssueEmail @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@id([emailId, attachmentId])
+}
+
+/** A ready-made email agents start from: global (projectId null, managed by admins) or a service desk's own. */
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  projectId   String?
+  name        String
+  /// Optional: used as the subject when picked for a new email (replies keep "Re: …")
+  subject     String?
+  /// Rich-text HTML with {{placeholders}}
+  body        String
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
 }

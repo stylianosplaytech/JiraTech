@@ -2,7 +2,7 @@ import {
   BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit,
 } from '@nestjs/common';
 import {
-  CustomFieldDefinition, CustomFieldType, IssueStatus, Portal, Prisma, ProjectType, UserRole,
+  CustomFieldDefinition, CustomFieldType, IssueSource, IssueStatus, Portal, Prisma, ProjectType, UserRole,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccessService } from '../access/access.service';
@@ -392,7 +392,7 @@ export class PortalsService implements OnModuleInit {
       { type: type.issueType, summary: dto.summary.trim(), description: dto.description, projectKey: portal.project.key, customFields },
       user,
       undefined,
-      { requestTypeId: type.id, reporterId, organizationId, portalId: portal.id },
+      { requestTypeId: type.id, reporterId, organizationId, portalId: portal.id, source: IssueSource.PORTAL },
     );
     return { key: issue.key };
   }
@@ -507,6 +507,12 @@ export class PortalsService implements OnModuleInit {
    * it goes back to the agents (and the SLA clock resumes).
    */
   async comment(key: string, user: AuthUser, body: string) {
+    await this.reply(key, user, body);
+    return this.request(key, user);
+  }
+
+  /** Adds the reply (see comment) and returns it. `emailed`: see IssuesService.addComment. */
+  async reply(key: string, user: AuthUser, body: string, opts: { emailed?: string[] } = {}) {
     const issue = await this.prisma.issue.findUnique({
       where: { key: key.toUpperCase() },
       include: {
@@ -516,7 +522,7 @@ export class PortalsService implements OnModuleInit {
       },
     });
     if (!issue || !(await this.canView(user, issue))) throw new NotFoundException('Request not found');
-    await this.issues.addComment(issue.id, user, body);
+    const comment = await this.issues.addComment(issue.id, user, body, { emailed: opts.emailed });
 
     const fromCustomer = user.role === UserRole.CUSTOMER || user.id === issue.reporterId;
     if (fromCustomer && issue.statusId && issue.workflowStatus?.pausesSla && issue.workflowStatus.category !== IssueStatus.CLOSED) {
@@ -529,7 +535,7 @@ export class PortalsService implements OnModuleInit {
         .sort((a, b) => Number(a.category !== IssueStatus.TO_DO) - Number(b.category !== IssueStatus.TO_DO) || a.position - b.position)[0];
       if (target) await this.issues.transition(issue.id, { statusId: target.id }, user.id);
     }
-    return this.request(key, user);
+    return comment;
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────

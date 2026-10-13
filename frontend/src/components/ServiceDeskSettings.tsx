@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, formatDuration, type PortalAdmin, type Queue, type RequestType, type SlaTarget } from '../api';
 import { PortalHero, PortalLogo } from '../portal/Branding';
 import EmailChannelSettings from './EmailChannelSettings';
+import EmailTemplatesManager from './email/EmailTemplatesManager';
 import { PriorityIcon, typeLabel } from './Badges';
 import { SelectPicker } from './Pickers';
 import Avatar from './Avatar';
@@ -725,6 +726,7 @@ export default function ServiceDeskSettings({ projectKey, canAdmin }: { projectK
         <div className="space-y-8">
           <Portals projectKey={projectKey} requestTypes={data.requestTypes} canAdmin={canAdmin} />
           <EmailChannelSettings projectKey={projectKey} requestTypes={data.requestTypes} canAdmin={canAdmin} />
+          <EmailTemplatesManager projectKey={projectKey} canManage={canAdmin} />
           <RequestTypes projectKey={projectKey} types={data.requestTypes} canAdmin={canAdmin} />
           <SlaGoals projectKey={projectKey} targets={data.slaTargets} canAdmin={canAdmin} />
           <QueueEditor projectKey={projectKey} queues={data.queues} canAdmin={canAdmin} />

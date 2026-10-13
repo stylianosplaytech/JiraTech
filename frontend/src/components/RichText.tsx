@@ -1,5 +1,5 @@
 import {
-  forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode,
+  forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type MutableRefObject, type ReactNode,
 } from 'react';
 import { EditorContent, ReactRenderer, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -203,11 +203,13 @@ export interface RichTextEditorProps {
   compact?: boolean;
   /** @name mentions (off on the help center, where people can't look up colleagues). */
   mentions?: boolean;
+  /** For changing the content from outside (e.g. inserting an email template) */
+  editorRef?: MutableRefObject<Editor | null>;
 }
 
 /** Rich-text editor with a formatting toolbar and @name mentions. Emits '' for an empty document. */
 export function RichTextEditor({
-  value, onChange, placeholder, autoFocus, onSubmit, onCancel, minHeight = 120, onFocus, compact, mentions = true,
+  value, onChange, placeholder, autoFocus, onSubmit, onCancel, minHeight = 120, onFocus, compact, mentions = true, editorRef,
 }: RichTextEditorProps) {
   const queryClient = useQueryClient();
   const callbacks = useRef({ onSubmit, onCancel, onChange, onFocus });
@@ -244,6 +246,12 @@ export function RichTextEditor({
     onUpdate: ({ editor: e }) => callbacks.current.onChange(e.isEmpty ? '' : e.getHTML()),
     onFocus: () => callbacks.current.onFocus?.(),
   });
+
+  useEffect(() => {
+    if (!editorRef) return undefined;
+    editorRef.current = editor;
+    return () => { editorRef.current = null; };
+  }, [editor, editorRef]);
 
   // Reset when the parent clears the value (e.g. after posting a comment).
   useEffect(() => {

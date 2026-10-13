@@ -22,6 +22,7 @@ import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
 import { ServiceDeskModule } from './service-desk/service-desk.module';
+import { IssueEmailModule } from './issue-email/issue-email.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 
 @Module({
@@ -49,6 +50,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
     ReportsModule,
     BoardModule,
     ServiceDeskModule,
+    IssueEmailModule,
     OrganizationsModule,
   ],
 })
