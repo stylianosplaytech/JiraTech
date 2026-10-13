@@ -19,6 +19,7 @@ const USER_BRIEF = { select: { id: true, name: true, email: true } } as const;
 const ADMIN_INCLUDE = {
   organizations: { include: { organization: { select: { id: true, name: true, _count: { select: { members: true } } } } } },
   customers: { include: { user: USER_BRIEF } },
+  exclusions: { include: { user: USER_BRIEF } },
   requestTypes: { select: { requestTypeId: true } },
   _count: { select: { issues: true } },
 } satisfies Prisma.PortalInclude;
@@ -183,11 +184,14 @@ export class PortalsService implements OnModuleInit {
     if (user.role !== UserRole.CUSTOMER) {
       throw new BadRequestException('Only customer accounts can be added. Staff use portals through their project access.');
     }
-    await this.prisma.portalCustomer.upsert({
-      where: { portalId_userId: { portalId: id, userId } },
-      create: { portalId: id, userId },
-      update: {},
-    });
+    await this.prisma.$transaction([
+      this.prisma.portalCustomer.upsert({
+        where: { portalId_userId: { portalId: id, userId } },
+        create: { portalId: id, userId },
+        update: {},
+      }),
+      this.prisma.portalExclusion.deleteMany({ where: { portalId: id, userId } }),
+    ]);
     return this.adminPortal(id);
   }
 
@@ -196,6 +200,83 @@ export class PortalsService implements OnModuleInit {
     await this.portalOf(project.id, id);
     await this.prisma.portalCustomer.deleteMany({ where: { portalId: id, userId } });
     return this.adminPortal(id);
+  }
+
+  /** Lets an excluded customer back in (through the portal being open or their organization). */
+  async removeExclusion(key: string, id: string, userId: string) {
+    const project = await this.desk(key);
+    await this.portalOf(project.id, id);
+    await this.prisma.portalExclusion.deleteMany({ where: { portalId: id, userId } });
+    return this.adminPortal(id);
+  }
+
+  // ─── One customer's portals (global admins, from the People page) ──────────
+
+  /** Every service desk portal, with whether and how this customer can use it. */
+  async customerPortals(userId: string) {
+    await this.customer(userId);
+    const [portals, orgIds] = await Promise.all([
+      this.prisma.portal.findMany({
+        where: { project: { type: ProjectType.SERVICE_DESK } },
+        include: {
+          project: { select: { key: true, name: true } },
+          organizations: { include: { organization: { select: { id: true, name: true } } } },
+          customers: { where: { userId }, select: { userId: true } },
+          exclusions: { where: { userId }, select: { userId: true } },
+        },
+        orderBy: [{ project: { name: 'asc' } }, { position: 'asc' }, { name: 'asc' }],
+      }),
+      this.myOrganizationIds(userId),
+    ]);
+    return portals.map((p) => {
+      const viaOrganizations = p.organizations
+        .filter((o) => orgIds.includes(o.organizationId))
+        .map((o) => o.organization)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const direct = p.customers.length > 0;
+      const excluded = p.exclusions.length > 0;
+      return {
+        id: p.id,
+        slug: p.slug,
+        name: p.name,
+        project: p.project,
+        open: p.open,
+        direct,
+        viaOrganizations,
+        excluded,
+        canUse: !excluded && (p.open || direct || viaOrganizations.length > 0),
+      };
+    });
+  }
+
+  /** Gives the customer the portal: lifts an exclusion, and lists them on it when nothing else would let them in. */
+  async allowCustomerPortal(userId: string, portalId: string) {
+    await this.customer(userId);
+    const portal = await this.prisma.portal.findUnique({ where: { id: portalId } });
+    if (!portal) throw new NotFoundException('Portal not found');
+    await this.prisma.portalExclusion.deleteMany({ where: { portalId, userId } });
+    if (!(await this.customerCanUse(userId, portal))) {
+      await this.prisma.portalCustomer.create({ data: { portalId, userId } });
+    }
+    return this.customerPortals(userId);
+  }
+
+  /** Takes the portal away: unlists them, and excludes them if it's open or serves one of their organizations. */
+  async removeCustomerPortal(userId: string, portalId: string) {
+    await this.customer(userId);
+    const portal = await this.prisma.portal.findUnique({ where: { id: portalId } });
+    if (!portal) throw new NotFoundException('Portal not found');
+    await this.prisma.portalCustomer.deleteMany({ where: { portalId, userId } });
+    if (await this.customerCanUse(userId, portal)) {
+      await this.prisma.portalExclusion.create({ data: { portalId, userId } });
+    }
+    return this.customerPortals(userId);
+  }
+
+  private async customer(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role !== UserRole.CUSTOMER) throw new BadRequestException('Only customers have portals. Staff use them through their project access.');
   }
 
   /** Agents share a request with one of the organizations the project's portals serve, or make it private (null). */
@@ -223,6 +304,7 @@ export class PortalsService implements OnModuleInit {
         { customers: { some: { userId: user.id } } },
         { organizations: { some: { organization: { members: { some: { userId: user.id } } } } } },
       ];
+      where.exclusions = { none: { userId: user.id } };
     } else {
       const ids = await this.access.browsableProjectIds(user);
       if (ids !== null) where.projectId = { in: ids };
@@ -468,13 +550,21 @@ export class PortalsService implements OnModuleInit {
     return adminView(await this.prisma.portal.findUniqueOrThrow({ where: { id }, include: ADMIN_INCLUDE }));
   }
 
-  /** Customers need an open portal, or to be listed (themselves or through an organization); staff need access to its project. */
+  /**
+   * Customers need an open portal, or to be listed (themselves or through an organization), and not to be excluded
+   * from it; staff need access to its project.
+   */
   async canUse(user: AuthUser, portal: Portal) {
     if (user.role !== UserRole.CUSTOMER) return this.access.can(user, portal.projectId, 'browse');
+    return this.customerCanUse(user.id, portal);
+  }
+
+  private async customerCanUse(userId: string, portal: Portal) {
+    if (await this.prisma.portalExclusion.findUnique({ where: { portalId_userId: { portalId: portal.id, userId } } })) return false;
     if (portal.open) return true;
     const [listed, viaOrganization] = await Promise.all([
-      this.prisma.portalCustomer.findUnique({ where: { portalId_userId: { portalId: portal.id, userId: user.id } } }),
-      this.prisma.portalOrganization.findFirst({ where: { portalId: portal.id, organization: { members: { some: { userId: user.id } } } } }),
+      this.prisma.portalCustomer.findUnique({ where: { portalId_userId: { portalId: portal.id, userId } } }),
+      this.prisma.portalOrganization.findFirst({ where: { portalId: portal.id, organization: { members: { some: { userId } } } } }),
     ]);
     return !!(listed || viaOrganization);
   }
@@ -590,6 +680,8 @@ function adminView(p: Prisma.PortalGetPayload<{ include: typeof ADMIN_INCLUDE }>
       .map((o) => ({ id: o.organization.id, name: o.organization.name, members: o.organization._count.members }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     customers: p.customers.map((c) => c.user).sort((a, b) => a.name.localeCompare(b.name)),
+    /** Kept off it although it's open or serves their organization */
+    excluded: p.exclusions.map((c) => c.user).sort((a, b) => a.name.localeCompare(b.name)),
     /** Empty: every request type of the project */
     requestTypeIds: p.requestTypes.map((r) => r.requestTypeId),
     requests: p._count.issues,

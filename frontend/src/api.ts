@@ -290,6 +290,9 @@ export const api = {
     request<PortalAdmin>(`/service-desk/${key}/portals/${id}/customers/${userId}`, { method: 'PUT' }),
   removePortalCustomer: (key: string, id: string, userId: string) =>
     request<PortalAdmin>(`/service-desk/${key}/portals/${id}/customers/${userId}`, { method: 'DELETE' }),
+  /** Lets an excluded customer use the portal again (through it being open or their organization). */
+  removePortalExclusion: (key: string, id: string, userId: string) =>
+    request<PortalAdmin>(`/service-desk/${key}/portals/${id}/exclusions/${userId}`, { method: 'DELETE' }),
   // ─── A service desk's email address (project admins change it) ─────────────
   getEmailChannel: (key: string) => request<EmailChannelSettings>(`/service-desk/${key}/email`),
   /** Fields left out keep their value; '' clears the optional ones (imapPassword is write-only). */
@@ -313,6 +316,13 @@ export const api = {
   renameOrganization: (id: string, name: string) =>
     request<Organization>(`/organizations/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteOrganization: (id: string) => request(`/organizations/${id}`, { method: 'DELETE' }),
+  // ─── One customer's portals (global admins, from the People page) ─────────
+  getCustomerPortals: (userId: string) => request<CustomerPortal[]>(`/users/${userId}/portals`),
+  allowCustomerPortal: (userId: string, portalId: string) =>
+    request<CustomerPortal[]>(`/users/${userId}/portals/${portalId}`, { method: 'PUT' }),
+  /** Also excludes them when the portal is open or serves one of their organizations. */
+  removeCustomerPortal: (userId: string, portalId: string) =>
+    request<CustomerPortal[]>(`/users/${userId}/portals/${portalId}`, { method: 'DELETE' }),
   addOrganizationMember: (id: string, userId: string) =>
     request<Organization>(`/organizations/${id}/members/${userId}`, { method: 'PUT' }),
   removeOrganizationMember: (id: string, userId: string) =>
@@ -888,6 +898,8 @@ export interface PortalAdmin {
   branding: PortalBranding;
   organizations: (Named & { members: number })[];
   customers: { id: string; name: string; email: string }[];
+  /** Kept off it although it's open or serves their organization */
+  excluded: { id: string; name: string; email: string }[];
   /** Empty: every request type of the project */
   requestTypeIds: string[];
   requests: number;
@@ -941,6 +953,23 @@ export interface EmailMessage {
   issueKey: string | null;
   test: boolean;
   receivedAt: string;
+}
+
+/** A service desk portal, and whether (and how) one customer can use it. */
+export interface CustomerPortal {
+  id: string;
+  slug: string;
+  name: string;
+  project: { key: string; name: string };
+  /** Any customer may use it */
+  open: boolean;
+  /** Listed on it individually */
+  direct: boolean;
+  /** Their organizations it serves */
+  viaOrganizations: Named[];
+  /** Kept off it although it's open or serves their organization */
+  excluded: boolean;
+  canUse: boolean;
 }
 
 export interface Organization extends Named {

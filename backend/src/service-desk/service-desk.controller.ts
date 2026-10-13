@@ -1,7 +1,8 @@
 import {
   Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Request, UseGuards,
 } from '@nestjs/common';
-import { AllowCustomers, JwtAuthGuard } from '../auth/guards';
+import { UserRole } from '@prisma/client';
+import { AllowCustomers, JwtAuthGuard, Roles, RolesGuard } from '../auth/guards';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { AuthRequest } from '../common/auth-user';
 import { ServiceDeskService } from './service-desk.service';
@@ -153,6 +154,12 @@ export class ServiceDeskController {
     return this.portals.removeCustomer(key, portalId, userId);
   }
 
+  @Delete(':key/portals/:portalId/exclusions/:userId')
+  @RequireAccess('admin', PROJECT)
+  removePortalExclusion(@Param('key') key: string, @Param('portalId') portalId: string, @Param('userId') userId: string) {
+    return this.portals.removeExclusion(key, portalId, userId);
+  }
+
   // ─── Email channel ─────────────────────────────────────────────────────────
 
   @Get(':key/email')
@@ -195,6 +202,29 @@ export class ServiceDeskController {
   @RequireAccess('admin', PROJECT)
   sendTestEmail(@Param('key') key: string, @Body() dto: TestEmailDto) {
     return this.email.testEmail(key, dto);
+  }
+}
+
+/** /users/:userId/portals — global admins choose a customer's portals from the People page. */
+@Controller('users/:userId/portals')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
+export class CustomerPortalsController {
+  constructor(private portals: PortalsService) {}
+
+  @Get()
+  list(@Param('userId') userId: string) {
+    return this.portals.customerPortals(userId);
+  }
+
+  @Put(':portalId')
+  allow(@Param('userId') userId: string, @Param('portalId') portalId: string) {
+    return this.portals.allowCustomerPortal(userId, portalId);
+  }
+
+  @Delete(':portalId')
+  remove(@Param('userId') userId: string, @Param('portalId') portalId: string) {
+    return this.portals.removeCustomerPortal(userId, portalId);
   }
 }
 

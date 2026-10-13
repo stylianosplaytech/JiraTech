@@ -6,6 +6,7 @@ import { humanize } from '../utils';
 import Avatar from '../components/Avatar';
 import { SelectPicker } from '../components/Pickers';
 import OrganizationsPanel from '../components/OrganizationsPanel';
+import CustomerPortals from '../components/CustomerPortals';
 import { EditIcon, MailIcon, PlusIcon, SearchIcon } from '../components/Icons';
 import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
 
@@ -146,7 +147,7 @@ export default function UsersPage() {
         <Modal
           title={editing ? `Edit ${dialog.mode === 'edit' ? dialog.user.name : ''}` : 'Add person'}
           onClose={() => setDialog(null)}
-          width="max-w-md"
+          width={dialog.mode === 'edit' && dialog.user.role === 'CUSTOMER' ? 'max-w-lg' : 'max-w-md'}
           footer={(
             <>
               <button type="button" className="btn btn-subtle" onClick={() => setDialog(null)}>Cancel</button>
@@ -193,6 +194,7 @@ export default function UsersPage() {
               <span className="field-label">Role</span>
               <SelectPicker variant="field" value={form.role} onChange={(role) => role && setForm({ ...form, role })} options={ROLES.map((r) => ({ id: r, label: humanize(r), hint: r === 'CUSTOMER' ? 'Help center only' : undefined }))} />
             </div>
+            {dialog.mode === 'edit' && dialog.user.role === 'CUSTOMER' && <CustomerPortals userId={dialog.user.id} />}
             {save.isError && <div className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2">{errorMessage(save.error)}</div>}
           </form>
         </Modal>

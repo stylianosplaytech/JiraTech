@@ -425,6 +425,7 @@ function PortalCard({ projectKey, portal, requestTypes, canAdmin, onlyOne }: {
   const removeOrg = useMutation({ mutationFn: (id: string) => api.removePortalOrganization(projectKey, portal.id, id), onSuccess: done, onError });
   const addCustomer = useMutation({ mutationFn: (id: string) => api.addPortalCustomer(projectKey, portal.id, id), onSuccess: done, onError });
   const removeCustomer = useMutation({ mutationFn: (id: string) => api.removePortalCustomer(projectKey, portal.id, id), onSuccess: done, onError });
+  const restoreCustomer = useMutation({ mutationFn: (id: string) => api.removePortalExclusion(projectKey, portal.id, id), onSuccess: done, onError });
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
@@ -559,6 +560,18 @@ function PortalCard({ projectKey, portal, requestTypes, canAdmin, onlyOne }: {
                   placeholder="+ Add customer"
                   options={allCustomers.filter((c) => !listed.has(c.id)).map((c) => ({ id: c.id, label: c.name, hint: c.email, icon: <Avatar name={c.name} size="xs" /> }))}
                 />
+              )}
+              {portal.excluded.length > 0 && (
+                <>
+                  <div className="text-xs font-semibold text-jira-muted mt-3 mb-1" title="Kept off this portal although it's open or serves their organization">Removed customers</div>
+                  {portal.excluded.map((c) => (
+                    <div key={c.id} className="flex items-center gap-2 py-1">
+                      <Avatar name={c.name} size="xs" />
+                      <span className="flex-1 truncate text-jira-subtle">{c.name} <span className="text-jira-muted text-xs">{c.email}</span></span>
+                      {canAdmin && <button type="button" className="btn btn-subtle btn-sm" disabled={restoreCustomer.isPending} onClick={() => restoreCustomer.mutate(c.id)}>Restore</button>}
+                    </div>
+                  ))}
+                </>
               )}
             </div>
 

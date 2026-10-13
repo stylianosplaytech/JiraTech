@@ -148,6 +148,7 @@ model User {
   customerOf       ProjectCustomer[]
   organizations    OrganizationMember[]
   portalAccess     PortalCustomer[]
+  portalExclusions PortalExclusion[]
   passwordTokens   PasswordToken[]
 }
 
@@ -833,6 +834,8 @@ model Portal {
   project       Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   organizations PortalOrganization[]
   customers     PortalCustomer[]
+  /// Customers kept off it although it's open or serves one of their organizations
+  exclusions    PortalExclusion[]
   /// Request types offered here; none listed means all of the project's
   requestTypes  PortalRequestType[]
   issues        Issue[]
@@ -853,6 +856,18 @@ model PortalOrganization {
 }
 
 model PortalCustomer {
+  portalId String
+  userId   String
+
+  portal Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([portalId, userId])
+  @@index([userId])
+}
+
+/** A customer who may not use a portal they would otherwise reach (it's open, or serves one of their organizations). */
+model PortalExclusion {
   portalId String
   userId   String
 

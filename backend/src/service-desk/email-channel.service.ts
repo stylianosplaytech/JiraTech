@@ -433,6 +433,9 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     }
     if (!portal || !user) {
       if (!channel.createCustomers) throw new Ignored(`${from} isn't a customer of this service desk`);
+      if (user && await this.prisma.portalExclusion.findUnique({ where: { portalId_userId: { portalId: fallback.id, userId: user.id } } })) {
+        throw new Ignored(`${from} has been removed from ${fallback.name}`);
+      }
       user ??= await this.createCustomer(from, mail.fromName);
       portal = fallback;
       if (!portal.open) {
