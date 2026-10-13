@@ -10,9 +10,9 @@
     "start": "node dist/main",
     "db:migrate": "node scripts/prisma.js migrate dev",
     "db:push": "node scripts/prisma.js db push",
-    "db:seed": "ts-node prisma/seed.ts",
+    "db:seed": "ts-node --transpile-only prisma/seed.ts",
     "db:generate": "node scripts/prisma.js generate",
-    "db:seed:demo": "ts-node prisma/seed-demo.ts"
+    "db:seed:demo": "ts-node --transpile-only prisma/seed-demo.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
@@ -49,6 +49,6 @@
     "typescript": "^5.7.3"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node --transpile-only prisma/seed.ts"
   }
 }
