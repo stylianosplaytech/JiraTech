@@ -451,10 +451,22 @@ model Issue {
   history           IssueHistory[]
   notifications     Notification[]
   emails            IssueEmail[]
+  previousKeys      IssueKeyAlias[]
 
   @@index([projectId, type])
   @@index([projectId, status])
   @@index([parentId])
+}
+
+/// A key the issue had before it was moved to another project; looking it up still finds the issue.
+model IssueKeyAlias {
+  key       String   @id
+  issueId   String
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId])
 }
 
 model IssueWatcher {

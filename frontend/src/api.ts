@@ -102,6 +102,10 @@ export const api = {
       body: JSON.stringify({ ...target, resolution }),
     }),
   getTransitions: (id: string) => request<WorkflowStatusRef[]>(`/issues/${id}/transitions`),
+  getMovePreview: (id: string, projectKey: string) =>
+    request<MovePreview>(`/issues/${id}/move?to=${encodeURIComponent(projectKey)}`),
+  moveIssue: (id: string, data: MoveIssuePayload) =>
+    request<Issue>(`/issues/${id}/move`, { method: 'POST', body: JSON.stringify(data) }),
   getWorkflow: (key: string) => request<Workflow>(`/projects/${key}/workflow`),
   addWorkflowStatus: (key: string, data: { name: string; category: string }) =>
     request<WorkflowStatus>(`/projects/${key}/workflow/statuses`, { method: 'POST', body: JSON.stringify(data) }),
@@ -763,7 +767,7 @@ export interface UpdateIssuePayload extends Partial<CreateIssuePayload> {
 
 export interface BulkRequest {
   issueIds: string[];
-  action: 'edit' | 'transition' | 'watch' | 'delete';
+  action: 'edit' | 'transition' | 'watch' | 'delete' | 'move';
   notify?: boolean;
   assigneeId?: string | null;
   priority?: string;
@@ -773,6 +777,27 @@ export interface BulkRequest {
   addFixVersionIds?: string[];
   statusName?: string;
   resolution?: string;
+  projectKey?: string;
+}
+
+export interface MoveIssuePayload {
+  projectKey: string;
+  statusId?: string;
+  parentId?: string | null;
+  requestTypeId?: string | null;
+}
+
+export interface MovePreview {
+  key: string;
+  target: { key: string; name: string; type: ProjectType; strictHierarchy: boolean };
+  statuses: WorkflowStatusRef[];
+  suggestedStatusId: string;
+  parentRequired: boolean;
+  currentParent: { id: string; key: string } | null;
+  requestTypes: { id: string; name: string }[];
+  suggestedRequestTypeId: string | null;
+  subtasks: { id: string; key: string; summary: string }[];
+  dropped: { components: string[]; versions: string[]; customFields: string[]; sprints: string[]; pis: string[] };
 }
 
 export interface BulkResult {

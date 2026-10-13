@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AccessService } from '../access/access.service';
 import { AuthUser } from '../common/auth-user';
 import { contains } from '../common/text-match';
+import { issueRef } from '../common/issue-ref';
 import { IssuesService } from '../issues/issues.service';
 import { CATEGORY_NAMES } from '../workflow/workflow.service';
 import { PORTAL_FIELD_TYPES } from './service-desk.service';
@@ -282,7 +283,7 @@ export class PortalsService implements OnModuleInit {
   /** Agents share a request with one of the organizations the project's portals serve, or make it private (null). */
   async setRequestOrganization(idOrKey: string, organizationId: string | null, userId: string) {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       include: { project: { select: { type: true } } },
     });
     if (!issue || issue.project.type !== ProjectType.SERVICE_DESK) throw new NotFoundException('Request not found');
@@ -437,8 +438,8 @@ export class PortalsService implements OnModuleInit {
 
   /** The customer's view of a request: public replies only, never internal notes or SLAs. */
   async request(key: string, user: AuthUser) {
-    const issue = await this.prisma.issue.findUnique({
-      where: { key: key.toUpperCase() },
+    const issue = await this.prisma.issue.findFirst({
+      where: issueRef(key),
       include: {
         project: { select: { id: true, type: true } },
         portal: { select: { id: true, slug: true, name: true, welcome: true, color: true, logo: true } },
@@ -492,7 +493,7 @@ export class PortalsService implements OnModuleInit {
 
   /** The requester changes who a request is shared with: one of their organizations the portal serves, or nobody. */
   async share(key: string, user: AuthUser, organizationId: string | null) {
-    const issue = await this.prisma.issue.findUnique({ where: { key: key.toUpperCase() }, include: { project: { select: { type: true } } } });
+    const issue = await this.prisma.issue.findFirst({ where: issueRef(key), include: { project: { select: { type: true } } } });
     if (!issue || issue.project.type !== ProjectType.SERVICE_DESK) throw new NotFoundException('Request not found');
     if (issue.reporterId !== user.id) throw new ForbiddenException('Only the person who raised a request can change who it is shared with');
     if (organizationId && !(await this.requestShareOptions(issue, user.id)).some((o) => o.id === organizationId)) {
@@ -513,8 +514,8 @@ export class PortalsService implements OnModuleInit {
 
   /** Adds the reply (see comment) and returns it. `emailed`: see IssuesService.addComment. */
   async reply(key: string, user: AuthUser, body: string, opts: { emailed?: string[] } = {}) {
-    const issue = await this.prisma.issue.findUnique({
-      where: { key: key.toUpperCase() },
+    const issue = await this.prisma.issue.findFirst({
+      where: issueRef(key),
       include: {
         project: { select: { type: true } },
         watchers: { select: { userId: true } },

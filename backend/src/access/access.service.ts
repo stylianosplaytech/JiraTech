@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { ProjectAccess, ProjectRole, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
+import { issueRef } from '../common/issue-ref';
 
 /** What someone can do in a project. NONE means they can't see it at all. */
 export type EffectiveRole = 'NONE' | ProjectRole;
@@ -101,7 +102,7 @@ export class AccessService {
 
   async projectOfIssue(idOrKey: string): Promise<string> {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       select: { projectId: true },
     });
     if (!issue) throw new NotFoundException('Issue not found');

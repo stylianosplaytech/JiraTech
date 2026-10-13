@@ -28,6 +28,7 @@ const FIELD_NAMES: Record<string, string> = {
   remainingEstimate: 'Remaining estimate', blocked: 'Blocked', epicName: 'Epic name', assignee: 'Assignee',
   reporter: 'Reporter', sprint: 'Sprint', components: 'Components', labels: 'Labels',
   fixVersions: 'Fix versions', affectsVersions: 'Affects versions', link: 'Links', attachment: 'Attachments',
+  project: 'Project (moved)',
 };
 
 interface IssueRef {

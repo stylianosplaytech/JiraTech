@@ -8,6 +8,7 @@ import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccessService } from '../access/access.service';
 import { open, seal } from '../common/secret-box';
+import { issueRef } from '../common/issue-ref';
 import { IssuesService } from '../issues/issues.service';
 import { PortalsService } from './portals.service';
 import { MailerService } from '../mail/mailer.service';
@@ -404,7 +405,7 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     // Or the subject carries the key of one of this desk's requests, e.g. "Re: [JiraTech] (HELP-12) Printer jam".
     const match = new RegExp(`(?:^|[^A-Za-z0-9])(${escapeRegExp(channel.project.key)}-\\d+)(?![0-9])`, 'i').exec(mail.subject);
     if (match) {
-      const issue = await this.prisma.issue.findUnique({ where: { key: match[1].toUpperCase() }, select: { key: true, projectId: true } });
+      const issue = await this.prisma.issue.findFirst({ where: issueRef(match[1]), select: { key: true, projectId: true } });
       if (issue?.projectId === channel.projectId) return this.reply(channel, issue.key, from, mail);
     }
     return this.raise(channel, from, mail);

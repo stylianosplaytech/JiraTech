@@ -50,6 +50,7 @@ export const MailIcon = (p: IconProps) => <svg {...base(p)}><rect x="3" y="5" wi
 export const ReplyIcon = (p: IconProps) => <svg {...base(p)}><path d="M9 17 4 12l5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></svg>;
 export const ReplyAllIcon = (p: IconProps) => <svg {...base(p)}><path d="M7 17 2 12l5-5" /><path d="m12 17-5-5 5-5" /><path d="M22 18v-2a4 4 0 0 0-4-4H7" /></svg>;
 export const ForwardIcon = (p: IconProps) => <svg {...base(p)}><path d="m15 17 5-5-5-5" /><path d="M4 18v-2a4 4 0 0 1 4-4h12" /></svg>;
+export const MoveIcon = (p: IconProps) => <svg {...base(p)}><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /><path d="M5 5v14" /></svg>;
 
 // ─── Issue type icons (16px rounded squares, Jira-style) ─────────────────────
 

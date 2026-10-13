@@ -201,6 +201,7 @@ Tick issues (or the header checkbox for the whole page) to get the bulk toolbar.
 | **Edit** | Set assignee, priority, labels, components or fix versions |
 | **Change status** | Move to a status (asks for a resolution when moving to Done) |
 | **Watch** | Start watching all selected issues |
+| **Move** | Move the selected issues to another project (see *Moving an issue to another project* below); statuses are matched automatically |
 | **Delete** | Delete the selected issues |
 
 Every issue is checked individually against permissions and the workflow; anything that can't be changed is listed afterwards with the reason. Untick *Send notifications* for quiet clean-ups.
@@ -213,7 +214,7 @@ Open any issue at `/browse/KEY-123` (from the board, search, a link or a notific
 
 ![Issue detail](screenshots/11-issue-detail.png)
 
-**Header** — breadcrumbs (project / epic / issue), watch button with watcher count, copy link, and a **•••** menu (Log time, Create sub-task, Link issue, Copy link, Delete).
+**Header** — breadcrumbs (project / epic / issue), watch button with watcher count, copy link, and a **•••** menu (Log time, Create sub-task, Link issue, Move to another project, Copy link, Delete).
 
 **Main column**
 - **Attach / Add child issue / Link issue** quick actions. Attachments can be downloaded and deleted.
@@ -236,6 +237,17 @@ Open any issue at `/browse/KEY-123` (from the board, search, a link or a notific
 - Created / updated timestamps.
 
 Opening an issue marks its notifications as read. Deleting an issue removes its comments, history, links, work logs and attachments; issues with children must have them moved or deleted first.
+
+### Moving an issue to another project
+
+**••• → Move to another project** (needs member access in both projects) moves the issue, with all its sub-tasks, as Jira does:
+
+- Each issue gets the next key of the target project. **The old key keeps working**: `/browse/OLD-12`, search (`key = OLD-12`), the help center and email replies quoting it all find the issue.
+- You choose its **status** in the target workflow (preset to the status of the same name, else the first one of the same category); sub-tasks are matched the same way. Moving into Done keeps the resolution (or sets *Done*).
+- You can pick a **parent** in the target project; projects with strict hierarchy require one for everything except epics. The old parent stays behind.
+- **Components, versions and custom fields** carry over when the target has one of the same name (key, for custom fields); **labels** are created there if missing. Sprint and program increment are cleared. The dialog lists everything that would be cleared before you confirm.
+- Service desks: the request type is matched by name (or by issue type), and the organization is kept when the target serves it.
+- Comments, attachments, work logs, links, watchers and history move with the issue; the history records the old and new project and key.
 
 ---
 

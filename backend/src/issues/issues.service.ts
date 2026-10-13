@@ -12,6 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { extractMentions, sanitizeRich, toPlainText } from '../common/rich-text';
 import { contains } from '../common/text-match';
 import { slaOnStatusChange } from '../common/sla';
+import { issueRef } from '../common/issue-ref';
 import { AccessService } from '../access/access.service';
 import { WorkflowService, CATEGORY_NAMES } from '../workflow/workflow.service';
 import {
@@ -86,7 +87,7 @@ export class IssuesService {
   /** Look up by id or by key (e.g. SPORTS-12), like Jira's /browse/KEY. */
   async findOne(idOrKey: string) {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       include: ISSUE_INCLUDE,
     });
     if (!issue) throw new NotFoundException('Issue not found');
@@ -95,7 +96,7 @@ export class IssuesService {
 
   private async findIdOrThrow(idOrKey: string) {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       select: { id: true },
     });
     if (!issue) throw new NotFoundException('Issue not found');
@@ -275,7 +276,7 @@ export class IssuesService {
 
   async remove(idOrKey: string, user: AuthUser, opts: { notify?: boolean } = {}) {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       include: { project: true, attachments: true, _count: { select: { children: true } } },
     });
     if (!issue) throw new NotFoundException('Issue not found');
@@ -423,7 +424,7 @@ export class IssuesService {
   async addComment(idOrKey: string, author: AuthUser, body: string, opts: { internal?: boolean; emailed?: string[] } = {}) {
     const authorId = author.id;
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       select: { id: true, reporterId: true, firstRespondedAt: true, project: { select: { type: true } } },
     });
     if (!issue) throw new NotFoundException('Issue not found');

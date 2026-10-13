@@ -5,6 +5,7 @@ import { CustomFieldType, Prisma, Priority, ProjectType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
 import { computeSla, Sla, SlaGoals } from '../common/sla';
+import { issueRef } from '../common/issue-ref';
 import { compileJql, JqlError } from '../search/jql';
 import { compareRows } from '../search/search.service';
 import {
@@ -204,7 +205,7 @@ export class ServiceDeskService {
   /** Request type, portal, organization and SLAs of one issue, for the agent's issue view. */
   async requestInfo(idOrKey: string) {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       include: {
         project: { select: { type: true } },
         requestType: { select: { id: true, name: true } },

@@ -206,8 +206,8 @@ export class BulkDto {
   @IsString({ each: true })
   issueIds!: string[];
 
-  @IsIn(['edit', 'transition', 'watch', 'delete'])
-  action!: 'edit' | 'transition' | 'watch' | 'delete';
+  @IsIn(['edit', 'transition', 'watch', 'delete', 'move'])
+  action!: 'edit' | 'transition' | 'watch' | 'delete' | 'move';
 
   @IsOptional()
   @IsBoolean()
@@ -249,6 +249,11 @@ export class BulkDto {
   @IsOptional()
   @IsString()
   resolution?: string;
+
+  // move
+  @IsOptional()
+  @IsString()
+  projectKey?: string;
 }
 
 export class CommentDto {
@@ -261,4 +266,23 @@ export class CommentDto {
   @IsOptional()
   @IsBoolean()
   internal?: boolean;
+}
+
+export class MoveIssueDto {
+  @IsString()
+  @MinLength(1)
+  projectKey!: string;
+
+  @IsOptional()
+  @IsString()
+  statusId?: string;
+
+  /** New parent in the target project; null or omitted for none. */
+  @IsOptional()
+  @IsString()
+  parentId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  requestTypeId?: string | null;
 }

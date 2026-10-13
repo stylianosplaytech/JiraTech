@@ -7,6 +7,7 @@ import { AccessService } from '../access/access.service';
 import { AuthUser } from '../common/auth-user';
 import { contains } from '../common/text-match';
 import { sanitizeRich, toPlainText } from '../common/rich-text';
+import { issueRef } from '../common/issue-ref';
 import { IssuesService } from '../issues/issues.service';
 import { MailerService } from '../mail/mailer.service';
 import { RecipientGroupsService } from '../recipient-groups/recipient-groups.service';
@@ -251,7 +252,7 @@ export class IssueEmailService {
     const wanted = dedupe(addresses).filter((a) => !own.has(a.email));
     if (!wanted.length) return;
     const issue = await this.prisma.issue.findFirstOrThrow({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       select: { id: true, projectId: true, portalId: true },
     });
     for (const a of wanted) {
@@ -349,7 +350,7 @@ export class IssueEmailService {
 
   private async issue(idOrKey: string) {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       include: {
         project: { select: { id: true, name: true, type: true } },
         reporter: { select: { id: true, name: true, email: true } },

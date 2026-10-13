@@ -374,7 +374,8 @@ class Compiler {
       case 'issuekey':
       case 'issue':
       case 'id':
-        return this.equality(c, (v) => ({ key: v.toUpperCase() }));
+        // A moved issue still matches the key it had before.
+        return this.equality(c, (v) => ({ OR: [{ key: v.toUpperCase() }, { previousKeys: { some: { key: v.toUpperCase() } } }] }));
       case 'type':
       case 'issuetype':
         return this.equality(c, (v) => ({ type: enumValue(v, IssueType, TYPE_ALIASES, 'issue type') }));

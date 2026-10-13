@@ -6,7 +6,7 @@ import { useProject } from '../project';
 import { timeAgo } from '../utils';
 import { PriorityIcon, StatusBadge, STATUS_LABELS, TypeBadge, typeLabel } from '../components/Badges';
 import {
-  ChevronDownIcon, ClockIcon, CopyIcon, EyeIcon, LinkIcon, MoreIcon, PaperclipIcon, SubtaskIcon, TrashIcon, XIcon,
+  ChevronDownIcon, ClockIcon, CopyIcon, EyeIcon, LinkIcon, MoreIcon, MoveIcon, PaperclipIcon, SubtaskIcon, TrashIcon, XIcon,
 } from '../components/Icons';
 import { Dropdown, EmptyState, Modal, Spinner, errorMessage, useDialogs, useToast } from '../components/ui';
 import { MultiPicker, SelectPicker } from '../components/Pickers';
@@ -17,6 +17,7 @@ import CustomFieldRows from '../components/CustomFieldsPanel';
 import IssueLinks from '../components/IssueLinks';
 import ActivitySection from '../components/ActivitySection';
 import RequestPanel from '../components/RequestPanel';
+import MoveIssueDialog from '../components/MoveIssueDialog';
 
 
 const STATUS_BUTTON: Record<string, string> = {
@@ -60,6 +61,7 @@ export default function IssueDetailPage() {
 
   const [addingLink, setAddingLink] = useState(false);
   const [logTimeOpen, setLogTimeOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const [logTimeForm, setLogTimeForm] = useState({ hours: '', minutes: '30', comment: '' });
 
   const { data: currentUser } = useQuery({ queryKey: ['me'], queryFn: api.me });
@@ -69,6 +71,11 @@ export default function IssueDetailPage() {
     enabled: !!id,
     retry: false,
   });
+
+  // Opened by a key the issue had before it was moved: show its current key in the address bar.
+  useEffect(() => {
+    if (issue && id && id !== issue.id && id.toUpperCase() !== issue.key) navigate(`/browse/${issue.key}`, { replace: true });
+  }, [issue, id, navigate]);
 
   // Labels, components and versions are per project: follow the issue's project.
   useEffect(() => {
@@ -252,6 +259,7 @@ export default function IssueDetailPage() {
                     <button type="button" className="menu-item" onClick={() => { close(); setLogTimeOpen(true); }}><ClockIcon size={14} /> Log time</button>
                     <button type="button" className="menu-item" onClick={() => { close(); navigate(`/issues/new?parentId=${issue.id}&type=SUB_TASK`); }}><SubtaskIcon size={14} /> Create sub-task</button>
                     <button type="button" className="menu-item" onClick={() => { close(); setAddingLink(true); }}><LinkIcon size={14} /> Link issue</button>
+                    <button type="button" className="menu-item" onClick={() => { close(); setMoveOpen(true); }}><MoveIcon size={14} /> Move to another project</button>
                   </>
                 )}
                 <button type="button" className="menu-item" onClick={() => { close(); void copyLink(); }}><CopyIcon size={14} /> Copy link</button>
@@ -648,6 +656,20 @@ export default function IssueDetailPage() {
           </div>
         </aside>
       </div>
+
+      {moveOpen && (
+        <MoveIssueDialog
+          issue={issue}
+          onClose={() => setMoveOpen(false)}
+          onMoved={(moved) => {
+            setMoveOpen(false);
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+            refresh();
+            toast(`${issue.key} moved to ${moved.project?.name ?? moved.key} as ${moved.key}`);
+            navigate(`/browse/${moved.key}`);
+          }}
+        />
+      )}
 
       {logTimeOpen && (
         <Modal

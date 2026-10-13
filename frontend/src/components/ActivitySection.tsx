@@ -15,6 +15,8 @@ const FIELD_LABELS: Record<string, string> = {
   affectsVersions: 'Affects versions',
   remainingEstimate: 'Remaining estimate',
   epicName: 'Epic name',
+  key: 'Issue key',
+  requestType: 'Request type',
 };
 
 const fmt = (field: string, v: string | null) =>

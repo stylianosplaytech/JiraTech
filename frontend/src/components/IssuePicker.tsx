@@ -11,12 +11,15 @@ export default function IssuePicker({
   excludeIds = [],
   placeholder = 'Search by key or summary…',
   autoFocus,
+  filter,
 }: {
   value: Issue | null;
   onChange: (issue: Issue | null) => void;
   excludeIds?: string[];
   placeholder?: string;
   autoFocus?: boolean;
+  /** Only offer issues this accepts, e.g. those of one project. */
+  filter?: (issue: Issue) => boolean;
 }) {
   const [q, setQ] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -32,7 +35,7 @@ export default function IssuePicker({
     queryFn: () => api.quickSearch(debounced),
     enabled: debounced.length >= 1,
   });
-  const results = data?.issues.filter((i) => !excludeIds.includes(i.id)) ?? [];
+  const results = data?.issues.filter((i) => !excludeIds.includes(i.id) && (!filter || filter(i))) ?? [];
 
   if (value) {
     return (
