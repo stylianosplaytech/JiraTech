@@ -28,6 +28,8 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { ServiceNoticesModule } from './service-notices/service-notices.module';
 import { ApiTokensModule } from './api-tokens/api-tokens.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { EventsModule } from './events/events.module';
+import { AutomationModule } from './automation/automation.module';
 
 @Module({
   imports: [
@@ -58,8 +60,10 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     RecipientGroupsModule,
     OrganizationsModule,
     ServiceNoticesModule,
+    EventsModule,
     ApiTokensModule,
     WebhooksModule,
+    AutomationModule,
   ],
 })
 export class AppModule {}

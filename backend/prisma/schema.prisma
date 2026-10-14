@@ -163,6 +163,7 @@ model User {
   noticesSent      ServiceNotice[]
   apiTokens        ApiToken[]
   webhooksCreated  Webhook[]
+  automationRules  AutomationRule[]
 }
 
 /** A one-time link for choosing a password (the welcome email); deleted once used. Only a hash of the token is stored. */
@@ -261,6 +262,7 @@ model Project {
   emailChannel          EmailChannel?
   emailTemplates        EmailTemplate[]
   webhooks              Webhook[]
+  automationRules       AutomationRule[]
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -1250,4 +1252,61 @@ model WebhookDelivery {
 
   @@index([webhookId, createdAt])
   @@index([status, nextAttemptAt])
+}
+
+// ─── Automation ──────────────────────────────────────────────────────────────
+
+/// When something happens to an issue (and it matches), do these things. Runs as the person who wrote the rule.
+model AutomationRule {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  /// null = every project
+  projectId      String?
+  enabled        Boolean  @default(true)
+  /// The webhook event names: issue.created, issue.updated, issue.assigned, issue.transitioned, comment.created
+  event          String
+  /// JSON: { fields?: string[] } for issue.updated, { toStatus?: string } for issue.transitioned
+  triggerConfig  String   @default("{}")
+  /// Optional condition: the issue must match this JQL
+  jql            String?
+  /// JSON array of actions, see automation/automation-actions.ts
+  actions        String
+  disabledReason String?
+  runCount       Int      @default(0)
+  lastRunAt      DateTime?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project   Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  runs      AutomationRun[]
+
+  @@index([event, enabled])
+}
+
+enum AutomationRunStatus {
+  SUCCESS
+  /// An action failed; the ones after it did not run
+  FAILED
+  /// Stopped by loop protection
+  SKIPPED
+}
+
+/// One time a rule's trigger and condition matched.
+model AutomationRun {
+  id        String              @id @default(cuid())
+  ruleId    String
+  event     String
+  issueKey  String
+  status    AutomationRunStatus
+  message   String?
+  /// JSON: [{ type, ok, detail }] per action
+  results   String              @default("[]")
+  createdAt DateTime            @default(now())
+
+  rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId, createdAt])
 }

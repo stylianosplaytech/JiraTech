@@ -6,6 +6,7 @@ import { MailerService } from '../mail/mailer.service';
 import { open, seal } from '../common/secret-box';
 import { toPlainText } from '../common/rich-text';
 import { resolveProject } from '../common/project.util';
+import { IssueChange, IssueEventsService } from '../events/issue-events.service';
 import { PING_EVENT, WEBHOOK_EVENTS, WebhookEvent } from './webhook-events';
 import { parseWebhookUrl, postJson } from './webhook-network';
 
@@ -17,12 +18,6 @@ const DISABLE_AFTER_FAILURES = 30;
 const WORKER_SECONDS = 15;
 const KEEP_DAYS = 14;
 const MAX_WEBHOOKS = 50;
-
-export interface IssueChange {
-  field: string;
-  from: string | null;
-  to: string | null;
-}
 
 export interface WebhookInput {
   name: string;
@@ -70,7 +65,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   /** Deliveries being sent right now, so the retry worker never sends one twice at once. */
   private readonly sending = new Set<string>();
 
-  constructor(private prisma: PrismaService, private mailer: MailerService) {}
+  constructor(private prisma: PrismaService, private mailer: MailerService, private events: IssueEventsService) {}
 
   onModuleInit() {
     if (process.env.WEBHOOK_WORKER === 'false') {
@@ -205,13 +200,17 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
 
   // ─── Events (called by the services that change issues, after their changes are committed) ─────
 
-  /** An issue event: the payload is built from the issue as it is now. Never throws, so it can't fail the action. */
+  /**
+   * An issue event: tells the rest of the app (automation rules), then queues the webhook deliveries with a payload built
+   * from the issue as it is now. Never throws, so it can't fail the action.
+   */
   async issueEvent(
     event: WebhookEvent,
     issueId: string,
     actorId: string | null,
     extra: { changes?: IssueChange[]; commentId?: string } = {},
   ) {
+    this.events.emit({ event, issueId, actorId, ...extra });
     try {
       const issue = await this.prisma.issue.findUnique({ where: { id: issueId }, select: { projectId: true } });
       if (!issue) return;

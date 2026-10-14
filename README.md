@@ -255,7 +255,7 @@ Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMo
 
 ## API
 
-Scripts authenticate with an **API token** (`Authorization: Bearer jt_…`, created under your profile menu), and JiraTech can call out to other systems with signed **webhooks**: see [docs/API-INTEGRATIONS.md](docs/API-INTEGRATIONS.md).
+Scripts authenticate with an **API token** (`Authorization: Bearer jt_…`, created under your profile menu), and JiraTech can call out to other systems with signed **webhooks**: see [docs/API-INTEGRATIONS.md](docs/API-INTEGRATIONS.md). Rules that react to issue events (assign, comment, transition, email…) are described in [docs/AUTOMATION.md](docs/AUTOMATION.md).
 
 - `POST /api/auth/login` — authenticate
 - `GET /api/issues` — list issues (filterable)

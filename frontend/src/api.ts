@@ -193,6 +193,17 @@ export const api = {
   redeliverWebhook: (id: string, deliveryId: string) =>
     request<WebhookDelivery>(`/webhooks/${id}/deliveries/${deliveryId}/redeliver`, { method: 'POST' }),
 
+  getAutomationRules: () => request<AutomationRule[]>('/automation/rules'),
+  getAutomationMeta: () => request<AutomationMeta>('/automation/meta'),
+  createAutomationRule: (data: AutomationRulePayload) =>
+    request<AutomationRule>('/automation/rules', { method: 'POST', body: JSON.stringify(data) }),
+  updateAutomationRule: (id: string, data: AutomationRulePayload) =>
+    request<AutomationRule>(`/automation/rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteAutomationRule: (id: string) => request<{ deleted: boolean }>(`/automation/rules/${id}`, { method: 'DELETE' }),
+  testAutomationRule: (id: string, issueKey: string) =>
+    request<AutomationTestResult>(`/automation/rules/${id}/test`, { method: 'POST', body: JSON.stringify({ issueKey }) }),
+  getAutomationRuns: (id: string) => request<AutomationRun[]>(`/automation/rules/${id}/runs`),
+
   getProjects: () => request<Project[]>('/projects'),
   getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
   createProject: (data: { key: string; name: string; description?: string; leadId?: string; strictHierarchy?: boolean; type?: ProjectType }) =>
@@ -801,6 +812,68 @@ export interface SendEmailPayload {
   includeQuote?: boolean;
   attachmentIds?: string[];
   internal?: boolean;
+}
+
+export type AutomationAction =
+  | { type: 'assign'; to: string }
+  | { type: 'set_priority'; priority: string }
+  | { type: 'transition'; status: string; resolution?: string }
+  | { type: 'comment'; body: string; internal?: boolean }
+  | { type: 'add_label'; label: string }
+  | { type: 'email'; to: string[]; subject: string; body: string };
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  description: string | null;
+  /** null: every project */
+  project: { id: string; key: string; name: string } | null;
+  enabled: boolean;
+  event: string;
+  trigger: { fields?: string[]; toStatus?: string };
+  jql: string | null;
+  actions: AutomationAction[];
+  disabledReason: string | null;
+  runCount: number;
+  lastRunAt: string | null;
+  createdBy: { id: string; name: string } | null;
+  updatedAt: string;
+}
+
+export interface AutomationRulePayload {
+  name: string;
+  description?: string;
+  projectKey?: string;
+  enabled: boolean;
+  event: string;
+  trigger?: { fields?: string[]; toStatus?: string };
+  jql?: string;
+  actions: AutomationAction[];
+}
+
+export interface AutomationMeta {
+  triggers: { name: string; label: string }[];
+  fields: string[];
+  placeholders: string[];
+}
+
+export interface AutomationRun {
+  id: string;
+  event: string;
+  issueKey: string;
+  status: 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  message: string | null;
+  results: { type: string; ok: boolean; detail: string }[];
+  createdAt: string;
+}
+
+export interface AutomationTestResult {
+  issueKey: string;
+  inScope: boolean;
+  conditionMet: boolean;
+  conditionError: string | null;
+  wouldRun: boolean;
+  actions: { type: string; summary: string; text: string | null }[];
 }
 
 export type ApiTokenAccess = 'READ' | 'WRITE';

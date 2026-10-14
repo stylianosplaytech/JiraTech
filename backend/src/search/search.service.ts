@@ -76,6 +76,12 @@ export class SearchService {
     return { valid: true };
   }
 
+  /** Whether one issue matches a JQL query (ordering and who may browse the issue are not considered). */
+  async matches(jql: string, issueId: string, user: AuthUser) {
+    const compiled = this.compile(jql, user);
+    return (await this.prisma.issue.count({ where: { AND: [compiled.where, { id: issueId }] } })) > 0;
+  }
+
   async quickSearch(q: string, user: AuthUser) {
     const term = q.trim();
     const ids = await this.access.browsableProjectIds(user);
