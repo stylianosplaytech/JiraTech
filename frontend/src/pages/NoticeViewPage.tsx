@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type EmailAddress } from '../api';
 import EmailFrame from '../components/email/EmailFrame';
 import { describeAddresses } from '../components/email/recipients';
-import { AlertIcon } from '../components/Icons';
+import { AlertIcon, PaperclipIcon } from '../components/Icons';
+import { formatSize, openNoticeFile } from '../components/notices/NoticeAttachments';
 import { EmptyState, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
 
 /** A service notice as it was sent, with who it went to; an update starts from it. */
@@ -55,6 +56,19 @@ export default function NoticeViewPage() {
           <Recipients label="To" list={notice.to} />
           <Recipients label="Cc" list={notice.cc} />
           <Recipients label="Bcc" list={notice.bcc} />
+          {notice.attachments.length > 0 && (
+            <Meta label="Attachments">
+              <ul className="space-y-1">
+                {notice.attachments.map((f) => (
+                  <li key={f.id} className="flex items-center gap-1.5 min-w-0">
+                    <PaperclipIcon size={12} className="shrink-0 text-jira-subtle" />
+                    <button type="button" className="link truncate text-left" onClick={() => void openNoticeFile(f, (m) => toast(m, 'error'))}>{f.filename}</button>
+                    <span className="text-xs text-jira-muted shrink-0">{formatSize(f.size)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Meta>
+          )}
           <p className="text-xs text-jira-muted">{notice.recipientCount} {notice.recipientCount === 1 ? 'recipient' : 'recipients'} in all. Groups and organizations were expanded to their members when it was sent.</p>
         </div>
         <div className="card overflow-hidden min-w-0">

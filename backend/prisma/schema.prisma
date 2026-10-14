@@ -161,6 +161,7 @@ model User {
   recipientGroups  RecipientGroupUser[]
   noticeTemplates  NoticeTemplate[]
   noticesSent      ServiceNotice[]
+  noticeFiles      NoticeFile[]
   apiTokens        ApiToken[]
   webhooksCreated  Webhook[]
   automationRules  AutomationRule[]
@@ -1163,10 +1164,38 @@ model ServiceNotice {
   sentById   String?
   createdAt  DateTime    @default(now())
 
-  template NoticeTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  sentBy   User?           @relation(fields: [sentById], references: [id], onDelete: SetNull)
+  template NoticeTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  sentBy   User?              @relation(fields: [sentById], references: [id], onDelete: SetNull)
+  files    ServiceNoticeFile[]
 
   @@index([createdAt])
+}
+
+/**
+ * A file uploaded to send with service notices. It is uploaded while the notice is written and belongs to it once
+ * sent; an update can send it again. Files no notice was sent with are deleted after a day.
+ */
+model NoticeFile {
+  id           String   @id @default(cuid())
+  filename     String
+  mimeType     String
+  size         Int
+  storagePath  String
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  uploadedBy User?               @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  notices    ServiceNoticeFile[]
+}
+
+model ServiceNoticeFile {
+  noticeId String
+  fileId   String
+
+  notice ServiceNotice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  file   NoticeFile    @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@id([noticeId, fileId])
 }
 
 // ─── API tokens & webhooks ───────────────────────────────────────────────────

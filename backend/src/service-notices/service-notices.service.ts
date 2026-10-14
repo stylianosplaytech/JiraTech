@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { EmailStatus, Prisma, UserRole } from '@prisma/client';
+import { EmailStatus, NoticeFile, Prisma, UserRole } from '@prisma/client';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
 import { MailerService } from '../mail/mailer.service';
@@ -14,6 +16,7 @@ const TEMPLATE_INCLUDE = { createdBy: { select: { id: true, name: true } } } sat
 const NOTICE_INCLUDE = {
   sentBy: { select: { id: true, name: true } },
   template: { select: { id: true, name: true } },
+  files: { include: { file: true }, orderBy: { file: { createdAt: 'asc' as const } } },
 } satisfies Prisma.ServiceNoticeInclude;
 
 type TemplateRow = Prisma.NoticeTemplateGetPayload<{ include: typeof TEMPLATE_INCLUDE }>;
@@ -21,6 +24,12 @@ type NoticeRow = Prisma.ServiceNoticeGetPayload<{ include: typeof NOTICE_INCLUDE
 
 /** How many sent notices the history lists. */
 const HISTORY = 200;
+/** Each file, as for request attachments */
+export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+/** All of a notice's files together: Gmail's limit for a whole message (SMTP servers are often lower) */
+const MAX_FILES_BYTES = 25 * 1024 * 1024;
+/** Files uploaded for a notice that was never sent are deleted after this long. */
+const UNSENT_FILE_HOURS = 24;
 
 /**
  * Service notices: maintenance reminders, incident notifications and the like, emailed to customers, organizations
@@ -30,11 +39,13 @@ const HISTORY = 200;
 @Injectable()
 export class ServiceNoticesService implements OnModuleInit {
   private readonly logger = new Logger(ServiceNoticesService.name);
+  private readonly uploadDir = path.resolve(__dirname, '../../uploads/notices');
 
   constructor(private prisma: PrismaService, private mailer: MailerService, private recipientGroups: RecipientGroupsService) {}
 
   /** A new installation gets the starter templates (once: deleting them all later doesn't bring them back). */
   async onModuleInit() {
+    await this.removeUnsentFiles();
     const [templates, notices] = await Promise.all([this.prisma.noticeTemplate.count(), this.prisma.serviceNotice.count()]);
     if (templates || notices) return;
     for (const t of STARTER_TEMPLATES) {
@@ -97,15 +108,69 @@ export class ServiceNoticesService implements OnModuleInit {
     return serializeNotice(await this.findNotice(id));
   }
 
+  // ─── Files ─────────────────────────────────────────────────────────────────
+
+  async uploadFile(user: AuthUser, file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
+    await this.removeUnsentFiles();
+    fs.mkdirSync(this.uploadDir, { recursive: true });
+    const storagePath = path.join(this.uploadDir, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
+    fs.writeFileSync(storagePath, file.buffer);
+    const row = await this.prisma.noticeFile.create({
+      data: { filename: file.originalname, mimeType: file.mimetype || 'application/octet-stream', size: file.size, storagePath, uploadedById: user.id },
+    });
+    return serializeFile(row);
+  }
+
+  async file(id: string) {
+    const row = await this.prisma.noticeFile.findUnique({ where: { id } });
+    if (!row || !fs.existsSync(row.storagePath)) throw new NotFoundException('File not found');
+    return row;
+  }
+
+  /** Taking a file off a notice being written: deleted unless a notice was already sent with it. */
+  async removeFile(id: string) {
+    const row = await this.prisma.noticeFile.findUnique({ where: { id }, include: { _count: { select: { notices: true } } } });
+    if (!row || row._count.notices) return { deleted: false };
+    await this.prisma.noticeFile.delete({ where: { id } });
+    fs.rm(row.storagePath, { force: true }, () => undefined);
+    return { deleted: true };
+  }
+
+  private async removeUnsentFiles() {
+    const stale = await this.prisma.noticeFile.findMany({
+      where: { notices: { none: {} }, createdAt: { lt: new Date(Date.now() - UNSENT_FILE_HOURS * 3600_000) } },
+    });
+    if (!stale.length) return;
+    await this.prisma.noticeFile.deleteMany({ where: { id: { in: stale.map((f) => f.id) } } });
+    for (const f of stale) fs.rm(f.storagePath, { force: true }, () => undefined);
+  }
+
+  /** The files picked for a notice, checked: they exist and fit in one email. */
+  private async pickFiles(ids: string[] | undefined) {
+    const wanted = [...new Set(ids ?? [])];
+    if (!wanted.length) return [];
+    const rows = await this.prisma.noticeFile.findMany({ where: { id: { in: wanted } } });
+    if (rows.length !== wanted.length || rows.some((f) => !fs.existsSync(f.storagePath))) {
+      throw new BadRequestException('Some of the attachments are no longer there: upload them again');
+    }
+    if (rows.reduce((n, f) => n + f.size, 0) > MAX_FILES_BYTES) {
+      throw new BadRequestException('The attachments add up to more than 25 MB, more than most mail servers accept');
+    }
+    return wanted.map((id) => rows.find((f) => f.id === id)!);
+  }
+
+  // ─── Sending ───────────────────────────────────────────────────────────────
+
   async send(user: AuthUser, dto: SendNoticeDto) {
     const content = normalizeContent(dto.content);
     const subject = dto.subject.replace(/\s+/g, ' ').trim();
     if (!subject) throw new BadRequestException('Give the notice a subject');
     const html = renderNoticeHtml(content);
     const text = renderNoticeText(content);
+    const files = await this.pickFiles(dto.attachmentIds);
 
     if (dto.test) {
-      const error = await this.mailer.sendReporting({ to: formatAddress({ email: user.email, name: user.name }), subject: `[Test] ${subject}`, text, ...emailHtml(content) });
+      const error = await this.mailer.sendReporting({ to: formatAddress({ email: user.email, name: user.name }), subject: `[Test] ${subject}`, text, ...emailBody(content, files) });
       if (error) throw new BadRequestException(error);
       return { test: true, to: user.email };
     }
@@ -135,6 +200,7 @@ export class ServiceNoticesService implements OnModuleInit {
         bcc: JSON.stringify(bcc),
         groups: JSON.stringify(groups),
         sentById: user.id,
+        files: { create: files.map((f) => ({ fileId: f.id })) },
       },
       include: NOTICE_INCLUDE,
     });
@@ -157,7 +223,7 @@ export class ServiceNoticesService implements OnModuleInit {
       bcc: parseAddresses(notice.bcc).map(formatAddress),
       subject: notice.subject,
       text: notice.text,
-      ...emailHtml(content),
+      ...emailBody(content, notice.files.map((f) => f.file)),
     });
     const saved = await this.prisma.serviceNotice.update({
       where: { id: notice.id },
@@ -193,14 +259,25 @@ export class ServiceNoticesService implements OnModuleInit {
   }
 }
 
-/** The HTML as emailed: an uploaded logo goes along as an inline attachment rather than inside the HTML. */
-function emailHtml(content: NoticeContent) {
-  if (!content.logo) return { html: renderNoticeHtml(content) };
+/**
+ * The HTML as emailed and its attachments: the files picked for it, and an uploaded logo, which goes along as an
+ * inline attachment rather than inside the HTML.
+ */
+function emailBody(content: NoticeContent, files: NoticeFile[]) {
+  const attachments = files.map((f) => ({ filename: f.filename, path: f.storagePath, contentType: f.mimeType }));
+  if (!content.logo) return { html: renderNoticeHtml(content), attachments };
   const type = /^data:image\/(\w+)/.exec(content.logo)?.[1] ?? 'png';
   return {
     html: renderNoticeHtml(content, { logoSrc: `cid:${LOGO_CID}` }),
-    attachments: [{ filename: `logo.${type === 'jpeg' ? 'jpg' : type}`, path: content.logo, contentType: `image/${type}`, cid: LOGO_CID }],
+    attachments: [
+      { filename: `logo.${type === 'jpeg' ? 'jpg' : type}`, path: content.logo, contentType: `image/${type}`, cid: LOGO_CID },
+      ...attachments,
+    ],
   };
+}
+
+function serializeFile(f: NoticeFile) {
+  return { id: f.id, filename: f.filename, mimeType: f.mimeType, size: f.size };
 }
 
 function requireAdmin(user: AuthUser) {
@@ -259,6 +336,7 @@ function serializeNotice(n: NoticeRow) {
     /** "Acme (12), Erin": who it went to, in a few words */
     summary: describe([...to, ...cc, ...bcc]),
     recipientCount: to.length + cc.length + bcc.length,
+    attachments: n.files.map((f) => serializeFile(f.file)),
     status: n.status,
     error: n.error,
     sentBy: n.sentBy,

@@ -86,6 +86,13 @@ export class SendNoticeDto {
   @Type(() => RecipientRefDto)
   bccGroups?: RecipientRefDto[];
 
+  /** Files uploaded with POST /service-notices/files to send with it */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  attachmentIds?: string[];
+
   /** Only to the sender, to see it in a real mail client; not recorded */
   @IsOptional()
   @IsBoolean()

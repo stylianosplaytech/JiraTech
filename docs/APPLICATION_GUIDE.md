@@ -426,6 +426,9 @@ lists everyone. People reached through a group or organization don't become part
   one-click suggested values (e.g. Impact Level *1 / Low*). The preview beside it is the email exactly as it will be sent.
 - **To, Cc and Bcc** take people, typed addresses, organizations (companies) and recipient groups; groups and organizations go to everyone
   in them when it is sent. Put companies in Bcc so recipients don't see each other. *Send test to me* sends it only to you.
+- **Attachments**: *Add files* (or drop files on the card) sends files with the email, up to 20 MB each and 25 MB in all. They are listed
+  on the sent notice, and *Send update* starts with the same files (remove any you don't need). Files uploaded for a notice that is never
+  sent are deleted after a day.
 - **Sent** lists every notice with who it went to. Opening one shows it as sent; **Send update** starts a new notice with the same content
   and recipients (e.g. the next P1 update). A notice the mail server refused can be sent again.
 - **Templates** (global admins add, edit, duplicate and delete them) hold the look (*Banner* or *Alert card*, a colour, the logo) and

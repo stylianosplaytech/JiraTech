@@ -406,8 +406,16 @@ export const api = {
   sendServiceNotice: (data: SendNoticePayload) =>
     request<ServiceNotice>('/service-notices', { method: 'POST', body: JSON.stringify(data) }),
   /** Only to you, to see it in your own mail client; not kept in the history */
-  sendTestServiceNotice: (data: Pick<SendNoticePayload, 'subject' | 'content'>) =>
+  sendTestServiceNotice: (data: Pick<SendNoticePayload, 'subject' | 'content' | 'attachmentIds'>) =>
     request<{ test: true; to: string }>('/service-notices', { method: 'POST', body: JSON.stringify({ ...data, test: true }) }),
+  uploadNoticeFile: async (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<NoticeAttachment>('/service-notices/files', { method: 'POST', body: form });
+  },
+  getNoticeFileUrl: (fileId: string) => `${API}/service-notices/files/${fileId}`,
+  /** Only deleted while no notice has been sent with it */
+  deleteNoticeFile: (fileId: string) => request<{ deleted: boolean }>(`/service-notices/files/${fileId}`, { method: 'DELETE' }),
   retryServiceNotice: (id: string) => request<ServiceNotice>(`/service-notices/${id}/retry`, { method: 'POST' }),
   createOrganization: (name: string) =>
     request<Organization>('/organizations', { method: 'POST', body: JSON.stringify({ name }) }),
@@ -745,6 +753,14 @@ export interface NoticeTemplatePayload {
   content: NoticeContent;
 }
 
+/** A file sent with a service notice */
+export interface NoticeAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
 /** A service notice in the history (without its content). */
 export interface ServiceNoticeSummary {
   id: string;
@@ -757,6 +773,7 @@ export interface ServiceNoticeSummary {
   groups: { to: RecipientRefPayload[]; cc: RecipientRefPayload[]; bcc: RecipientRefPayload[] };
   summary: string;
   recipientCount: number;
+  attachments: NoticeAttachment[];
   status: 'SENT' | 'FAILED';
   error: string | null;
   sentBy: Named | null;
@@ -778,6 +795,8 @@ export interface SendNoticePayload {
   toGroups: RecipientRefPayload[];
   ccGroups: RecipientRefPayload[];
   bccGroups: RecipientRefPayload[];
+  /** Files uploaded with uploadNoticeFile */
+  attachmentIds: string[];
 }
 
 /** An email received on a service desk request, or sent from it. */

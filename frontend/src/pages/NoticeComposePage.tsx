@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type EmailAddress, type NoticeContent, type RecipientRefPayload } from '../api';
+import { api, type EmailAddress, type NoticeAttachment, type NoticeContent, type RecipientRefPayload } from '../api';
 import AddressInput from '../components/email/AddressInput';
 import { cleanAddresses, isRef, type Recipient, type RecipientRef } from '../components/email/recipients';
 import { useRecipientRefs } from '../components/email/useRecipientRefs';
 import NoticeEditor from '../components/notices/NoticeEditor';
 import NoticePreview from '../components/notices/NoticePreview';
+import NoticeAttachments from '../components/notices/NoticeAttachments';
 import { blankNotice } from '../components/notices/blank';
 import { EmptyState, PageHeader, Spinner, errorMessage, useDialogs, useToast } from '../components/ui';
 
@@ -35,6 +36,8 @@ export default function NoticeComposePage() {
   const [cc, setCc] = useState<Recipient[]>([]);
   const [bcc, setBcc] = useState<Recipient[]>([]);
   const [showCc, setShowCc] = useState(false);
+  const [files, setFiles] = useState<NoticeAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   // Fill the form once from what it starts from.
   const source = fromId ? previous.data : templateId ? template.data : null;
@@ -54,6 +57,8 @@ export default function NoticeComposePage() {
       setCc(own(previous.data.cc));
       setBcc(own(previous.data.bcc));
       setShowCc(previous.data.cc.length > 0);
+      // An update usually still needs the same files; they can be removed.
+      setFiles(previous.data.attachments);
     }
   }, [content, loading, source, previous.data]);
 
@@ -90,6 +95,7 @@ export default function NoticeComposePage() {
       toGroups: picked(to),
       ccGroups: picked(ccList),
       bccGroups: picked(bcc),
+      attachmentIds: files.map((f) => f.id),
     }),
     onSuccess: (notice) => {
       queryClient.invalidateQueries({ queryKey: ['service-notices'] });
@@ -101,7 +107,7 @@ export default function NoticeComposePage() {
   });
 
   const test = useMutation({
-    mutationFn: () => api.sendTestServiceNotice({ subject, content: content! }),
+    mutationFn: () => api.sendTestServiceNotice({ subject, content: content!, attachmentIds: files.map((f) => f.id) }),
     onSuccess: (r) => toast(`Test sent to ${r.to}`),
     onError: (e) => toast(errorMessage(e), 'error'),
   });
@@ -111,11 +117,11 @@ export default function NoticeComposePage() {
     return <EmptyState title={errorMessage(previous.error ?? template.error)} action={<Link to="/notices" className="btn btn-default">Back to notices</Link>} />;
   }
 
-  const canSend = !!subject.trim() && everyone > 0 && !send.isPending;
+  const canSend = !!subject.trim() && everyone > 0 && !send.isPending && !uploading;
   const submit = async () => {
     const ok = await confirm({
       title: `Send this notice to ${everyone} ${everyone === 1 ? 'person' : 'people'}?`,
-      message: `“${subject.trim()}” goes out by email straight away.`,
+      message: `“${subject.trim()}” goes out by email straight away${files.length ? `, with ${files.length} ${files.length === 1 ? 'attachment' : 'attachments'}` : ''}.`,
       confirmLabel: 'Send',
     });
     if (ok) send.mutate();
@@ -130,7 +136,7 @@ export default function NoticeComposePage() {
         title={heading}
         actions={(
           <>
-            <button type="button" className="btn btn-default" disabled={!subject.trim() || test.isPending} onClick={() => test.mutate()} title="Send it only to yourself, to see it in your mail client">
+            <button type="button" className="btn btn-default" disabled={!subject.trim() || test.isPending || uploading} onClick={() => test.mutate()} title="Send it only to yourself, to see it in your mail client">
               {test.isPending ? 'Sending…' : 'Send test to me'}
             </button>
             <button type="button" className="btn btn-primary" disabled={!canSend} onClick={() => void submit()}>
@@ -164,6 +170,7 @@ export default function NoticeComposePage() {
               <input id="notice-subject" className="input" maxLength={255} value={subject} onChange={(e) => setSubject(e.target.value)} />
             </div>
           </div>
+          <NoticeAttachments value={files} onChange={setFiles} onBusyChange={setUploading} />
           <NoticeEditor value={content} onChange={setContent} />
         </div>
 

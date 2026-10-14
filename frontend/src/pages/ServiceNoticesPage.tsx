@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type NoticeTemplate } from '../api';
 import { timeAgo } from '../utils';
-import { CopyIcon, EditIcon, PlusIcon, TrashIcon } from '../components/Icons';
+import { CopyIcon, EditIcon, PaperclipIcon, PlusIcon, TrashIcon } from '../components/Icons';
 import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useDialogs, useToast } from '../components/ui';
 
 /** Service notices: the ones sent so far and the templates new ones start from. */
@@ -58,7 +58,13 @@ function SentList({ onNew }: { onNew: () => void }) {
         <tbody>
           {notices.map((n) => (
             <tr key={n.id} className="cursor-pointer" onClick={() => navigate(`/notices/${n.id}`)}>
-              <td className="font-medium"><Link to={`/notices/${n.id}`} className="link" onClick={(e) => e.stopPropagation()}>{n.subject}</Link></td>
+              <td className="font-medium"><Link to={`/notices/${n.id}`} className="link" onClick={(e) => e.stopPropagation()}>{n.subject}</Link>
+                {n.attachments.length > 0 && (
+                  <span className="inline-flex items-center gap-0.5 ml-2 text-xs text-jira-muted font-normal" title={n.attachments.map((f) => f.filename).join(', ')}>
+                    <PaperclipIcon size={12} />{n.attachments.length}
+                  </span>
+                )}
+              </td>
               <td className="text-jira-subtle">{n.template?.name ?? <span className="text-jira-muted">—</span>}</td>
               <td className="text-jira-subtle max-w-[320px] truncate" title={n.summary}>{n.summary}</td>
               <td className="text-jira-subtle whitespace-nowrap">{n.sentBy?.name ?? '—'}</td>

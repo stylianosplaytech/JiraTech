@@ -1,7 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Request, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Request, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import * as fs from 'fs';
 import { JwtAuthGuard } from '../auth/guards';
 import type { AuthRequest } from '../common/auth-user';
-import { ServiceNoticesService } from './service-notices.service';
+import { MAX_FILE_BYTES, ServiceNoticesService } from './service-notices.service';
 import { NoticeTemplateDto, PreviewNoticeDto, SendNoticeDto } from './dto';
 
 /** /notice-templates — staff pick from them; global admins change them. */
@@ -45,6 +50,31 @@ export class ServiceNoticesController {
   @Get()
   list() {
     return this.notices.list();
+  }
+
+  /** A file to send with a notice being written (form field "file") */
+  @Post('files')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_BYTES } }))
+  upload(@UploadedFile() file: { originalname: string; mimetype: string; size: number; buffer: Buffer } | undefined, @Request() req: AuthRequest) {
+    if (!file) throw new BadRequestException('No file uploaded (expected form field "file")');
+    return this.notices.uploadFile(req.user, file);
+  }
+
+  @Get('files/:fileId')
+  async download(@Param('fileId') fileId: string, @Res({ passthrough: true }) res: Response) {
+    const file = await this.notices.file(fileId);
+    const asciiName = file.filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
+    res.set({
+      'Content-Type': file.mimeType,
+      'Content-Disposition': `inline; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return new StreamableFile(fs.createReadStream(file.storagePath));
+  }
+
+  @Delete('files/:fileId')
+  removeFile(@Param('fileId') fileId: string) {
+    return this.notices.removeFile(fileId);
   }
 
   @Post('preview')
