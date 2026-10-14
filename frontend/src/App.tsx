@@ -21,6 +21,10 @@ import UsersPage from './pages/UsersPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectPage from './pages/ProjectPage';
 import QueuesPage from './pages/QueuesPage';
+import ServiceNoticesPage from './pages/ServiceNoticesPage';
+import NoticeComposePage from './pages/NoticeComposePage';
+import NoticeViewPage from './pages/NoticeViewPage';
+import NoticeTemplatePage from './pages/NoticeTemplatePage';
 import PortalLayout from './portal/PortalLayout';
 import PortalHomePage from './portal/PortalHomePage';
 import PortalDeskPage from './portal/PortalDeskPage';
@@ -99,6 +103,10 @@ export default function App() {
                     <Route path="/reports" element={<ReportsPage />} />
                     <Route path="/planning" element={<PlanningPage />} />
                     <Route path="/users" element={<UsersPage />} />
+                    <Route path="/notices" element={<ServiceNoticesPage />} />
+                    <Route path="/notices/new" element={<NoticeComposePage />} />
+                    <Route path="/notices/templates/:id" element={<NoticeTemplatePage />} />
+                    <Route path="/notices/:id" element={<NoticeViewPage />} />
                     <Route path="/settings/email" element={<EmailSettingsPage />} />
                     <Route path="/settings/email-templates" element={<EmailTemplatesPage />} />
                     <Route path="/settings/notifications" element={<NotificationSettingsPage />} />

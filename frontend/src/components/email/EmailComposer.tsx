@@ -8,8 +8,9 @@ import { AlertIcon, PaperclipIcon } from '../Icons';
 import { Modal, errorMessage, useDialogs, useToast } from '../ui';
 import AddressInput from './AddressInput';
 import {
-  cleanAddresses, defaultSubject, describeAddresses, isRef, replyRecipients, subjectWithKey, type Recipient, type RecipientRef,
+  cleanAddresses, defaultSubject, describeAddresses, isRef, replyRecipients, subjectWithKey, type Recipient,
 } from './recipients';
+import { useRecipientRefs } from './useRecipientRefs';
 
 export interface ComposeRequest {
   mode: EmailMode;
@@ -103,12 +104,7 @@ export default function EmailComposer({
   });
 
   const { data: users = [] } = useQuery({ queryKey: ['users', 'all', ''], queryFn: () => api.getUsers(undefined, 'all') });
-  const { data: organizations = [] } = useQuery({ queryKey: ['organizations'], queryFn: api.getOrganizations });
-  const { data: groups = [] } = useQuery({ queryKey: ['recipient-groups'], queryFn: api.getRecipientGroups });
-  const refs = useMemo<RecipientRef[]>(() => [
-    ...groups.map((g) => ({ type: 'group' as const, id: g.id, name: g.name, recipients: g.recipients })),
-    ...organizations.map((o) => ({ type: 'organization' as const, id: o.id, name: o.name, recipients: o.members.map((m) => ({ email: m.user.email, name: m.user.name })) })),
-  ], [groups, organizations]);
+  const refs = useRecipientRefs();
 
   // Everyone on the request or in its emails first, then everyone else with an account, to suggest as recipients.
   const suggestions = useMemo(() => {

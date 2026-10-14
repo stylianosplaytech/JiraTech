@@ -347,6 +347,25 @@ export const api = {
   updateRecipientGroup: (id: string, data: RecipientGroupPayload) =>
     request<RecipientGroup>(`/recipient-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteRecipientGroup: (id: string) => request<{ deleted: boolean }>(`/recipient-groups/${id}`, { method: 'DELETE' }),
+
+  // ─── Service notices (staff send them; global admins manage the templates) ──
+  getNoticeTemplates: () => request<NoticeTemplate[]>('/notice-templates'),
+  getNoticeTemplate: (id: string) => request<NoticeTemplate>(`/notice-templates/${id}`),
+  createNoticeTemplate: (data: NoticeTemplatePayload) =>
+    request<NoticeTemplate>('/notice-templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateNoticeTemplate: (id: string, data: NoticeTemplatePayload) =>
+    request<NoticeTemplate>(`/notice-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteNoticeTemplate: (id: string) => request<{ deleted: boolean }>(`/notice-templates/${id}`, { method: 'DELETE' }),
+  getServiceNotices: () => request<ServiceNoticeSummary[]>('/service-notices'),
+  getServiceNotice: (id: string) => request<ServiceNotice>(`/service-notices/${id}`),
+  previewServiceNotice: (content: NoticeContent) =>
+    request<{ html: string }>('/service-notices/preview', { method: 'POST', body: JSON.stringify({ content }) }),
+  sendServiceNotice: (data: SendNoticePayload) =>
+    request<ServiceNotice>('/service-notices', { method: 'POST', body: JSON.stringify(data) }),
+  /** Only to you, to see it in your own mail client; not kept in the history */
+  sendTestServiceNotice: (data: Pick<SendNoticePayload, 'subject' | 'content'>) =>
+    request<{ test: true; to: string }>('/service-notices', { method: 'POST', body: JSON.stringify({ ...data, test: true }) }),
+  retryServiceNotice: (id: string) => request<ServiceNotice>(`/service-notices/${id}/retry`, { method: 'POST' }),
   createOrganization: (name: string) =>
     request<Organization>('/organizations', { method: 'POST', body: JSON.stringify({ name }) }),
   renameOrganization: (id: string, name: string) =>
@@ -631,6 +650,87 @@ export interface RecipientGroupPayload {
   userIds: string[];
   organizationIds: string[];
   addresses: EmailAddress[];
+}
+
+/** What a service notice says and how it looks (see backend/src/service-notices/notice-content.ts). */
+export interface NoticeContent {
+  /** 'banner': full-width header bars. 'alert': a coloured card header. */
+  style: 'banner' | 'alert';
+  /** #rrggbb */
+  color: string;
+  eyebrow: string;
+  headline: string;
+  title: string;
+  sections: NoticeSection[];
+  footer: string;
+  brand: string;
+  brandTag: string;
+}
+
+export interface NoticeLine {
+  label: string;
+  value: string;
+  /** How it is edited: a date or time picker that writes the text */
+  input?: 'date' | 'time' | 'text';
+}
+
+export type NoticeSection =
+  | { kind: 'field'; label: string; value: string; options?: string[] }
+  | { kind: 'box'; label: string; lines: NoticeLine[] }
+  | { kind: 'text'; value: string }
+  | { kind: 'note'; label: string; value: string }
+  | { kind: 'small'; value: string };
+
+export interface NoticeTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  subject: string;
+  content: NoticeContent;
+  createdBy: Named | null;
+  updatedAt: string;
+}
+
+export interface NoticeTemplatePayload {
+  name: string;
+  description?: string;
+  subject: string;
+  content: NoticeContent;
+}
+
+/** A service notice in the history (without its content). */
+export interface ServiceNoticeSummary {
+  id: string;
+  subject: string;
+  template: Named | null;
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  bcc: EmailAddress[];
+  /** Groups and organizations picked as a whole, so an update can go to them again */
+  groups: { to: RecipientRefPayload[]; cc: RecipientRefPayload[]; bcc: RecipientRefPayload[] };
+  summary: string;
+  recipientCount: number;
+  status: 'SENT' | 'FAILED';
+  error: string | null;
+  sentBy: Named | null;
+  createdAt: string;
+}
+
+export interface ServiceNotice extends ServiceNoticeSummary {
+  content: NoticeContent;
+  html: string;
+}
+
+export interface SendNoticePayload {
+  templateId?: string;
+  subject: string;
+  content: NoticeContent;
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  bcc: EmailAddress[];
+  toGroups: RecipientRefPayload[];
+  ccGroups: RecipientRefPayload[];
+  bccGroups: RecipientRefPayload[];
 }
 
 /** An email received on a service desk request, or sent from it. */

@@ -19,6 +19,7 @@ const NAV = [
   { path: '/planning', label: 'Planning' },
   { path: '/dashboard', label: 'Dashboards' },
   { path: '/reports', label: 'Reports' },
+  { path: '/notices', label: 'Notices' },
   { path: '/users', label: 'People' },
 ];
 

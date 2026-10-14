@@ -25,6 +25,7 @@ import { ServiceDeskModule } from './service-desk/service-desk.module';
 import { IssueEmailModule } from './issue-email/issue-email.module';
 import { RecipientGroupsModule } from './recipient-groups/recipient-groups.module';
 import { OrganizationsModule } from './organizations/organizations.module';
+import { ServiceNoticesModule } from './service-notices/service-notices.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
     IssueEmailModule,
     RecipientGroupsModule,
     OrganizationsModule,
+    ServiceNoticesModule,
   ],
 })
 export class AppModule {}

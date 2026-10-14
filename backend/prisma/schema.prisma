@@ -159,6 +159,8 @@ model User {
   emailsSent       IssueEmail[]
   emailTemplates   EmailTemplate[]
   recipientGroups  RecipientGroupUser[]
+  noticeTemplates  NoticeTemplate[]
+  noticesSent      ServiceNotice[]
 }
 
 /** A one-time link for choosing a password (the welcome email); deleted once used. Only a hash of the token is stored. */
@@ -1111,4 +1113,51 @@ model RecipientGroupOrganization {
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@id([groupId, organizationId])
+}
+
+// ─── Service notices ─────────────────────────────────────────────────────────
+
+/**
+ * A ready-made service notice (a maintenance reminder, an incident notification…) staff start from: its look and
+ * every text in it, which they can still change each time they send one. Managed by global admins.
+ */
+model NoticeTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  subject     String
+  /// JSON NoticeContent: style, colours, header texts, sections and footer
+  content     String
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  notices   ServiceNotice[]
+}
+
+/** A service notice as it was sent: its content, the email made from it and who it went to. */
+model ServiceNotice {
+  id         String      @id @default(cuid())
+  templateId String?
+  subject    String
+  /// JSON NoticeContent as sent
+  content    String
+  html       String
+  text       String      @default("")
+  /// JSON arrays of {email, name, via}: everyone it went to, groups and organizations expanded
+  to         String      @default("[]")
+  cc         String      @default("[]")
+  bcc        String      @default("[]")
+  /// JSON {to, cc, bcc} of {type, id}: the groups and organizations picked as a whole, so an update can reuse them
+  groups     String      @default("{}")
+  status     EmailStatus @default(SENT)
+  error      String?
+  sentById   String?
+  createdAt  DateTime    @default(now())
+
+  template NoticeTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  sentBy   User?           @relation(fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
 }

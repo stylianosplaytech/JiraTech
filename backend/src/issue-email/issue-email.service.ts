@@ -366,7 +366,7 @@ export class IssueEmailService {
 }
 
 /** Lower-cased, each address once, leaving out any already in `except`. */
-function dedupe(list: Address[], except: Address[] = []): Address[] {
+export function dedupe(list: Address[], except: Address[] = []): Address[] {
   const seen = new Set(except.map((a) => a.email.toLowerCase()));
   const out: Address[] = [];
   for (const a of list) {
@@ -379,7 +379,7 @@ function dedupe(list: Address[], except: Address[] = []): Address[] {
 }
 
 /** "Erin, All customers (12)": people by name, groups and organizations by theirs. */
-function describe(list: Address[]) {
+export function describe(list: Address[]) {
   const parts: string[] = [];
   const groups = new Map<string, number>();
   for (const a of list) {

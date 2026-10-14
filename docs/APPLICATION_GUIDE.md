@@ -416,6 +416,21 @@ lists everyone. People reached through a group or organization don't become part
 - You're never notified about your own actions; each change produces at most one notification per person.
 - Each notification is also emailed unless you switch off *Email notifications* in the account menu.
 
+### Service notices (`/notices`)
+
+**Notices** in the header sends formatted service notifications by email: maintenance reminders, incident notifications and the like.
+
+- **New notice** asks for a template (or a blank notice). Every text can then be changed before sending: the header, the title, each
+  section's label and value, and the footer. Sections can be added, removed and reordered (*Field*, *Box of lines* such as Date & Time,
+  *Paragraph*, *Note*, *Small print*). Date and time lines have pickers that write e.g. *Wednesday 12th August 2026*; fields can offer
+  one-click suggested values (e.g. Impact Level *1 / Low*). The preview beside it is the email exactly as it will be sent.
+- **To, Cc and Bcc** take people, typed addresses, organizations (companies) and recipient groups; groups and organizations go to everyone
+  in them when it is sent. Put companies in Bcc so recipients don't see each other. *Send test to me* sends it only to you.
+- **Sent** lists every notice with who it went to. Opening one shows it as sent; **Send update** starts a new notice with the same content
+  and recipients (e.g. the next P1 update). A notice the mail server refused can be sent again.
+- **Templates** (global admins add, edit, duplicate and delete them) hold the look (*Banner* or *Alert card*, a colour, the logo text) and
+  the texts a notice starts with. A new installation starts with *Maintenance reminder* and *P1 service interruption*.
+
 ### Email settings (global admins)
 
 All outgoing email — notifications of every project, replies to service desk customers and welcome emails — is sent one way, set under
