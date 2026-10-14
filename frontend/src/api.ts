@@ -204,6 +204,18 @@ export const api = {
     request<AutomationTestResult>(`/automation/rules/${id}/test`, { method: 'POST', body: JSON.stringify({ issueKey }) }),
   getAutomationRuns: (id: string) => request<AutomationRun[]>(`/automation/rules/${id}/runs`),
 
+  getInboundWebhooks: () => request<InboundWebhook[]>('/inbound-webhooks'),
+  getInboundWebhookMeta: () => request<{ issueTypes: string[]; priorities: string[] }>('/inbound-webhooks/meta'),
+  createInboundWebhook: (data: InboundWebhookPayload) =>
+    request<InboundWebhook & { url: string }>('/inbound-webhooks', { method: 'POST', body: JSON.stringify(data) }),
+  updateInboundWebhook: (id: string, data: InboundWebhookPayload) =>
+    request<InboundWebhook>(`/inbound-webhooks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteInboundWebhook: (id: string) => request<{ deleted: boolean }>(`/inbound-webhooks/${id}`, { method: 'DELETE' }),
+  rotateInboundWebhook: (id: string) => request<InboundWebhook & { url: string }>(`/inbound-webhooks/${id}/rotate-token`, { method: 'POST' }),
+  testInboundWebhook: (id: string, payload: unknown) =>
+    request<InboundTestResult>(`/inbound-webhooks/${id}/test`, { method: 'POST', body: JSON.stringify({ payload }) }),
+  getInboundDeliveries: (id: string) => request<InboundDelivery[]>(`/inbound-webhooks/${id}/deliveries`),
+
   getProjects: () => request<Project[]>('/projects'),
   getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
   createProject: (data: { key: string; name: string; description?: string; leadId?: string; strictHierarchy?: boolean; type?: ProjectType }) =>
@@ -812,6 +824,71 @@ export interface SendEmailPayload {
   includeQuote?: boolean;
   attachmentIds?: string[];
   internal?: boolean;
+}
+
+export interface InboundWebhookConfig {
+  issueType: string;
+  priority: string;
+  priorityFrom: string;
+  summary: string;
+  description: string;
+  labels: string[];
+  assigneeId: string | null;
+  dedupe: string;
+  resolveWhen: { path: string; equals: string } | null;
+  includePayload: boolean;
+}
+
+export interface InboundWebhook {
+  id: string;
+  name: string;
+  project: { id: string; key: string; name: string };
+  enabled: boolean;
+  tokenPrefix: string;
+  config: InboundWebhookConfig;
+  receivedCount: number;
+  lastReceivedAt: string | null;
+  createdBy: { id: string; name: string } | null;
+  createdAt: string;
+}
+
+export interface InboundWebhookPayload {
+  name: string;
+  projectKey: string;
+  enabled: boolean;
+  issueType: string;
+  priority: string;
+  priorityFrom: string;
+  summary: string;
+  description: string;
+  labels: string[];
+  assigneeId?: string;
+  dedupe: string;
+  resolvePath: string;
+  resolveEquals: string;
+  includePayload: boolean;
+}
+
+export interface InboundDelivery {
+  id: string;
+  status: 'CREATED' | 'COMMENTED' | 'RESOLVED' | 'IGNORED' | 'FAILED';
+  dedupeKey: string | null;
+  issueKey: string | null;
+  message: string | null;
+  payload: string;
+  createdAt: string;
+}
+
+export interface InboundTestResult {
+  action: 'create' | 'comment' | 'resolve' | 'ignore';
+  issueType: string;
+  summary: string;
+  description: string;
+  priority: string;
+  labels: string[];
+  assignee: string | null;
+  dedupeKey: string | null;
+  existingKey: string | null;
 }
 
 export type AutomationAction =

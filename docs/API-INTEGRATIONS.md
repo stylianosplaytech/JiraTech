@@ -1,7 +1,7 @@
 # API tokens and webhooks
 
-Two ways to connect other systems to JiraTech: **API tokens** let a script call JiraTech, and **webhooks** make JiraTech call a
-script when something happens.
+Three ways to connect other systems to JiraTech: **API tokens** let a script call JiraTech, **webhooks** make JiraTech call a
+script when something happens, and **incoming webhooks** let monitoring tools and CI systems raise issues by POSTing to a secret address.
 
 ## API tokens
 
@@ -96,3 +96,50 @@ them, checked again whenever a connection is made. To call servers on your own n
 API: `GET|POST /api/webhooks`, `GET|PUT|DELETE /api/webhooks/:id`, `GET /api/webhooks/events`, `POST /api/webhooks/:id/rotate-secret`,
 `POST /api/webhooks/:id/test`, `GET /api/webhooks/:id/deliveries`, `POST /api/webhooks/:id/deliveries/:deliveryId/redeliver`.
 Global administrators only, and with a login rather than an API token.
+
+## Incoming webhooks
+
+Global administrators add them under profile menu → Administration → **Incoming webhooks** (`/settings/incoming-webhooks`). Each one has a
+secret address, shown once when it is created:
+
+```bash
+curl -X POST https://jiratech.example.com/api/hooks/jth_xxxxxxxx \
+     -H "Content-Type: application/json" \
+     -d '{"status":"firing","title":"High CPU on web-1","message":"CPU is at 95%","severity":"critical","alerts":[{"fingerprint":"abc123"}]}'
+```
+
+The address is the credential: anyone who has it can create issues through that webhook, so keep it out of public places. Use
+**New address…** in the webhook's editor if it leaks (the old one stops working at once). Anything wrong with the address answers `404`.
+Send a JSON object (not a list); up to 60 requests a minute are accepted for each webhook, then `429`.
+
+### Turning a message into an issue
+
+Templates take values from the JSON that was sent: `{{title}}`, or nested ones like `{{alerts.0.labels.alertname}}` (a number picks an item
+from a list). A value that isn't there is left out.
+
+| Setting | |
+|---|---|
+| **Create issues in** | The project. Issues are created as the person who last saved the webhook (so they need to be able to create issues there). |
+| **Summary**, **Description** | Templates, e.g. `[{{severity}}] {{title}}`. The received JSON can be added to the description. |
+| **Issue type**, **Priority**, **Assign to**, **Labels** | Fixed values. |
+| **Priority from the message** | A template whose result picks the priority: `critical`, `high`, `warning`, `info`, `P1`–`P5`, `sev1`–`sev5`… are recognised; anything else uses the fixed priority. |
+| **Same alert when this is equal** | A template that identifies an alert, e.g. `{{alerts.0.fingerprint}}`. While the issue for that alert is open, a message with the same value is added to it as a comment instead of raising another issue. Once it is closed, the next one raises a new issue. |
+| **Close the issue when…** | A field and value (e.g. `status` equals `resolved`): such a message closes the open issue for its alert, with a comment. If no issue is open it is ignored. Needs the "same alert" setting. |
+
+**Try a message** pastes a sample payload and shows what would happen (new issue, comment, close, or ignored) without creating anything. The
+webhook's name opens its log of the last 14 days, with each payload and what became of it (created, commented, resolved, ignored, failed).
+
+Issues made this way go through the same path as any other, so [automation rules](AUTOMATION.md) and outgoing webhooks react to them.
+
+### Connecting common tools
+
+- **Grafana / Alertmanager:** add a *webhook* contact point with the address. Alertmanager's payload has `status` (firing or resolved) and
+  `alerts` (each with `fingerprint` and `labels`); a webhook with summary `{{alerts.0.labels.alertname}}`, same alert
+  `{{alerts.0.fingerprint}}` and close when `status` equals `resolved` works well. Grouped alerts arrive as one message, so only the first
+  alert in the group is read; use a group-by that makes each alert its own message if you need one issue each.
+- **CI (GitHub Actions, Jenkins, GitLab):** a `curl` step on failure, with the pipeline and commit in the JSON.
+- **Sentry, Datadog, PagerDuty, Uptime Robot** and similar all have a generic webhook integration: send a sample to **Try a message** and
+  write the templates from what you see.
+
+API (global administrators, logged in; API tokens cannot manage them): `GET|POST /api/inbound-webhooks`, `PUT|DELETE /api/inbound-webhooks/:id`,
+`POST /api/inbound-webhooks/:id/rotate-token`, `POST /api/inbound-webhooks/:id/test` (`{ payload }`), `GET /api/inbound-webhooks/:id/deliveries`.

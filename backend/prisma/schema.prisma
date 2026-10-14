@@ -164,6 +164,7 @@ model User {
   apiTokens        ApiToken[]
   webhooksCreated  Webhook[]
   automationRules  AutomationRule[]
+  inboundWebhooks  InboundWebhook[]
 }
 
 /** A one-time link for choosing a password (the welcome email); deleted once used. Only a hash of the token is stored. */
@@ -263,6 +264,7 @@ model Project {
   emailTemplates        EmailTemplate[]
   webhooks              Webhook[]
   automationRules       AutomationRule[]
+  inboundWebhooks       InboundWebhook[]
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -1311,4 +1313,71 @@ model AutomationRun {
   rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@index([ruleId, createdAt])
+}
+
+// ─── Incoming webhooks ───────────────────────────────────────────────────────
+
+/// A URL other systems (monitoring, CI, chat) POST JSON to, turned into issues in one project. Acts as its author.
+model InboundWebhook {
+  id             String    @id @default(cuid())
+  name           String
+  projectId      String
+  enabled        Boolean   @default(true)
+  /// Only a SHA-256 hash of the secret URL token is kept
+  tokenHash      String    @unique
+  tokenPrefix    String
+  /// JSON: how a payload becomes an issue, see inbound-webhooks/inbound-config.ts
+  config         String
+  receivedCount  Int       @default(0)
+  lastReceivedAt DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy  User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deliveries InboundDelivery[]
+  links      InboundLink[]
+
+  @@index([projectId])
+}
+
+enum InboundStatus {
+  CREATED
+  /// Added to the open issue the same alert already raised
+  COMMENTED
+  RESOLVED
+  /// Nothing to do (e.g. a "resolved" message for an alert with no open issue)
+  IGNORED
+  FAILED
+}
+
+/// One request received, with what became of it.
+model InboundDelivery {
+  id        String        @id @default(cuid())
+  hookId    String
+  status    InboundStatus
+  dedupeKey String?
+  issueKey  String?
+  message   String?
+  /// The JSON received (shortened)
+  payload   String
+  createdAt DateTime      @default(now())
+
+  hook InboundWebhook @relation(fields: [hookId], references: [id], onDelete: Cascade)
+
+  @@index([hookId, createdAt])
+}
+
+/// Which issue an alert (a webhook's dedupe key) is being tracked in.
+model InboundLink {
+  id        String         @id @default(cuid())
+  hookId    String
+  dedupeKey String
+  issueId   String
+  updatedAt DateTime       @updatedAt
+
+  hook InboundWebhook @relation(fields: [hookId], references: [id], onDelete: Cascade)
+
+  @@unique([hookId, dedupeKey])
 }

@@ -9,7 +9,7 @@ import QuickSearch from './QuickSearch';
 import NotificationBell from './NotificationBell';
 import Avatar from './Avatar';
 import { Dropdown, Modal, useToast } from './ui';
-import { BellIcon, ChevronDownIcon, ForwardIcon, LinkIcon, LogoutIcon, MailIcon, MenuIcon, MessageIcon, PlusIcon, XIcon } from './Icons';
+import { BellIcon, ChevronDownIcon, DownloadIcon, ForwardIcon, LinkIcon, LogoutIcon, MailIcon, MenuIcon, MessageIcon, PlusIcon, XIcon } from './Icons';
 import CreateIssueForm from './CreateIssueForm';
 
 const NAV = [
@@ -216,6 +216,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
                         <Link to="/settings/notifications" className="menu-item"><BellIcon size={14} /> Email notifications</Link>
                         <Link to="/settings/automation" className="menu-item"><ForwardIcon size={14} /> Automation</Link>
                         <Link to="/settings/webhooks" className="menu-item"><LinkIcon size={14} /> Webhooks</Link>
+                        <Link to="/settings/incoming-webhooks" className="menu-item"><DownloadIcon size={14} /> Incoming webhooks</Link>
                       </div>
                     )}
                     <div className="border-t border-jira-border mt-1 pt-1">

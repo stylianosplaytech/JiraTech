@@ -30,6 +30,7 @@ import { ApiTokensModule } from './api-tokens/api-tokens.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { EventsModule } from './events/events.module';
 import { AutomationModule } from './automation/automation.module';
+import { InboundWebhooksModule } from './inbound-webhooks/inbound-webhooks.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { AutomationModule } from './automation/automation.module';
     ApiTokensModule,
     WebhooksModule,
     AutomationModule,
+    InboundWebhooksModule,
   ],
 })
 export class AppModule {}
