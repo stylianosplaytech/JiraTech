@@ -8,6 +8,7 @@ export const TRIGGER_EVENTS = [
   'issue.assigned',
   'issue.transitioned',
   'comment.created',
+  'schedule',
 ] as const;
 export type TriggerEvent = (typeof TRIGGER_EVENTS)[number];
 
@@ -17,6 +18,7 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   'issue.assigned': 'An issue is assigned or reassigned',
   'issue.transitioned': 'An issue moves to another status',
   'comment.created': 'A comment is added',
+  schedule: 'On a schedule (acts on the issues the condition matches)',
 };
 
 /** Fields an "issue is edited" trigger can be limited to (the names issue changes carry). */
@@ -30,6 +32,10 @@ export interface TriggerConfig {
   fields?: string[];
   /** issue.transitioned: only when the issue moved to this status (name) */
   toStatus?: string;
+  /** schedule: how often, at what time (UTC; for hourly only the minutes count), and for weekly on which day (0 = Sunday) */
+  frequency?: 'hourly' | 'daily' | 'weekly';
+  time?: string;
+  weekday?: number;
 }
 
 export type Action =
@@ -108,6 +114,18 @@ export function parseTrigger(event: string, raw: unknown): { event: TriggerEvent
     if (!config.fields.length) throw new BadRequestException('Unknown field in the trigger');
   }
   if (event === 'issue.transitioned' && text(input.toStatus, 80)) config.toStatus = text(input.toStatus, 80);
+  if (event === 'schedule') {
+    if (!['hourly', 'daily', 'weekly'].includes(input.frequency as string)) throw new BadRequestException('Choose how often the rule runs');
+    const time = text(input.time, 5) || '09:00';
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new BadRequestException('Enter the time as HH:MM');
+    config.frequency = input.frequency as TriggerConfig['frequency'];
+    config.time = time;
+    if (config.frequency === 'weekly') {
+      const weekday = Number(input.weekday ?? 1);
+      if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) throw new BadRequestException('Choose the day of the week');
+      config.weekday = weekday;
+    }
+  }
   return { event: event as TriggerEvent, config };
 }
 

@@ -82,6 +82,13 @@ export class SearchService {
     return (await this.prisma.issue.count({ where: { AND: [compiled.where, { id: issueId }] } })) > 0;
   }
 
+  /** Up to `take` issues matching a JQL query that the user can browse, oldest first (for scheduled automation). */
+  async findMatching(jql: string, user: AuthUser, take: number, projectId?: string) {
+    const compiled = this.compile(jql, user);
+    const where = await this.visible(user, projectId ? { AND: [compiled.where, { projectId }] } : compiled.where);
+    return this.prisma.issue.findMany({ where, select: { id: true, key: true, projectId: true }, orderBy: { createdAt: 'asc' }, take });
+  }
+
   async quickSearch(q: string, user: AuthUser) {
     const term = q.trim();
     const ids = await this.access.browsableProjectIds(user);

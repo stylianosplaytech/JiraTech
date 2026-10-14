@@ -1264,9 +1264,9 @@ model AutomationRule {
   /// null = every project
   projectId      String?
   enabled        Boolean  @default(true)
-  /// The webhook event names: issue.created, issue.updated, issue.assigned, issue.transitioned, comment.created
+  /// issue.created, issue.updated, issue.assigned, issue.transitioned, comment.created, or "schedule" (runs on the issues the JQL matches)
   event          String
-  /// JSON: { fields?: string[] } for issue.updated, { toStatus?: string } for issue.transitioned
+  /// JSON: { fields?: string[] } for issue.updated, { toStatus?: string } for issue.transitioned, { frequency, time, weekday? } for schedule
   triggerConfig  String   @default("{}")
   /// Optional condition: the issue must match this JQL
   jql            String?
@@ -1275,6 +1275,8 @@ model AutomationRule {
   disabledReason String?
   runCount       Int      @default(0)
   lastRunAt      DateTime?
+  /// Scheduled rules (event "schedule"): when they run next
+  nextRunAt      DateTime?
   createdById    String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -1283,7 +1285,7 @@ model AutomationRule {
   createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
   runs      AutomationRun[]
 
-  @@index([event, enabled])
+  @@index([event, enabled, nextRunAt])
 }
 
 enum AutomationRunStatus {

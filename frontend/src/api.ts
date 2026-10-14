@@ -200,7 +200,7 @@ export const api = {
   updateAutomationRule: (id: string, data: AutomationRulePayload) =>
     request<AutomationRule>(`/automation/rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteAutomationRule: (id: string) => request<{ deleted: boolean }>(`/automation/rules/${id}`, { method: 'DELETE' }),
-  testAutomationRule: (id: string, issueKey: string) =>
+  testAutomationRule: (id: string, issueKey?: string) =>
     request<AutomationTestResult>(`/automation/rules/${id}/test`, { method: 'POST', body: JSON.stringify({ issueKey }) }),
   getAutomationRuns: (id: string) => request<AutomationRun[]>(`/automation/rules/${id}/runs`),
 
@@ -822,6 +822,15 @@ export type AutomationAction =
   | { type: 'add_label'; label: string }
   | { type: 'email'; to: string[]; subject: string; body: string };
 
+export interface AutomationTrigger {
+  fields?: string[];
+  toStatus?: string;
+  /** Scheduled rules: times are UTC, weekday 0 is Sunday */
+  frequency?: 'hourly' | 'daily' | 'weekly';
+  time?: string;
+  weekday?: number;
+}
+
 export interface AutomationRule {
   id: string;
   name: string;
@@ -830,12 +839,14 @@ export interface AutomationRule {
   project: { id: string; key: string; name: string } | null;
   enabled: boolean;
   event: string;
-  trigger: { fields?: string[]; toStatus?: string };
+  trigger: AutomationTrigger;
   jql: string | null;
   actions: AutomationAction[];
   disabledReason: string | null;
   runCount: number;
   lastRunAt: string | null;
+  /** Scheduled rules only */
+  nextRunAt: string | null;
   createdBy: { id: string; name: string } | null;
   updatedAt: string;
 }
@@ -846,7 +857,7 @@ export interface AutomationRulePayload {
   projectKey?: string;
   enabled: boolean;
   event: string;
-  trigger?: { fields?: string[]; toStatus?: string };
+  trigger?: AutomationTrigger;
   jql?: string;
   actions: AutomationAction[];
 }
@@ -868,11 +879,15 @@ export interface AutomationRun {
 }
 
 export interface AutomationTestResult {
-  issueKey: string;
+  /** null: a scheduled rule tested without an issue */
+  issueKey: string | null;
   inScope: boolean;
   conditionMet: boolean;
   conditionError: string | null;
   wouldRun: boolean;
+  schedule?: string;
+  nextRunAt?: string | null;
+  matching: { keys: string[]; total: number; more: boolean } | null;
   actions: { type: string; summary: string; text: string | null }[];
 }
 

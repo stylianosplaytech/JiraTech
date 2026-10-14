@@ -44,8 +44,10 @@ class RuleDto {
 }
 
 class TestDto {
+  /** Scheduled rules may leave it out to see which issues they would act on */
+  @IsOptional()
   @IsString()
-  issueKey!: string;
+  issueKey?: string;
 }
 
 /** /automation — rules that react to issue events (global admins, logged in). Rules run with the access of the person who last saved them. */

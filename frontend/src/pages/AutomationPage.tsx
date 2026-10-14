@@ -34,8 +34,21 @@ interface Form {
   event: string;
   fields: string[];
   toStatus: string;
+  frequency: 'hourly' | 'daily' | 'weekly';
+  time: string;
+  weekday: number;
   jql: string;
   actions: AutomationAction[];
+}
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** "Every day at 09:00 UTC" */
+function scheduleText(t: { frequency?: string; time?: string; weekday?: number }) {
+  const time = t.time ?? '09:00';
+  if (t.frequency === 'hourly') return `Every hour at :${time.slice(3)}`;
+  if (t.frequency === 'weekly') return `Every ${WEEKDAYS[t.weekday ?? 1]} at ${time} UTC`;
+  return `Every day at ${time} UTC`;
 }
 
 /** remainingEstimate → Remaining estimate */
@@ -59,10 +72,12 @@ function formFor(rule?: AutomationRule): Form {
   return rule
     ? {
       id: rule.id, name: rule.name, description: rule.description ?? '', projectKey: rule.project?.key ?? '', enabled: rule.enabled,
-      event: rule.event, fields: rule.trigger.fields ?? [], toStatus: rule.trigger.toStatus ?? '', jql: rule.jql ?? '', actions: rule.actions,
+      event: rule.event, fields: rule.trigger.fields ?? [], toStatus: rule.trigger.toStatus ?? '',
+      frequency: rule.trigger.frequency ?? 'daily', time: rule.trigger.time ?? '09:00', weekday: rule.trigger.weekday ?? 1,
+      jql: rule.jql ?? '', actions: rule.actions,
     }
     : {
-      name: '', description: '', projectKey: '', enabled: true, event: 'issue.created', fields: [], toStatus: '', jql: '', actions: [blankAction('comment')],
+      name: '', description: '', projectKey: '', enabled: true, event: 'issue.created', fields: [], toStatus: '', frequency: 'daily', time: '09:00', weekday: 1, jql: '', actions: [blankAction('comment')],
     };
 }
 
@@ -87,7 +102,10 @@ export default function AutomationPage() {
     projectKey: f.projectKey || undefined,
     enabled: f.enabled,
     event: f.event,
-    trigger: f.event === 'issue.updated' ? { fields: f.fields } : f.event === 'issue.transitioned' ? { toStatus: f.toStatus.trim() || undefined } : {},
+    trigger: f.event === 'issue.updated' ? { fields: f.fields }
+      : f.event === 'issue.transitioned' ? { toStatus: f.toStatus.trim() || undefined }
+      : f.event === 'schedule' ? { frequency: f.frequency, time: f.time, weekday: f.frequency === 'weekly' ? f.weekday : undefined }
+      : {},
     jql: f.jql.trim() || undefined,
     actions: f.actions,
   });
@@ -132,7 +150,7 @@ export default function AutomationPage() {
                       <button type="button" className="link text-left" onClick={() => setLogFor(r)}>{r.name}</button>
                       {r.description && <div className="text-xs text-jira-muted font-normal">{r.description}</div>}
                     </td>
-                    <td className="text-jira-subtle">{triggerLabel(r.event)}{r.jql && <div className="text-xs text-jira-muted font-mono truncate max-w-[16rem]" title={r.jql}>if {r.jql}</div>}</td>
+                    <td className="text-jira-subtle">{r.event === 'schedule' ? scheduleText(r.trigger) : triggerLabel(r.event)}{r.jql && <div className="text-xs text-jira-muted font-mono truncate max-w-[16rem]" title={r.jql}>if {r.jql}</div>}</td>
                     <td className="text-jira-subtle whitespace-nowrap">{r.project ? r.project.key : 'All projects'}</td>
                     <td className="whitespace-nowrap">
                       {r.enabled
@@ -141,6 +159,7 @@ export default function AutomationPage() {
                     </td>
                     <td className="text-jira-subtle whitespace-nowrap" title={r.lastRunAt ? new Date(r.lastRunAt).toLocaleString() : undefined}>
                       {r.runCount}{r.lastRunAt && <span className="text-xs text-jira-muted"> · {timeAgo(r.lastRunAt)}</span>}
+                      {r.enabled && r.nextRunAt && <div className="text-xs text-jira-muted">Next: {new Date(r.nextRunAt).toLocaleString()}</div>}
                     </td>
                     <td className="text-right whitespace-nowrap">
                       <button type="button" className="btn btn-subtle btn-sm" onClick={() => setTestFor(r)}>Test</button>
@@ -180,7 +199,7 @@ function RuleEditor({ form, setForm, meta, saving, onSave }: {
   const { data: users } = useQuery({ queryKey: ['users', 'staff'], queryFn: () => api.getUsers() });
   const set = (patch: Partial<Form>) => setForm({ ...form, ...patch });
   const setAction = (i: number, a: AutomationAction) => set({ actions: form.actions.map((x, j) => (j === i ? a : x)) });
-  const valid = form.name.trim() && form.actions.length && form.actions.every((a) => {
+  const valid = form.name.trim() && (form.event !== 'schedule' || form.jql.trim()) && form.actions.length && form.actions.every((a) => {
     switch (a.type) {
       case 'transition': return a.status.trim();
       case 'comment': return a.body.trim();
@@ -235,6 +254,31 @@ function RuleEditor({ form, setForm, meta, saving, onSave }: {
               </div>
             </fieldset>
           )}
+          {form.event === 'schedule' && (
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="field-label" htmlFor="rule-frequency">Runs</label>
+                <select id="rule-frequency" className="input" value={form.frequency} onChange={(e) => set({ frequency: e.target.value as Form['frequency'] })}>
+                  <option value="hourly">Every hour</option>
+                  <option value="daily">Every day</option>
+                  <option value="weekly">Every week</option>
+                </select>
+              </div>
+              {form.frequency === 'weekly' && (
+                <div>
+                  <label className="field-label" htmlFor="rule-weekday">On</label>
+                  <select id="rule-weekday" className="input" value={form.weekday} onChange={(e) => set({ weekday: Number(e.target.value) })}>
+                    {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="field-label" htmlFor="rule-time">{form.frequency === 'hourly' ? 'At minute (the hour is ignored)' : 'At (UTC)'}</label>
+                <input id="rule-time" type="time" className="input" value={form.time} onChange={(e) => set({ time: e.target.value })} />
+              </div>
+              <span className="field-help basis-full mt-0">{scheduleText(form)}. It runs the actions on every issue the condition below matches (up to 100 each time), so make the condition exclude issues that were already handled.</span>
+            </div>
+          )}
           {form.event === 'issue.transitioned' && (
             <div>
               <label className="field-label" htmlFor="rule-status">Only when it moves to this status (empty: any)</label>
@@ -244,9 +288,9 @@ function RuleEditor({ form, setForm, meta, saving, onSave }: {
         </section>
 
         <section className="card p-3 space-y-2">
-          <h3 className="section-title">If (optional)</h3>
+          <h3 className="section-title">{form.event === 'schedule' ? 'Issues to act on (required)' : 'If (optional)'}</h3>
           <input aria-label="JQL condition" className="input font-mono text-xs" value={form.jql} onChange={(e) => set({ jql: e.target.value })} placeholder='priority = Highest AND labels IS EMPTY' />
-          <span className="field-help">The issue must match this JQL query for the actions to run. Leave empty to run for every issue.</span>
+          <span className="field-help">{form.event === 'schedule' ? 'The rule acts on the issues this JQL query finds, e.g. status != Closed AND updated <= -14d.' : 'The issue must match this JQL query for the actions to run. Leave empty to run for every issue.'}</span>
         </section>
 
         <section className="card p-3 space-y-3">
@@ -393,7 +437,8 @@ function RunLog({ rule, onClose }: { rule: AutomationRule; onClose: () => void }
 /** A dry run: what the rule would do to one issue, without doing it. */
 function TestRule({ rule, onClose }: { rule: AutomationRule; onClose: () => void }) {
   const [key, setKey] = useState('');
-  const test = useMutation({ mutationFn: () => api.testAutomationRule(rule.id, key.trim()) });
+  const scheduled = rule.event === 'schedule';
+  const test = useMutation({ mutationFn: () => api.testAutomationRule(rule.id, key.trim() || undefined) });
   const result: AutomationTestResult | undefined = test.data;
   return (
     <Modal
@@ -401,19 +446,27 @@ function TestRule({ rule, onClose }: { rule: AutomationRule; onClose: () => void
       onClose={onClose}
       footer={<button type="button" className="btn btn-subtle" onClick={onClose}>Close</button>}
     >
-      <form className="flex gap-2 mb-3" onSubmit={(e) => { e.preventDefault(); if (key.trim()) test.mutate(); }}>
-        <input aria-label="Issue key" autoFocus className="input" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Issue key, e.g. HELP-12" />
-        <button type="submit" className="btn btn-primary shrink-0" disabled={!key.trim() || test.isPending}>{test.isPending ? 'Checking…' : 'Check'}</button>
+      <form className="flex gap-2 mb-3" onSubmit={(e) => { e.preventDefault(); if (scheduled || key.trim()) test.mutate(); }}>
+        <input aria-label="Issue key" autoFocus className="input" value={key} onChange={(e) => setKey(e.target.value)} placeholder={scheduled ? 'Issue key (empty: list the issues it would act on)' : 'Issue key, e.g. HELP-12'} />
+        <button type="submit" className="btn btn-primary shrink-0" disabled={(!scheduled && !key.trim()) || test.isPending}>{test.isPending ? 'Checking…' : 'Check'}</button>
       </form>
       {test.error && <p className="field-error">{errorMessage(test.error)}</p>}
       {result && (
         <div className="space-y-2 text-sm">
+          {result.matching ? (
+            <p>
+              {result.matching.total === 0
+                ? 'No issue matches the condition now, so nothing would happen.'
+                : <>{result.schedule}, it would act on {result.matching.more ? 'the first ' : ''}<strong>{result.matching.total}</strong> issue{result.matching.total === 1 ? '' : 's'}: <span className="font-mono text-xs">{result.matching.keys.join(', ')}{result.matching.total > result.matching.keys.length ? ', …' : ''}</span>. Then doing:</>}
+            </p>
+          ) : (
           <p>
             {result.wouldRun
               ? <><strong>{result.issueKey}</strong> would run this rule (when its trigger happens), doing:</>
               : !result.inScope ? <><strong>{result.issueKey}</strong> is in another project than this rule.</>
               : <><strong>{result.issueKey}</strong> does not match the condition{result.conditionError ? `: ${result.conditionError}` : ''}, so nothing would happen.</>}
           </p>
+          )}
           {result.wouldRun && (
             <ol className="list-decimal pl-5 space-y-1">
               {result.actions.map((a, i) => (

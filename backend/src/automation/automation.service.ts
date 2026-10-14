@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { AutomationRunStatus, Prisma } from '@prisma/client';
 import { AsyncLocalStorage } from 'async_hooks';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,6 +14,7 @@ import { IssueEvent, IssueEventsService } from '../events/issue-events.service';
 import {
   Action, TriggerConfig, TriggerEvent, TRIGGER_EVENTS, describe, fill, parseActions, parseTrigger,
 } from './automation-actions';
+import { describeSchedule, nextRun } from './automation-schedule';
 
 /** A rule's actions can trigger other rules, but only this many steps deep. */
 const MAX_DEPTH = 3;
@@ -22,6 +23,9 @@ const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60_000;
 const MAX_RULES = 100;
 const KEEP_RUN_DAYS = 30;
+/** A scheduled rule acts on at most this many issues per run; the rest wait for the next one. */
+const MAX_SCHEDULED_ISSUES = 100;
+const TICK_SECONDS = 60;
 
 /** Which rules are running the code below: set while a rule's actions run, so what they cause can be told apart from what people do. */
 const chain = new AsyncLocalStorage<{ depth: number; rules: Set<string> }>();
@@ -41,6 +45,12 @@ export interface RuleInput {
 type RuleRow = Prisma.AutomationRuleGetPayload<{
   include: { project: { select: { id: true; key: true; name: true } }; createdBy: { select: { id: true; name: true; email: true; role: true } } };
 }>;
+
+/** What a run is about: an issue event, or (event "schedule") a timer with nobody acting. */
+interface RunEvent {
+  event: string;
+  actorId: string | null;
+}
 
 export interface ActionResult {
   type: string;
@@ -72,6 +82,7 @@ function present(r: RuleRow) {
     disabledReason: r.disabledReason,
     runCount: r.runCount,
     lastRunAt: r.lastRunAt,
+    nextRunAt: r.nextRunAt,
     createdBy: r.createdBy ? { id: r.createdBy.id, name: r.createdBy.name } : null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
@@ -79,11 +90,13 @@ function present(r: RuleRow) {
 }
 
 @Injectable()
-export class AutomationService implements OnModuleInit {
+export class AutomationService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AutomationService.name);
   /** rule id + issue id → when it ran lately, for the loop guard */
   private readonly recent = new Map<string, number[]>();
   private lastPurge = 0;
+  private timer: NodeJS.Timeout | null = null;
+  private ticking = false;
 
   constructor(
     private prisma: PrismaService,
@@ -96,6 +109,16 @@ export class AutomationService implements OnModuleInit {
 
   onModuleInit() {
     this.events.subscribe((event) => void this.handle(event));
+    if (process.env.AUTOMATION_SCHEDULER === 'false') {
+      this.logger.log('AUTOMATION_SCHEDULER=false: scheduled rules are not run by this process');
+      return;
+    }
+    this.timer = setInterval(() => void this.tick(), TICK_SECONDS * 1000);
+    this.timer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
   }
 
   // ─── Managing rules (global admins) ────────────────────────────────────────
@@ -144,9 +167,16 @@ export class AutomationService implements OnModuleInit {
     return rows.map((r) => ({ ...r, results: parseJson<ActionResult[]>(r.results, []) }));
   }
 
-  /** What the rule would do to this issue, without doing it. */
-  async test(id: string, issueKey: string) {
+  /**
+   * What the rule would do to this issue, without doing it. A scheduled rule can be tested without an issue: it then
+   * lists the issues it would act on.
+   */
+  async test(id: string, issueKey?: string) {
     const rule = present(await this.find(id));
+    if (!issueKey?.trim()) {
+      if (rule.event === 'schedule') return this.previewSchedule(rule);
+      throw new BadRequestException('Enter an issue key');
+    }
     const issue = await this.prisma.issue.findFirst({ where: issueRef(issueKey.trim()), select: { id: true, key: true, projectId: true } });
     if (!issue) throw new NotFoundException(`Issue ${issueKey} not found`);
     const author = await this.author(id);
@@ -161,19 +191,46 @@ export class AutomationService implements OnModuleInit {
       }
     }
     const inScope = !rule.project || rule.project.id === issue.projectId;
-    const values = await this.values(issue.id, null);
-    const names = await this.userNames(rule.actions);
     return {
       issueKey: issue.key,
       inScope,
       conditionMet,
       conditionError,
       wouldRun: inScope && conditionMet,
-      actions: rule.actions.map((a) => ({
-        type: a.type,
-        summary: describe(a, (uid) => names.get(uid) ?? uid),
-        text: a.type === 'comment' || a.type === 'email' ? fill(a.body, values) : null,
-      })),
+      matching: null,
+      actions: await this.previewActions(rule.actions, issue.id),
+    };
+  }
+
+  private async previewActions(actions: Action[], issueId: string | null) {
+    const values = issueId ? await this.values(issueId, null) : {};
+    const names = await this.userNames(actions);
+    return actions.map((a) => ({
+      type: a.type,
+      summary: describe(a, (uid) => names.get(uid) ?? uid),
+      text: a.type === 'comment' || a.type === 'email' ? fill(a.body, values) : null,
+    }));
+  }
+
+  private async previewSchedule(rule: ReturnType<typeof present>) {
+    const author = await this.author(rule.id);
+    if (!author) throw new BadRequestException('This rule has no author any more: open and save it first');
+    let issues: { id: string; key: string }[];
+    try {
+      issues = await this.search.findMatching(rule.jql ?? '', author, MAX_SCHEDULED_ISSUES + 1, rule.project?.id);
+    } catch (e) {
+      throw new BadRequestException(this.message(e));
+    }
+    return {
+      issueKey: null,
+      inScope: true,
+      conditionMet: issues.length > 0,
+      conditionError: null,
+      wouldRun: issues.length > 0,
+      schedule: describeSchedule(rule.trigger),
+      nextRunAt: rule.nextRunAt,
+      matching: { keys: issues.slice(0, 20).map((i) => i.key), total: Math.min(issues.length, MAX_SCHEDULED_ISSUES), more: issues.length > MAX_SCHEDULED_ISSUES },
+      actions: await this.previewActions(rule.actions, issues[0]?.id ?? null),
     };
   }
 
@@ -205,17 +262,20 @@ export class AutomationService implements OnModuleInit {
       }
     }
     const jql = input.jql?.trim() || null;
+    if (event === 'schedule' && !jql) throw new BadRequestException('A scheduled rule needs a condition (JQL) that chooses the issues it acts on');
     if (jql) this.search.validate(jql, user);
     const projectId = input.projectKey?.trim() ? (await resolveProject(this.prisma, input.projectKey)).id : null;
+    const enabled = input.enabled ?? true;
     return {
       name: name.slice(0, 120),
       description: input.description?.trim().slice(0, 500) || null,
       projectId,
-      enabled: input.enabled ?? true,
+      enabled,
       event,
       triggerConfig: JSON.stringify(config),
       jql,
       actions: JSON.stringify(actions),
+      nextRunAt: event === 'schedule' && enabled ? nextRun(config, new Date()) : null,
     };
   }
 
@@ -253,19 +313,32 @@ export class AutomationService implements OnModuleInit {
     return true;
   }
 
-  private async run(rule: RuleRow, issue: { id: string; key: string; projectId: string }, event: IssueEvent) {
+  /** Records that a rule's trigger matched (and what came of it). */
+  private log(ruleId: string, event: string, issueKey: string, status: AutomationRunStatus, message: string | null, results: ActionResult[] = []) {
+    return this.prisma.$transaction([
+      this.prisma.automationRun.create({ data: { ruleId, event, issueKey, status, message, results: JSON.stringify(results) } }),
+      this.prisma.automationRule.update({ where: { id: ruleId }, data: { runCount: { increment: 1 }, lastRunAt: new Date() } }),
+    ]);
+  }
+
+  private switchOffOrphan(ruleId: string) {
+    return this.prisma.automationRule.update({
+      where: { id: ruleId },
+      data: { enabled: false, nextRunAt: null, disabledReason: 'Switched off: the person who wrote it no longer exists. Open and save it to take it over.' },
+    });
+  }
+
+  /** `checkCondition: false` when the issue was chosen by the rule's own query (scheduled rules). */
+  private async run(rule: RuleRow, issue: { id: string; key: string; projectId: string }, event: RunEvent, opts: { checkCondition?: boolean } = {}) {
     const author = rule.createdBy;
     if (!author) {
-      await this.prisma.automationRule.update({ where: { id: rule.id }, data: { enabled: false, disabledReason: 'Switched off: the person who wrote it no longer exists. Open and save it to take it over.' } });
+      await this.switchOffOrphan(rule.id);
       return;
     }
     const record = (status: AutomationRunStatus, message: string | null, results: ActionResult[] = []) =>
-      this.prisma.$transaction([
-        this.prisma.automationRun.create({ data: { ruleId: rule.id, event: event.event, issueKey: issue.key, status, message, results: JSON.stringify(results) } }),
-        this.prisma.automationRule.update({ where: { id: rule.id }, data: { runCount: { increment: 1 }, lastRunAt: new Date() } }),
-      ]);
+      this.log(rule.id, event.event, issue.key, status, message, results);
 
-    if (rule.jql) {
+    if (rule.jql && opts.checkCondition !== false) {
       try {
         if (!(await this.search.matches(rule.jql, issue.id, author))) return;
       } catch (err) {
@@ -308,7 +381,7 @@ export class AutomationService implements OnModuleInit {
     await record(failed ? 'FAILED' : 'SUCCESS', failed ? `${failed.type}: ${failed.detail}` : null, results);
   }
 
-  private async perform(action: Action, issue: { id: string; key: string; projectId: string }, event: IssueEvent, author: AuthUser): Promise<string> {
+  private async perform(action: Action, issue: { id: string; key: string; projectId: string }, event: RunEvent, author: AuthUser): Promise<string> {
     if (action.type !== 'email') await this.access.require(author, issue.projectId, 'edit');
     const current = await this.prisma.issue.findUniqueOrThrow({
       where: { id: issue.id },
@@ -403,8 +476,57 @@ export class AutomationService implements OnModuleInit {
       'issue.url': `${this.mailer.appUrl()}/browse/${issue.key}`,
       'project.key': issue.project.key,
       'project.name': issue.project.name,
-      'actor.name': actor?.name ?? 'Someone',
+      'actor.name': actor?.name ?? 'Automation',
     };
+  }
+
+  /** Runs the scheduled rules that are due. */
+  private async tick() {
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      const due = await this.prisma.automationRule.findMany({
+        where: { enabled: true, event: 'schedule', nextRunAt: { lte: new Date() } },
+        include: this.include,
+      });
+      for (const rule of due) {
+        const config = parseJson<TriggerConfig>(rule.triggerConfig, {});
+        // Claim this run first, so a slow previous tick or another process never runs it as well. A server that was
+        // down runs a missed schedule once when it is back, not once for every missed time.
+        const { count } = await this.prisma.automationRule.updateMany({
+          where: { id: rule.id, nextRunAt: rule.nextRunAt },
+          data: { nextRunAt: nextRun(config, new Date()), lastRunAt: new Date() },
+        });
+        if (count) await this.runScheduled(rule);
+      }
+      await this.purge();
+    } catch (err) {
+      this.logger.warn(`Scheduled automation: ${this.message(err)}`);
+    } finally {
+      this.ticking = false;
+    }
+  }
+
+  /** Runs a scheduled rule's actions on the issues its condition matches (as the author sees them). */
+  private async runScheduled(rule: RuleRow) {
+    const author = rule.createdBy;
+    if (!author) {
+      await this.switchOffOrphan(rule.id);
+      return;
+    }
+    let issues: { id: string; key: string; projectId: string }[];
+    try {
+      issues = await this.search.findMatching(rule.jql ?? '', author, MAX_SCHEDULED_ISSUES + 1, rule.projectId ?? undefined);
+    } catch (err) {
+      await this.log(rule.id, 'schedule', '—', 'FAILED', `The condition could not be checked: ${this.message(err)}`);
+      return;
+    }
+    if (issues.length > MAX_SCHEDULED_ISSUES) {
+      await this.log(rule.id, 'schedule', '—', 'SKIPPED', `The condition matches more than ${MAX_SCHEDULED_ISSUES} issues: the first ${MAX_SCHEDULED_ISSUES} were handled this time. Narrow the condition.`);
+    }
+    for (const issue of issues.slice(0, MAX_SCHEDULED_ISSUES)) {
+      await this.run(rule, issue, { event: 'schedule', actorId: null }, { checkCondition: false });
+    }
   }
 
   private async purge() {
