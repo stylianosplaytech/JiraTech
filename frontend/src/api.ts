@@ -193,6 +193,8 @@ export const api = {
   redeliverWebhook: (id: string, deliveryId: string) =>
     request<WebhookDelivery>(`/webhooks/${id}/deliveries/${deliveryId}/redeliver`, { method: 'POST' }),
 
+  /** The projects the signed-in user may set up webhooks and automation for (global: all of them) */
+  getAdminScope: () => request<AdminScope>('/access/admin-scope'),
   getAutomationRules: () => request<AutomationRule[]>('/automation/rules'),
   getAutomationMeta: () => request<AutomationMeta>('/automation/meta'),
   createAutomationRule: (data: AutomationRulePayload) =>
@@ -824,6 +826,11 @@ export interface SendEmailPayload {
   includeQuote?: boolean;
   attachmentIds?: string[];
   internal?: boolean;
+}
+
+export interface AdminScope {
+  global: boolean;
+  projects: { id: string; key: string; name: string }[];
 }
 
 export interface InboundWebhookConfig {

@@ -46,8 +46,8 @@ API: `GET /api/api-tokens`, `POST /api/api-tokens` (`{ name, access: READ|WRITE,
 
 ## Webhooks
 
-Global administrators add them under profile menu → Administration → **Webhooks** (`/settings/webhooks`). A webhook has an address, the
-events it wants, and optionally a single project (default: all projects).
+Add them under profile menu → Integrations → **Webhooks** (`/settings/webhooks`). A webhook has an address, the events it wants, and a
+project, or all projects. See [Who can set things up](#who-can-set-things-up) below for who may add them.
 
 ### Events
 
@@ -115,11 +115,11 @@ them, checked again whenever a connection is made. To call servers on your own n
 
 API: `GET|POST /api/webhooks`, `GET|PUT|DELETE /api/webhooks/:id`, `GET /api/webhooks/events`, `POST /api/webhooks/:id/rotate-secret`,
 `POST /api/webhooks/:id/test`, `GET /api/webhooks/:id/deliveries`, `POST /api/webhooks/:id/deliveries/:deliveryId/redeliver`.
-Global administrators only, and with a login rather than an API token.
+See [Who can set things up](#who-can-set-things-up); these need a login rather than an API token.
 
 ## Incoming webhooks
 
-Global administrators add them under profile menu → Administration → **Incoming webhooks** (`/settings/incoming-webhooks`). Each one has a
+Add them under profile menu → Integrations → **Incoming webhooks** (`/settings/incoming-webhooks`). Each one has a
 secret address, shown once when it is created:
 
 ```bash
@@ -161,5 +161,25 @@ Issues made this way go through the same path as any other, so [automation rules
 - **Sentry, Datadog, PagerDuty, Uptime Robot** and similar all have a generic webhook integration: send a sample to **Try a message** and
   write the templates from what you see.
 
-API (global administrators, logged in; API tokens cannot manage them): `GET|POST /api/inbound-webhooks`, `PUT|DELETE /api/inbound-webhooks/:id`,
+API (see [Who can set things up](#who-can-set-things-up); API tokens cannot manage them): `GET|POST /api/inbound-webhooks`, `PUT|DELETE /api/inbound-webhooks/:id`,
 `POST /api/inbound-webhooks/:id/rotate-token`, `POST /api/inbound-webhooks/:id/test` (`{ payload }`), `GET /api/inbound-webhooks/:id/deliveries`.
+
+## Who can set things up
+
+Webhooks, incoming webhooks and [automation rules](AUTOMATION.md) (the **Integrations** section of the profile menu) can be managed by:
+
+| | |
+|---|---|
+| **Global administrators** | Everything, including webhooks and rules that apply to **every project**. |
+| **Project administrators** (the project lead, or a member with the Admin role) | The ones that belong to **their own projects**, and only those. They see a project picker limited to the projects they administer, without "All projects". Webhooks, rules and incoming webhooks of other projects, and global ones, don't exist as far as they can tell (`404`). |
+
+Everyone else doesn't get the section. Some limits apply to project administrators because their changes reach beyond their own project:
+
+- An automation rule's **email** action can send to the assignee, reporter, project lead and anyone who has a JiraTech account, but not to addresses outside JiraTech
+  (a global administrator can).
+- A project can have up to 20 webhooks, 50 rules and 20 incoming webhooks (everything that applies to every project has its own, larger limits), so no project can use up the rest.
+- A rule or incoming webhook runs as the person who last saved it, so what it can do is what that person can do in the project. If a project administrator edits a rule
+  that someone else made, it becomes theirs.
+- API tokens still can't manage any of this: it needs a login, as before.
+
+`GET /api/access/admin-scope` tells the signed-in user which projects they may manage (and whether that is all of them).

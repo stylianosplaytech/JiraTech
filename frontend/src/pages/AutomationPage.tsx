@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type AutomationAction, type AutomationRule, type AutomationRun, type AutomationTestResult } from '../api';
+import { api, type AdminScope, type AutomationAction, type AutomationRule, type AutomationRun, type AutomationTestResult } from '../api';
 import { humanize, timeAgo } from '../utils';
 import { EditIcon, PlusIcon, TrashIcon } from '../components/Icons';
 import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useDialogs, useToast } from '../components/ui';
+import { canManageAny, defaultProjectKey, useAdminScope } from '../useAdminScope';
 
 const PRIORITIES = ['HIGHEST', 'HIGH', 'MEDIUM', 'LOW', 'LOWEST'];
 const ACTION_LABELS: Record<AutomationAction['type'], string> = {
@@ -86,10 +87,10 @@ export default function AutomationPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { confirm } = useDialogs();
-  const { data: me, isLoading: loadingMe } = useQuery({ queryKey: ['me'], queryFn: api.me });
-  const isAdmin = me?.role === 'ADMIN';
-  const { data: rules, isLoading, error } = useQuery({ queryKey: ['automation-rules'], queryFn: api.getAutomationRules, enabled: isAdmin });
-  const { data: meta } = useQuery({ queryKey: ['automation-meta'], queryFn: api.getAutomationMeta, enabled: isAdmin });
+  const { data: scope, isLoading: loadingScope } = useAdminScope();
+  const allowed = canManageAny(scope);
+  const { data: rules, isLoading, error } = useQuery({ queryKey: ['automation-rules'], queryFn: api.getAutomationRules, enabled: allowed });
+  const { data: meta } = useQuery({ queryKey: ['automation-meta'], queryFn: api.getAutomationMeta, enabled: allowed });
   const [form, setForm] = useState<Form | null>(null);
   const [logFor, setLogFor] = useState<AutomationRule | null>(null);
   const [testFor, setTestFor] = useState<AutomationRule | null>(null);
@@ -121,15 +122,15 @@ export default function AutomationPage() {
   });
   const remove = useMutation({ mutationFn: (r: AutomationRule) => api.deleteAutomationRule(r.id), onSuccess: () => { refresh(); toast('Rule deleted'); }, onError });
 
-  if (loadingMe || (isAdmin && isLoading)) return <Spinner />;
-  if (!isAdmin) return <EmptyState title="Only administrators can manage automation" />;
+  if (loadingScope || (allowed && isLoading)) return <Spinner />;
+  if (!allowed) return <EmptyState title="Only administrators of a project can manage automation" />;
   const triggerLabel = (name: string) => meta?.triggers.find((t) => t.name === name)?.label ?? name;
 
   return (
     <div className="max-w-5xl">
       <PageHeader
         title="Automation"
-        actions={<button type="button" className="btn btn-primary" onClick={() => setForm(formFor())}><PlusIcon size={14} /> Create rule</button>}
+        actions={<button type="button" className="btn btn-primary" onClick={() => setForm({ ...formFor(), projectKey: defaultProjectKey(scope) })}><PlusIcon size={14} /> Create rule</button>}
       />
       <p className="text-jira-subtle mb-4 max-w-3xl">
         A rule does something when something happens to an issue: <strong>when</strong> an event occurs, <strong>if</strong> the issue matches a
@@ -181,25 +182,25 @@ export default function AutomationPage() {
           </div>
         )}
       </div>
-      {form && meta && <RuleEditor form={form} setForm={setForm} meta={meta} saving={save.isPending} onSave={() => save.mutate()} />}
+      {form && meta && scope && <RuleEditor form={form} setForm={setForm} meta={meta} scope={scope} saving={save.isPending} onSave={() => save.mutate()} />}
       {logFor && <RunLog rule={logFor} onClose={() => setLogFor(null)} />}
       {testFor && <TestRule rule={testFor} onClose={() => setTestFor(null)} />}
     </div>
   );
 }
 
-function RuleEditor({ form, setForm, meta, saving, onSave }: {
+function RuleEditor({ form, setForm, meta, scope, saving, onSave }: {
   form: Form;
   setForm: (f: Form | null) => void;
   meta: { triggers: { name: string; label: string }[]; fields: string[]; placeholders: string[] };
+  scope: AdminScope;
   saving: boolean;
   onSave: () => void;
 }) {
-  const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: api.getProjects });
   const { data: users } = useQuery({ queryKey: ['users', 'staff'], queryFn: () => api.getUsers() });
   const set = (patch: Partial<Form>) => setForm({ ...form, ...patch });
   const setAction = (i: number, a: AutomationAction) => set({ actions: form.actions.map((x, j) => (j === i ? a : x)) });
-  const valid = form.name.trim() && (form.event !== 'schedule' || form.jql.trim()) && form.actions.length && form.actions.every((a) => {
+  const valid = form.name.trim() && (scope.global || form.projectKey) && (form.event !== 'schedule' || form.jql.trim()) && form.actions.length && form.actions.every((a) => {
     switch (a.type) {
       case 'transition': return a.status.trim();
       case 'comment': return a.body.trim();
@@ -230,8 +231,8 @@ function RuleEditor({ form, setForm, meta, saving, onSave }: {
           <div>
             <label className="field-label" htmlFor="rule-project">Project</label>
             <select id="rule-project" className="input" value={form.projectKey} onChange={(e) => set({ projectKey: e.target.value })}>
-              <option value="">All projects</option>
-              {projects?.map((p) => <option key={p.id} value={p.key}>{p.key} — {p.name}</option>)}
+              {scope.global && <option value="">All projects</option>}
+              {scope.projects.map((p) => <option key={p.id} value={p.key}>{p.key} — {p.name}</option>)}
             </select>
           </div>
         </div>
@@ -311,7 +312,7 @@ function RuleEditor({ form, setForm, meta, saving, onSave }: {
                   <TrashIcon size={14} />
                 </button>
               </div>
-              <ActionFields action={a} onChange={(next) => setAction(i, next)} users={users ?? []} />
+              <ActionFields action={a} onChange={(next) => setAction(i, next)} users={users ?? []} anyAddress={scope.global} />
             </div>
           ))}
           <div className="flex items-center justify-between gap-2">
@@ -336,7 +337,7 @@ function RuleEditor({ form, setForm, meta, saving, onSave }: {
   );
 }
 
-function ActionFields({ action, onChange, users }: { action: AutomationAction; onChange: (a: AutomationAction) => void; users: { id: string; name: string }[] }) {
+function ActionFields({ action, onChange, users, anyAddress }: { action: AutomationAction; onChange: (a: AutomationAction) => void; users: { id: string; name: string }[]; anyAddress: boolean }) {
   switch (action.type) {
     case 'assign':
       return (
@@ -390,6 +391,7 @@ function ActionFields({ action, onChange, users }: { action: AutomationAction; o
             onChange={(e) => setTo(roles, e.target.value.split(/[,;\s]+/).filter(Boolean))}
             placeholder="Other addresses, separated by commas"
           />
+          {!anyAddress && <span className="field-help">Project administrators can email people who have a JiraTech account; other addresses need a global administrator.</span>}
           <input aria-label="Subject" className="input" value={action.subject} onChange={(e) => onChange({ ...action, subject: e.target.value })} placeholder="Subject, e.g. {{issue.key}} is overdue" />
           <textarea aria-label="Message" className="input" rows={3} value={action.body} onChange={(e) => onChange({ ...action, body: e.target.value })} placeholder="Message. A link to the issue is added." />
         </>

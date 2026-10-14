@@ -80,6 +80,46 @@ export class AccessService {
     return projects.map((p) => p.id);
   }
 
+  /**
+   * Projects the user administers (as its lead or an admin member): what they may set up webhooks and automation for.
+   * Null for global admins, who may manage everything; customers administer nothing.
+   */
+  async adminProjectIds(user: AuthUser): Promise<string[] | null> {
+    if (user.role === UserRole.ADMIN) return null;
+    if (user.role === UserRole.CUSTOMER) return [];
+    const projects = await this.prisma.project.findMany({
+      where: { OR: [{ leadId: user.id }, { members: { some: { userId: user.id, role: ProjectRole.ADMIN } } }] },
+      select: { id: true },
+    });
+    return projects.map((p) => p.id);
+  }
+
+  /** What the user may manage, for the pages that list it: every project (global admins) or just those they administer. */
+  async manageScope(user: AuthUser) {
+    const ids = await this.adminProjectIds(user);
+    const projects = await this.prisma.project.findMany({
+      where: ids === null ? {} : { id: { in: ids } },
+      select: { id: true, key: true, name: true },
+      orderBy: { key: 'asc' },
+    });
+    return { global: user.role === UserRole.ADMIN, projects };
+  }
+
+  /** Whether the user may manage things that belong to this project (null: things for every project, global admins only). */
+  async canManage(user: AuthUser, projectId: string | null) {
+    if (user.role === UserRole.ADMIN) return true;
+    return projectId !== null && (await this.can(user, projectId, 'admin'));
+  }
+
+  /** Throws unless the user may manage things that belong to this project (null: for every project). */
+  async requireManage(user: AuthUser, projectId: string | null) {
+    if (projectId === null) {
+      if (user.role !== UserRole.ADMIN) throw new ForbiddenException('Only global administrators can set up something that applies to every project: choose a project');
+      return;
+    }
+    await this.require(user, projectId, 'admin');
+  }
+
   /** Of these users, the ones who can see the project (used to avoid notifying people without access). Never customers. */
   async filterBrowsers(projectId: string, userIds: string[]): Promise<Set<string>> {
     if (!userIds.length) return new Set();

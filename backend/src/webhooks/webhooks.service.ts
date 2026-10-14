@@ -3,6 +3,8 @@ import { Prisma, WebhookDeliveryStatus } from '@prisma/client';
 import { createHmac, randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../mail/mailer.service';
+import { AccessService } from '../access/access.service';
+import { AuthUser } from '../common/auth-user';
 import { open, seal } from '../common/secret-box';
 import { toPlainText } from '../common/rich-text';
 import { resolveProject } from '../common/project.util';
@@ -17,7 +19,9 @@ const MAX_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 const DISABLE_AFTER_FAILURES = 30;
 const WORKER_SECONDS = 15;
 const KEEP_DAYS = 14;
+/** Webhooks for every project (global admins), and per project (its admins). */
 const MAX_WEBHOOKS = 50;
+const MAX_PER_PROJECT = 20;
 
 export interface WebhookInput {
   name: string;
@@ -65,7 +69,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   /** Deliveries being sent right now, so the retry worker never sends one twice at once. */
   private readonly sending = new Set<string>();
 
-  constructor(private prisma: PrismaService, private mailer: MailerService, private events: IssueEventsService) {}
+  constructor(private prisma: PrismaService, private mailer: MailerService, private events: IssueEventsService, private access: AccessService) {}
 
   onModuleInit() {
     if (process.env.WEBHOOK_WORKER === 'false') {
@@ -80,34 +84,42 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  // ─── Managing webhooks (global admins) ─────────────────────────────────────
+  // ─── Managing webhooks (global admins; project admins for their own projects) ─────
 
   private readonly include = { project: { select: { id: true, key: true, name: true } } } as const;
 
-  async list() {
-    const rows = await this.prisma.webhook.findMany({ include: this.include, orderBy: { createdAt: 'asc' } });
+  async list(user: AuthUser) {
+    const ids = await this.access.adminProjectIds(user);
+    const rows = await this.prisma.webhook.findMany({
+      where: ids === null ? {} : { projectId: { in: ids } },
+      include: this.include,
+      orderBy: { createdAt: 'asc' },
+    });
     return rows.map(present);
   }
 
-  async get(id: string) {
-    return present(await this.find(id));
+  async get(id: string, user: AuthUser) {
+    return present(await this.find(id, user));
   }
 
-  async create(input: WebhookInput, userId: string) {
-    if ((await this.prisma.webhook.count()) >= MAX_WEBHOOKS) throw new BadRequestException(`Up to ${MAX_WEBHOOKS} webhooks are allowed`);
-    const data = await this.validate(input);
+  async create(input: WebhookInput, user: AuthUser) {
+    const data = await this.validate(input, user);
+    const cap = data.projectId ? MAX_PER_PROJECT : MAX_WEBHOOKS;
+    if ((await this.prisma.webhook.count({ where: { projectId: data.projectId } })) >= cap) {
+      throw new BadRequestException(`${data.projectId ? 'A project' : 'Everything that applies to every project'} can have up to ${cap} webhooks`);
+    }
     const secret = newSecret();
     const row = await this.prisma.webhook.create({
-      data: { ...data, secret: seal(secret), createdById: userId },
+      data: { ...data, secret: seal(secret), createdById: user.id },
       include: this.include,
     });
     // The only time the secret is shown (rotate it for a new one).
     return { ...present(row), secret };
   }
 
-  async update(id: string, input: WebhookInput) {
-    const before = await this.find(id);
-    const data = await this.validate(input);
+  async update(id: string, input: WebhookInput, user: AuthUser) {
+    const before = await this.find(id, user);
+    const data = await this.validate(input, user);
     const enabling = (input.active ?? before.active) && !before.active;
     const row = await this.prisma.webhook.update({
       where: { id },
@@ -117,21 +129,21 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     return present(row);
   }
 
-  async remove(id: string) {
-    await this.find(id);
+  async remove(id: string, user: AuthUser) {
+    await this.find(id, user);
     await this.prisma.webhook.delete({ where: { id } });
     return { deleted: true };
   }
 
-  async rotateSecret(id: string) {
-    await this.find(id);
+  async rotateSecret(id: string, user: AuthUser) {
+    await this.find(id, user);
     const secret = newSecret();
     const row = await this.prisma.webhook.update({ where: { id }, data: { secret: seal(secret) }, include: this.include });
     return { ...present(row), secret };
   }
 
-  async deliveries(id: string, limit = 50) {
-    await this.find(id);
+  async deliveries(id: string, user: AuthUser, limit = 50) {
+    await this.find(id, user);
     const rows = await this.prisma.webhookDelivery.findMany({
       where: { webhookId: id },
       orderBy: { createdAt: 'desc' },
@@ -141,8 +153,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Sends a sample event right away so admins can check their endpoint. */
-  async test(id: string) {
-    const webhook = await this.find(id);
+  async test(id: string, user: AuthUser) {
+    const webhook = await this.find(id, user);
     const payload = JSON.stringify({
       id: randomUUID(),
       event: PING_EVENT,
@@ -156,8 +168,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Sends a delivery's event again (a fresh delivery with the same payload). */
-  async redeliver(id: string, deliveryId: string) {
-    await this.find(id);
+  async redeliver(id: string, deliveryId: string, user: AuthUser) {
+    await this.find(id, user);
     const old = await this.prisma.webhookDelivery.findFirst({ where: { id: deliveryId, webhookId: id } });
     if (!old) throw new NotFoundException('Delivery not found');
     const delivery = await this.prisma.webhookDelivery.create({
@@ -180,13 +192,14 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async find(id: string) {
+  /** A webhook the user may manage; anything else (including other projects') is "not found". */
+  private async find(id: string, user: AuthUser) {
     const row = await this.prisma.webhook.findUnique({ where: { id }, include: this.include });
-    if (!row) throw new NotFoundException('Webhook not found');
+    if (!row || !(await this.access.canManage(user, row.projectId))) throw new NotFoundException('Webhook not found');
     return row;
   }
 
-  private async validate(input: WebhookInput) {
+  private async validate(input: WebhookInput, user: AuthUser) {
     const name = input.name?.trim();
     if (!name) throw new BadRequestException('Give the webhook a name');
     const url = parseWebhookUrl(input.url).toString();
@@ -195,6 +208,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     const unknown = (input.events ?? []).filter((e) => !(WEBHOOK_EVENTS as readonly string[]).includes(e));
     if (unknown.length) throw new BadRequestException(`Unknown event: ${unknown.join(', ')}`);
     const projectId = input.projectKey?.trim() ? (await resolveProject(this.prisma, input.projectKey)).id : null;
+    await this.access.requireManage(user, projectId);
     return { name, url, events: JSON.stringify(events), projectId, active: input.active ?? true };
   }
 

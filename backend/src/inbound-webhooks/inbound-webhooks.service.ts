@@ -3,6 +3,7 @@ import { InboundStatus, IssueStatus, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../mail/mailer.service';
+import { AccessService } from '../access/access.service';
 import { IssuesService } from '../issues/issues.service';
 import { AuthUser } from '../common/auth-user';
 import { resolveProject } from '../common/project.util';
@@ -14,6 +15,7 @@ import {
 /** Every incoming webhook address ends in a token that starts with this. */
 const TOKEN_PREFIX = 'jth_';
 const MAX_HOOKS = 50;
+const MAX_PER_PROJECT = 20;
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
 const KEEP_DAYS = 14;
@@ -71,22 +73,30 @@ export class InboundWebhooksService {
   private readonly recent = new Map<string, number[]>();
   private lastPurge = 0;
 
-  constructor(private prisma: PrismaService, private mailer: MailerService, private issues: IssuesService) {}
+  constructor(private prisma: PrismaService, private mailer: MailerService, private issues: IssuesService, private access: AccessService) {}
 
   private readonly include = {
     project: { select: { id: true, key: true, name: true } },
     createdBy: { select: { id: true, name: true, email: true, role: true } },
   } as const;
 
-  // ─── Managing incoming webhooks (global admins) ────────────────────────────
+  // ─── Managing incoming webhooks (project admins for their projects; global admins for all) ─────
 
-  async list() {
-    return (await this.prisma.inboundWebhook.findMany({ include: this.include, orderBy: { createdAt: 'asc' } })).map(present);
+  async list(user: AuthUser) {
+    const ids = await this.access.adminProjectIds(user);
+    const rows = await this.prisma.inboundWebhook.findMany({
+      where: ids === null ? {} : { projectId: { in: ids } },
+      include: this.include,
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map(present);
   }
 
   async create(input: InboundInput, user: AuthUser) {
-    if ((await this.prisma.inboundWebhook.count()) >= MAX_HOOKS) throw new BadRequestException(`Up to ${MAX_HOOKS} incoming webhooks are allowed`);
-    const data = await this.validate(input);
+    const data = await this.validate(input, user);
+    if ((await this.prisma.inboundWebhook.count({ where: { projectId: data.projectId } })) >= MAX_PER_PROJECT || (await this.prisma.inboundWebhook.count()) >= MAX_HOOKS) {
+      throw new BadRequestException(`A project can have up to ${MAX_PER_PROJECT} incoming webhooks (and ${MAX_HOOKS} in all)`);
+    }
     const token = this.newToken();
     const row = await this.prisma.inboundWebhook.create({
       data: { ...data, ...this.tokenFields(token), createdById: user.id },
@@ -98,26 +108,26 @@ export class InboundWebhooksService {
 
   /** Saving makes the person saving it the author: issues are created as them from now on. */
   async update(id: string, input: InboundInput, user: AuthUser) {
-    await this.find(id);
-    const data = await this.validate(input);
+    await this.find(id, user);
+    const data = await this.validate(input, user);
     return present(await this.prisma.inboundWebhook.update({ where: { id }, data: { ...data, createdById: user.id }, include: this.include }));
   }
 
-  async remove(id: string) {
-    await this.find(id);
+  async remove(id: string, user: AuthUser) {
+    await this.find(id, user);
     await this.prisma.inboundWebhook.delete({ where: { id } });
     return { deleted: true };
   }
 
-  async rotateToken(id: string) {
-    await this.find(id);
+  async rotateToken(id: string, user: AuthUser) {
+    await this.find(id, user);
     const token = this.newToken();
     const row = await this.prisma.inboundWebhook.update({ where: { id }, data: this.tokenFields(token), include: this.include });
     return { ...present(row), url: this.url(token) };
   }
 
-  async deliveries(id: string, limit = 50) {
-    await this.find(id);
+  async deliveries(id: string, user: AuthUser, limit = 50) {
+    await this.find(id, user);
     return this.prisma.inboundDelivery.findMany({
       where: { hookId: id },
       orderBy: { createdAt: 'desc' },
@@ -126,8 +136,8 @@ export class InboundWebhooksService {
   }
 
   /** What a sample payload would do, without doing it. */
-  async test(id: string, payload: unknown) {
-    const hook = await this.find(id);
+  async test(id: string, user: AuthUser, payload: unknown) {
+    const hook = await this.find(id, user);
     const body = this.asObject(payload);
     const config = parseConfigJson(hook.config);
     const plan = await this.plan(hook, config, body);
@@ -145,9 +155,10 @@ export class InboundWebhooksService {
     };
   }
 
-  private async find(id: string) {
+  /** A webhook the user may manage; anything else (including other projects') is "not found". */
+  private async find(id: string, user: AuthUser) {
     const hook = await this.prisma.inboundWebhook.findUnique({ where: { id }, include: this.include });
-    if (!hook) throw new NotFoundException('Incoming webhook not found');
+    if (!hook || !(await this.access.canManage(user, hook.projectId))) throw new NotFoundException('Incoming webhook not found');
     return hook;
   }
 
@@ -163,11 +174,12 @@ export class InboundWebhooksService {
     return `${this.mailer.appUrl()}/api/hooks/${token}`;
   }
 
-  private async validate(input: InboundInput) {
+  private async validate(input: InboundInput, user: AuthUser) {
     const name = input.name?.trim();
     if (!name) throw new BadRequestException('Give the webhook a name');
     if (!input.projectKey?.trim()) throw new BadRequestException('Choose the project the issues go in');
     const project = await resolveProject(this.prisma, input.projectKey);
+    await this.access.requireManage(user, project.id);
     const config = parseConfig(input as unknown as Record<string, unknown>);
     if (config.assigneeId && !(await this.prisma.user.findUnique({ where: { id: config.assigneeId }, select: { id: true } }))) {
       throw new BadRequestException('The person to assign to does not exist');

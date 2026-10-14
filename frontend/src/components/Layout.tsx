@@ -9,6 +9,7 @@ import QuickSearch from './QuickSearch';
 import NotificationBell from './NotificationBell';
 import Avatar from './Avatar';
 import { Dropdown, Modal, useToast } from './ui';
+import { canManageAny, useAdminScope } from '../useAdminScope';
 import { BellIcon, ChevronDownIcon, DownloadIcon, ForwardIcon, LinkIcon, LogoutIcon, MailIcon, MenuIcon, MessageIcon, PlusIcon, XIcon } from './Icons';
 import CreateIssueForm from './CreateIssueForm';
 
@@ -127,6 +128,7 @@ export default function Layout({ children, user, loading }: { children: React.Re
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
   const { project } = useProject();
+  const { data: adminScope } = useAdminScope();
   // Service desks add their queues next to the board.
   const nav = project?.type === 'SERVICE_DESK' ? [NAV[0], { path: '/queues', label: 'Queues' }, ...NAV.slice(1)] : NAV;
 
@@ -214,6 +216,11 @@ export default function Layout({ children, user, loading }: { children: React.Re
                         <Link to="/settings/email" className="menu-item"><MailIcon size={14} /> Email settings</Link>
                         <Link to="/settings/email-templates" className="menu-item"><MessageIcon size={14} /> Email templates</Link>
                         <Link to="/settings/notifications" className="menu-item"><BellIcon size={14} /> Email notifications</Link>
+                      </div>
+                    )}
+                    {canManageAny(adminScope) && (
+                      <div className="border-t border-jira-border mt-1 pt-1">
+                        <div className="menu-heading">Integrations</div>
                         <Link to="/settings/automation" className="menu-item"><ForwardIcon size={14} /> Automation</Link>
                         <Link to="/settings/webhooks" className="menu-item"><LinkIcon size={14} /> Webhooks</Link>
                         <Link to="/settings/incoming-webhooks" className="menu-item"><DownloadIcon size={14} /> Incoming webhooks</Link>

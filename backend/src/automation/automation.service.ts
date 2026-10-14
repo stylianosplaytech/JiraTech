@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { AutomationRunStatus, Prisma } from '@prisma/client';
+import { AutomationRunStatus, Prisma, UserRole } from '@prisma/client';
 import { AsyncLocalStorage } from 'async_hooks';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccessService } from '../access/access.service';
@@ -21,7 +21,9 @@ const MAX_DEPTH = 3;
 /** The same rule on the same issue more than this often within the window looks like a loop. */
 const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60_000;
+/** Rules for every project (global admins), and per project (its admins). */
 const MAX_RULES = 100;
+const MAX_PER_PROJECT = 50;
 const KEEP_RUN_DAYS = 30;
 /** A scheduled rule acts on at most this many issues per run; the rest wait for the next one. */
 const MAX_SCHEDULED_ISSUES = 100;
@@ -128,20 +130,29 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     createdBy: { select: { id: true, name: true, email: true, role: true } },
   } as const;
 
-  async list() {
-    return (await this.prisma.automationRule.findMany({ include: this.include, orderBy: { createdAt: 'asc' } })).map(present);
+  async list(user: AuthUser) {
+    const ids = await this.access.adminProjectIds(user);
+    const rules = await this.prisma.automationRule.findMany({
+      where: ids === null ? {} : { projectId: { in: ids } },
+      include: this.include,
+      orderBy: { createdAt: 'asc' },
+    });
+    return rules.map(present);
   }
 
   async create(input: RuleInput, user: AuthUser) {
-    if ((await this.prisma.automationRule.count()) >= MAX_RULES) throw new BadRequestException(`Up to ${MAX_RULES} rules are allowed`);
     const data = await this.validate(input, user);
+    const cap = data.projectId ? MAX_PER_PROJECT : MAX_RULES;
+    if ((await this.prisma.automationRule.count({ where: { projectId: data.projectId } })) >= cap) {
+      throw new BadRequestException(`${data.projectId ? 'A project' : 'Everything that applies to every project'} can have up to ${cap} rules`);
+    }
     const rule = await this.prisma.automationRule.create({ data: { ...data, createdById: user.id }, include: this.include });
     return present(rule);
   }
 
   /** Saving a rule makes the person saving it its author: it runs with their access from now on. */
   async update(id: string, input: RuleInput, user: AuthUser) {
-    await this.find(id);
+    await this.find(id, user);
     const data = await this.validate(input, user);
     const rule = await this.prisma.automationRule.update({
       where: { id },
@@ -151,14 +162,14 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     return present(rule);
   }
 
-  async remove(id: string) {
-    await this.find(id);
+  async remove(id: string, user: AuthUser) {
+    await this.find(id, user);
     await this.prisma.automationRule.delete({ where: { id } });
     return { deleted: true };
   }
 
-  async runs(id: string, limit = 50) {
-    await this.find(id);
+  async runs(id: string, user: AuthUser, limit = 50) {
+    await this.find(id, user);
     const rows = await this.prisma.automationRun.findMany({
       where: { ruleId: id },
       orderBy: { createdAt: 'desc' },
@@ -171,8 +182,8 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
    * What the rule would do to this issue, without doing it. A scheduled rule can be tested without an issue: it then
    * lists the issues it would act on.
    */
-  async test(id: string, issueKey?: string) {
-    const rule = present(await this.find(id));
+  async test(id: string, user: AuthUser, issueKey?: string) {
+    const rule = present(await this.find(id, user));
     if (!issueKey?.trim()) {
       if (rule.event === 'schedule') return this.previewSchedule(rule);
       throw new BadRequestException('Enter an issue key');
@@ -234,9 +245,10 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private async find(id: string) {
+  /** A rule the user may manage; anything else (including other projects') is "not found". */
+  private async find(id: string, user: AuthUser) {
     const rule = await this.prisma.automationRule.findUnique({ where: { id }, include: this.include });
-    if (!rule) throw new NotFoundException('Rule not found');
+    if (!rule || !(await this.access.canManage(user, rule.projectId))) throw new NotFoundException('Rule not found');
     return rule;
   }
 
@@ -265,6 +277,8 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     if (event === 'schedule' && !jql) throw new BadRequestException('A scheduled rule needs a condition (JQL) that chooses the issues it acts on');
     if (jql) this.search.validate(jql, user);
     const projectId = input.projectKey?.trim() ? (await resolveProject(this.prisma, input.projectKey)).id : null;
+    await this.access.requireManage(user, projectId);
+    if (user.role !== UserRole.ADMIN) await this.requireKnownRecipients(actions);
     const enabled = input.enabled ?? true;
     return {
       name: name.slice(0, 120),
@@ -277,6 +291,22 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
       actions: JSON.stringify(actions),
       nextRunAt: event === 'schedule' && enabled ? nextRun(config, new Date()) : null,
     };
+  }
+
+  /**
+   * Project admins may email people who have a JiraTech account, not any address: a rule must not become a way to send
+   * mail to outsiders. (Global admins may.)
+   */
+  private async requireKnownRecipients(actions: Action[]) {
+    for (const a of actions) {
+      if (a.type !== 'email') continue;
+      const external = a.to.filter((t) => t.includes('@'));
+      if (!external.length) continue;
+      const known = await this.prisma.user.findMany({ where: { email: { in: [...external, ...external.map((e) => e.toLowerCase())] } }, select: { email: true } });
+      const have = new Set(known.map((u) => u.email.toLowerCase()));
+      const unknown = external.find((e) => !have.has(e.toLowerCase()));
+      if (unknown) throw new BadRequestException(`${unknown} has no JiraTech account. Project administrators can email the assignee, reporter, project lead and people with an account; a global administrator can email other addresses.`);
+    }
   }
 
   // ─── Running rules ─────────────────────────────────────────────────────────

@@ -1,21 +1,25 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
-import { JwtAuthGuard, LoginOnlyGuard, Roles, RolesGuard } from '../auth/guards';
+import { JwtAuthGuard, LoginOnlyGuard } from '../auth/guards';
 import { AuthUser } from '../common/auth-user';
 import { EVENT_LABELS, WEBHOOK_EVENTS } from './webhook-events';
 import { WebhooksService } from './webhooks.service';
 import { WebhookDto } from './webhooks.dto';
 
-/** /webhooks — where JiraTech sends signed events (global admins, logged in). */
+type Req = { user: AuthUser };
+
+/**
+ * /webhooks — where JiraTech sends signed events. Global administrators manage all of them; project administrators the ones
+ * of their own projects (they can't make one for every project). Needs a login: API tokens cannot manage webhooks.
+ */
 @Controller('webhooks')
-@UseGuards(JwtAuthGuard, LoginOnlyGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
+@UseGuards(JwtAuthGuard, LoginOnlyGuard)
 export class WebhooksController {
   constructor(private webhooks: WebhooksService) {}
 
+  /** The webhooks the signed-in user may manage */
   @Get()
-  list() {
-    return this.webhooks.list();
+  list(@Request() req: Req) {
+    return this.webhooks.list(req.user);
   }
 
   /** The events a webhook can subscribe to */
@@ -25,44 +29,44 @@ export class WebhooksController {
   }
 
   @Post()
-  create(@Request() req: { user: AuthUser }, @Body() dto: WebhookDto) {
-    return this.webhooks.create(dto, req.user.id);
+  create(@Request() req: Req, @Body() dto: WebhookDto) {
+    return this.webhooks.create(dto, req.user);
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.webhooks.get(id);
+  get(@Request() req: Req, @Param('id') id: string) {
+    return this.webhooks.get(id, req.user);
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: WebhookDto) {
-    return this.webhooks.update(id, dto);
+  update(@Request() req: Req, @Param('id') id: string, @Body() dto: WebhookDto) {
+    return this.webhooks.update(id, dto, req.user);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.webhooks.remove(id);
+  remove(@Request() req: Req, @Param('id') id: string) {
+    return this.webhooks.remove(id, req.user);
   }
 
   /** A new signing secret (the old one stops working); returned once */
   @Post(':id/rotate-secret')
-  rotate(@Param('id') id: string) {
-    return this.webhooks.rotateSecret(id);
+  rotate(@Request() req: Req, @Param('id') id: string) {
+    return this.webhooks.rotateSecret(id, req.user);
   }
 
   /** Sends a sample event and returns how it went */
   @Post(':id/test')
-  test(@Param('id') id: string) {
-    return this.webhooks.test(id);
+  test(@Request() req: Req, @Param('id') id: string) {
+    return this.webhooks.test(id, req.user);
   }
 
   @Get(':id/deliveries')
-  deliveries(@Param('id') id: string, @Query('limit') limit?: string) {
-    return this.webhooks.deliveries(id, limit ? Number(limit) || 50 : 50);
+  deliveries(@Request() req: Req, @Param('id') id: string, @Query('limit') limit?: string) {
+    return this.webhooks.deliveries(id, req.user, limit ? Number(limit) || 50 : 50);
   }
 
   @Post(':id/deliveries/:deliveryId/redeliver')
-  redeliver(@Param('id') id: string, @Param('deliveryId') deliveryId: string) {
-    return this.webhooks.redeliver(id, deliveryId);
+  redeliver(@Request() req: Req, @Param('id') id: string, @Param('deliveryId') deliveryId: string) {
+    return this.webhooks.redeliver(id, deliveryId, req.user);
   }
 }

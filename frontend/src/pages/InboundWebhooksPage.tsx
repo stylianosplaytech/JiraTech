@@ -5,6 +5,7 @@ import { humanize, timeAgo } from '../utils';
 import SecretReveal from '../components/SecretReveal';
 import { EditIcon, PlusIcon, TrashIcon } from '../components/Icons';
 import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useDialogs, useToast } from '../components/ui';
+import { canManageAny, defaultProjectKey, useAdminScope } from '../useAdminScope';
 
 interface Form {
   id?: string;
@@ -77,10 +78,10 @@ export default function InboundWebhooksPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { confirm } = useDialogs();
-  const { data: me, isLoading: loadingMe } = useQuery({ queryKey: ['me'], queryFn: api.me });
-  const isAdmin = me?.role === 'ADMIN';
-  const { data: hooks, isLoading, error } = useQuery({ queryKey: ['inbound-webhooks'], queryFn: api.getInboundWebhooks, enabled: isAdmin });
-  const { data: meta } = useQuery({ queryKey: ['inbound-meta'], queryFn: api.getInboundWebhookMeta, enabled: isAdmin });
+  const { data: scope, isLoading: loadingScope } = useAdminScope();
+  const allowed = canManageAny(scope);
+  const { data: hooks, isLoading, error } = useQuery({ queryKey: ['inbound-webhooks'], queryFn: api.getInboundWebhooks, enabled: allowed });
+  const { data: meta } = useQuery({ queryKey: ['inbound-meta'], queryFn: api.getInboundWebhookMeta, enabled: allowed });
   const [form, setForm] = useState<Form | null>(null);
   const [address, setAddress] = useState<{ title: string; url: string } | null>(null);
   const [logFor, setLogFor] = useState<InboundWebhook | null>(null);
@@ -115,14 +116,14 @@ export default function InboundWebhooksPage() {
     onError,
   });
 
-  if (loadingMe || (isAdmin && isLoading)) return <Spinner />;
-  if (!isAdmin) return <EmptyState title="Only administrators can manage incoming webhooks" />;
+  if (loadingScope || (allowed && isLoading)) return <Spinner />;
+  if (!allowed) return <EmptyState title="Only administrators of a project can manage incoming webhooks" />;
 
   return (
     <div className="max-w-5xl">
       <PageHeader
         title="Incoming webhooks"
-        actions={<button type="button" className="btn btn-primary" onClick={() => setForm(formFor())}><PlusIcon size={14} /> Add incoming webhook</button>}
+        actions={<button type="button" className="btn btn-primary" onClick={() => setForm({ ...formFor(), projectKey: defaultProjectKey(scope) })}><PlusIcon size={14} /> Add incoming webhook</button>}
       />
       <p className="text-jira-subtle mb-4 max-w-3xl">
         Give a monitoring tool, CI system or script a secret address to POST JSON to, and JiraTech turns each message into an issue in the project you choose.
@@ -203,7 +204,8 @@ function Editor({ form, setForm, meta, saving, onSave, onRotate }: {
   onSave: () => void;
   onRotate: () => void;
 }) {
-  const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: api.getProjects });
+  const { data: scope } = useAdminScope();
+  const projects = scope?.projects;
   const { data: users } = useQuery({ queryKey: ['users', 'staff'], queryFn: () => api.getUsers() });
   const set = (patch: Partial<Form>) => setForm({ ...form, ...patch });
   const valid = form.name.trim() && form.projectKey && (!form.resolvePath.trim() || form.dedupe.trim());

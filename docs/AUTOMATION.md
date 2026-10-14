@@ -1,13 +1,14 @@
 # Automation rules
 
-A rule does something when something happens to an issue. Global administrators manage rules under profile menu → Administration →
-**Automation** (`/settings/automation`).
+A rule does something when something happens to an issue. Manage rules under profile menu → Integrations → **Automation**
+(`/settings/automation`): global administrators manage all of them, and project administrators the rules of their own projects (see
+[Who can set things up](API-INTEGRATIONS.md#who-can-set-things-up)).
 
 A rule is **when** + **if** + **then**:
 
 | Part | What it is |
 |---|---|
-| **Project** | One project, or all projects. |
+| **Project** | One project, or all projects (all projects: global administrators only). |
 | **When** | An issue is created, edited, assigned, moves to another status, gets a comment, or **on a schedule**. Edited can be limited to chosen fields (e.g. only when the priority changes); moved can be limited to one target status. |
 | **If** (optional) | The issue must match a JQL query, e.g. `priority = Highest AND labels IS EMPTY`. No condition: every issue. (Scheduled rules need one: see below.) |
 | **Then** | Up to 10 actions, run in order. If one fails, the rest are skipped and the run is logged as failed. |
@@ -21,7 +22,7 @@ A rule is **when** + **if** + **then**:
 | Move to a status | A status name (`In Progress`) or category (`TO_DO`, `DOING`, `CLOSED`). The workflow must allow the move; closing uses the resolution Completed. Already there: nothing happens. |
 | Add a comment | Optionally an internal note (service desk agents only). |
 | Add a label | A single word; created in the project if new. |
-| Send an email | To the assignee, reporter or project lead, and/or any addresses. A link to the issue is added. Sent the same way as other JiraTech emails (see Email settings). |
+| Send an email | To the assignee, reporter or project lead, and/or any addresses (a project administrator can only use addresses of people with a JiraTech account). A link to the issue is added. Sent the same way as other JiraTech emails (see Email settings). |
 
 Comments and emails can use placeholders: `{{issue.key}}`, `{{issue.summary}}`, `{{issue.status}}`, `{{issue.priority}}`,
 `{{issue.assignee}}`, `{{issue.reporter}}`, `{{issue.url}}`, `{{project.key}}`, `{{project.name}}`, `{{actor.name}}` (who caused the event).
@@ -72,6 +73,6 @@ Even so, two rules that undo each other will fight until the guard stops them: u
 
 ## API
 
-Global administrators, logged in (API tokens cannot manage rules): `GET|POST /api/automation/rules`, `PUT|DELETE /api/automation/rules/:id`,
+Logged in (API tokens cannot manage rules), as a global or project administrator: `GET|POST /api/automation/rules`, `PUT|DELETE /api/automation/rules/:id`,
 `POST /api/automation/rules/:id/test` (`{ issueKey }`), `GET /api/automation/rules/:id/runs`, `GET /api/automation/meta`.
 Rules and [webhooks](API-INTEGRATIONS.md) listen to the same issue events.

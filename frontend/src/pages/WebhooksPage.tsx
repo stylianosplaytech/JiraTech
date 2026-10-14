@@ -6,6 +6,7 @@ import { timeAgo } from '../utils';
 import SecretReveal from '../components/SecretReveal';
 import { EditIcon, PlusIcon, TrashIcon } from '../components/Icons';
 import { EmptyState, Modal, PageHeader, Spinner, errorMessage, useDialogs, useToast } from '../components/ui';
+import { canManageAny, defaultProjectKey, useAdminScope } from '../useAdminScope';
 
 interface Form {
   id?: string;
@@ -27,11 +28,10 @@ export default function WebhooksPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { confirm } = useDialogs();
-  const { data: me, isLoading: loadingMe } = useQuery({ queryKey: ['me'], queryFn: api.me });
-  const isAdmin = me?.role === 'ADMIN';
-  const { data: webhooks, isLoading, error } = useQuery({ queryKey: ['webhooks'], queryFn: api.getWebhooks, enabled: isAdmin });
-  const { data: events } = useQuery({ queryKey: ['webhook-events'], queryFn: api.getWebhookEvents, enabled: isAdmin });
-  const { data: projects } = useQuery({ queryKey: ['projects'], queryFn: api.getProjects, enabled: isAdmin });
+  const { data: scope, isLoading: loadingScope } = useAdminScope();
+  const allowed = canManageAny(scope);
+  const { data: webhooks, isLoading, error } = useQuery({ queryKey: ['webhooks'], queryFn: api.getWebhooks, enabled: allowed });
+  const { data: events } = useQuery({ queryKey: ['webhook-events'], queryFn: api.getWebhookEvents, enabled: allowed });
   const [form, setForm] = useState<Form | null>(null);
   const [secret, setSecret] = useState<{ title: string; value: string } | null>(null);
   const [logFor, setLogFor] = useState<Webhook | null>(null);
@@ -72,8 +72,8 @@ export default function WebhooksPage() {
     onError,
   });
 
-  if (loadingMe || (isAdmin && isLoading)) return <Spinner />;
-  if (!isAdmin) return <EmptyState title="Only administrators can manage webhooks" />;
+  if (loadingScope || (allowed && isLoading)) return <Spinner />;
+  if (!allowed) return <EmptyState title="Only administrators of a project can manage webhooks" />;
 
   const toggleEvent = (name: string) => setForm((f) => (f ? { ...f, events: f.events.includes(name) ? f.events.filter((e) => e !== name) : [...f.events, name] } : f));
 
@@ -82,7 +82,7 @@ export default function WebhooksPage() {
       <PageHeader
         title="Webhooks"
         actions={(
-          <button type="button" className="btn btn-primary" onClick={() => setForm({ name: '', url: '', projectKey: '', events: events?.map((e) => e.name) ?? [], active: true })}>
+          <button type="button" className="btn btn-primary" onClick={() => setForm({ name: '', url: '', projectKey: defaultProjectKey(scope), events: events?.map((e) => e.name) ?? [], active: true })}>
             <PlusIcon size={14} /> Add webhook
           </button>
         )}
@@ -165,7 +165,7 @@ export default function WebhooksPage() {
                 </button>
               )}
               <button type="button" className="btn btn-subtle" onClick={() => setForm(null)}>Cancel</button>
-              <button type="button" className="btn btn-primary" disabled={!form.name.trim() || !form.url.trim() || !form.events.length || save.isPending} onClick={() => save.mutate()}>
+              <button type="button" className="btn btn-primary" disabled={!form.name.trim() || !form.url.trim() || !form.events.length || (!scope?.global && !form.projectKey) || save.isPending} onClick={() => save.mutate()}>
                 {save.isPending ? 'Saving…' : 'Save'}
               </button>
             </>
@@ -184,8 +184,8 @@ export default function WebhooksPage() {
             <div>
               <label className="field-label" htmlFor="hook-project">Projects</label>
               <select id="hook-project" className="input" value={form.projectKey} onChange={(e) => setForm({ ...form, projectKey: e.target.value })}>
-                <option value="">All projects</option>
-                {projects?.map((p) => <option key={p.id} value={p.key}>{p.key} — {p.name}</option>)}
+                {scope?.global && <option value="">All projects</option>}
+                {scope?.projects.map((p) => <option key={p.id} value={p.key}>{p.key} — {p.name}</option>)}
               </select>
             </div>
             <fieldset>
