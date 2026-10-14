@@ -5,9 +5,10 @@ import { BulkService } from './bulk.service';
 import { MoveService } from './move.service';
 import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { WebhooksModule } from '../webhooks/webhooks.module';
 
 @Module({
-  imports: [CustomFieldsModule, NotificationsModule],
+  imports: [CustomFieldsModule, NotificationsModule, WebhooksModule],
   controllers: [IssuesController],
   providers: [IssuesService, BulkService, MoveService],
   exports: [IssuesService],

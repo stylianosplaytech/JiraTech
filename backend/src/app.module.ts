@@ -26,6 +26,8 @@ import { IssueEmailModule } from './issue-email/issue-email.module';
 import { RecipientGroupsModule } from './recipient-groups/recipient-groups.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { ServiceNoticesModule } from './service-notices/service-notices.module';
+import { ApiTokensModule } from './api-tokens/api-tokens.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -56,6 +58,8 @@ import { ServiceNoticesModule } from './service-notices/service-notices.module';
     RecipientGroupsModule,
     OrganizationsModule,
     ServiceNoticesModule,
+    ApiTokensModule,
+    WebhooksModule,
   ],
 })
 export class AppModule {}

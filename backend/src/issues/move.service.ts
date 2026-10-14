@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
 import { AccessService } from '../access/access.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { EPIC_TYPES, isValidParentChild } from '../common/issue-rules';
 import { issueRef } from '../common/issue-ref';
@@ -49,6 +50,7 @@ export class MoveService {
     private access: AccessService,
     private workflow: WorkflowService,
     private notifications: NotificationsService,
+    private webhooks: WebhooksService,
     private issues: IssuesService,
   ) {}
 
@@ -109,7 +111,7 @@ export class MoveService {
 
       const lookups = await this.targetLookups(tx, target.id);
       const linkedOrgs = new Set((await tx.projectOrganization.findMany({ where: { projectId: target.id }, select: { organizationId: true } })).map((o) => o.organizationId));
-      const moved: { id: string; assigneeId: string | null }[] = [];
+      const moved: { id: string; assigneeId: string | null; from: string; to: string }[] = [];
 
       for (const issue of all) {
         const isRoot = issue.id === root.id;
@@ -178,7 +180,7 @@ export class MoveService {
         await tx.issueHistory.createMany({
           data: changes.filter((c) => c.from !== c.to).map((c) => ({ issueId: issue.id, userId: user.id, field: c.field, fromValue: c.from, toValue: c.to })),
         });
-        moved.push({ id: issue.id, assigneeId: issue.assigneeId });
+        moved.push({ id: issue.id, assigneeId: issue.assigneeId, from: source.name, to: target.name });
       }
       return moved;
     }, { timeout: 30_000 });
@@ -187,6 +189,9 @@ export class MoveService {
       for (const m of moved) {
         await this.notifications.issueUpdated(m.id, user.id, { fields: ['project'], previousAssigneeId: m.assigneeId, previousDescription: null });
       }
+    }
+    for (const m of moved) {
+      await this.webhooks.issueEvent('issue.updated', m.id, user.id, { changes: [{ field: 'project', from: m.from, to: m.to }] });
     }
     return this.issues.findOne(root.id);
   }

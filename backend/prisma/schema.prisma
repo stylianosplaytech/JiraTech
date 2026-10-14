@@ -161,6 +161,8 @@ model User {
   recipientGroups  RecipientGroupUser[]
   noticeTemplates  NoticeTemplate[]
   noticesSent      ServiceNotice[]
+  apiTokens        ApiToken[]
+  webhooksCreated  Webhook[]
 }
 
 /** A one-time link for choosing a password (the welcome email); deleted once used. Only a hash of the token is stored. */
@@ -258,6 +260,7 @@ model Project {
   portals               Portal[]
   emailChannel          EmailChannel?
   emailTemplates        EmailTemplate[]
+  webhooks              Webhook[]
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -1160,4 +1163,91 @@ model ServiceNotice {
   sentBy   User?           @relation(fields: [sentById], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
+}
+
+// ─── API tokens & webhooks ───────────────────────────────────────────────────
+
+enum ApiTokenAccess {
+  /// GET requests only
+  READ
+  /// Everything the owner can do (but managing API tokens)
+  WRITE
+}
+
+/**
+ * A key for scripts and integrations, acting as its owner (so it reaches exactly what they can). Only a SHA-256 hash is
+ * stored; the token itself is shown once, when it is created.
+ */
+model ApiToken {
+  id         String         @id @default(cuid())
+  userId     String
+  name       String
+  /// The first characters of the token, so people can tell their tokens apart
+  prefix     String
+  tokenHash  String         @unique
+  access     ApiTokenAccess @default(READ)
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// An address that is sent a signed POST when something happens to an issue: in one project, or in all of them.
+model Webhook {
+  id             String   @id @default(cuid())
+  name           String
+  url            String
+  /// Event names (JSON array of strings), see webhooks/webhook-events.ts
+  events         String
+  /// null = every project
+  projectId      String?
+  active         Boolean  @default(true)
+  /// The signing secret, encrypted (see common/secret-box.ts)
+  secret         String
+  /// Failed attempts in a row: the webhook is switched off after too many
+  failureCount   Int      @default(0)
+  disabledReason String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project    Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy  User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deliveries WebhookDelivery[]
+
+  @@index([projectId])
+}
+
+enum WebhookDeliveryStatus {
+  /// Waiting for its first attempt, or for a retry
+  PENDING
+  SUCCESS
+  /// Out of attempts
+  FAILED
+}
+
+/// One event sent to one webhook, with how the attempts went.
+model WebhookDelivery {
+  id             String                @id @default(cuid())
+  webhookId      String
+  event          String
+  /// The JSON body that is sent (so a redelivery sends the same event)
+  payload        String
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  nextAttemptAt  DateTime?
+  responseStatus Int?
+  error          String?
+  durationMs     Int?
+  createdAt      DateTime              @default(now())
+  deliveredAt    DateTime?
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+  @@index([status, nextAttemptAt])
 }

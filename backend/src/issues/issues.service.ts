@@ -9,6 +9,7 @@ import { nextIssueKey, resolveProject } from '../common/project.util';
 import { AuthUser } from '../common/auth-user';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { extractMentions, sanitizeRich, toPlainText } from '../common/rich-text';
 import { contains } from '../common/text-match';
 import { slaOnStatusChange } from '../common/sla';
@@ -39,6 +40,7 @@ export class IssuesService {
     private prisma: PrismaService,
     private customFieldsService: CustomFieldsService,
     private notifications: NotificationsService,
+    private webhooks: WebhooksService,
     private access: AccessService,
     private workflow: WorkflowService,
   ) {
@@ -185,6 +187,7 @@ export class IssuesService {
       await this.customFieldsService.setIssueValues(issueId, dto.customFields);
     }
     await this.notifications.issueCreated(issueId, reporterId);
+    await this.webhooks.issueEvent('issue.created', issueId, reporterId);
     return this.findOne(issueId);
   }
 
@@ -260,17 +263,24 @@ export class IssuesService {
       await tx.issue.update({ where: { id }, data: clean });
       const real = changes.filter((c) => c.from !== c.to);
       await this.recordHistory(tx, id, userId, real);
-      return real.map((c) => c.field);
+      return real;
     });
 
     if (dto.customFields) {
       await this.customFieldsService.setIssueValues(id, dto.customFields);
     }
+    const changedFields = changed.map((c) => c.field);
     if (opts.notify !== false) await this.notifications.issueUpdated(id, userId, {
-      fields: changed,
+      fields: changedFields,
       previousAssigneeId: before.assigneeId,
       previousDescription: before.description,
     });
+    if (changed.length) {
+      const changes = changed.map((c) => ({ field: c.field, from: c.from ?? null, to: c.to ?? null }));
+      await this.webhooks.issueEvent('issue.updated', id, userId, { changes });
+      const assignment = changes.filter((c) => c.field === 'assignee');
+      if (assignment.length) await this.webhooks.issueEvent('issue.assigned', id, userId, { changes: assignment });
+    }
     return this.findOne(id);
   }
 
@@ -288,6 +298,7 @@ export class IssuesService {
     }
 
     if (opts.notify !== false) await this.notifications.issueDeleted(issue.id, user.id);
+    const deletedSnapshot = await this.webhooks.snapshot(issue.id, user.id);
     await this.prisma.$transaction(async (tx) => {
       await tx.issueComponent.deleteMany({ where: { issueId: issue.id } });
       await tx.issueVersion.deleteMany({ where: { issueId: issue.id } });
@@ -296,6 +307,7 @@ export class IssuesService {
     for (const a of issue.attachments) {
       fs.rm(a.storagePath, { force: true }, () => undefined);
     }
+    await this.webhooks.deleted(deletedSnapshot);
     return { deleted: true, key: issue.key };
   }
 
@@ -319,21 +331,24 @@ export class IssuesService {
     const resolution = closing ? (dto.resolution as IssueResolution) : null;
     const fromName = issue.workflowStatus?.name ?? CATEGORY_NAMES[issue.status];
 
+    const changes: HistoryChange[] = [{ field: 'status', from: fromName, to: to.name }];
+    if ((issue.resolution ?? null) !== resolution) {
+      changes.push({ field: 'resolution', from: issue.resolution, to: resolution });
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.issue.update({
         where: { id: issue.id },
         data: { statusId: to.id, status: to.category, resolution, ...slaOnStatusChange(issue, to) },
       });
-      const changes: HistoryChange[] = [{ field: 'status', from: fromName, to: to.name }];
-      if ((issue.resolution ?? null) !== resolution) {
-        changes.push({ field: 'resolution', from: issue.resolution, to: resolution });
-      }
       await this.recordHistory(tx, issue.id, userId, changes);
     });
     if (opts.notify !== false) {
       await this.notifications.statusChanged(issue.id, userId, fromName, to.name);
       await this.notifications.requestStatusChanged(issue.id, userId, to.name);
     }
+    await this.webhooks.issueEvent('issue.transitioned', issue.id, userId, {
+      changes: changes.map((c) => ({ field: c.field, from: c.from ?? null, to: c.to ?? null })),
+    });
     return this.findOne(issue.id);
   }
 
@@ -465,6 +480,7 @@ export class IssuesService {
       return comment;
     });
     await this.notifications.commentAdded(issueId, authorId, text, opts.emailed);
+    await this.webhooks.issueEvent('comment.created', issueId, authorId, { commentId: created.id });
     if (!internal) await this.notifications.requestCommented(issueId, authorId, text, opts.emailed);
     return created;
   }
@@ -480,6 +496,7 @@ export class IssuesService {
       include: { author: USER_BRIEF },
     });
     await this.notifications.commentEdited(comment.issueId, user.id, comment.body, text);
+    await this.webhooks.issueEvent('comment.updated', comment.issueId, user.id, { commentId: comment.id });
     return updated;
   }
 

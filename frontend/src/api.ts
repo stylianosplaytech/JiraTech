@@ -175,6 +175,24 @@ export const api = {
     ? request<ProjectNotificationScheme>(`/projects/${key}/notification-scheme`, { method: 'PUT', body: JSON.stringify({ scheme }) })
     : request<ProjectNotificationScheme>(`/projects/${key}/notification-scheme`, { method: 'DELETE' })),
 
+  getApiTokens: () => request<ApiToken[]>('/api-tokens'),
+  createApiToken: (data: { name: string; access: ApiTokenAccess; expiresInDays?: number }) =>
+    request<ApiToken & { token: string }>('/api-tokens', { method: 'POST', body: JSON.stringify(data) }),
+  revokeApiToken: (id: string) => request<{ revoked: boolean }>(`/api-tokens/${id}`, { method: 'DELETE' }),
+
+  getWebhooks: () => request<Webhook[]>('/webhooks'),
+  getWebhookEvents: () => request<{ name: string; label: string }[]>('/webhooks/events'),
+  createWebhook: (data: WebhookPayload) =>
+    request<Webhook & { secret: string }>('/webhooks', { method: 'POST', body: JSON.stringify(data) }),
+  updateWebhook: (id: string, data: WebhookPayload) =>
+    request<Webhook>(`/webhooks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteWebhook: (id: string) => request<{ deleted: boolean }>(`/webhooks/${id}`, { method: 'DELETE' }),
+  rotateWebhookSecret: (id: string) => request<Webhook & { secret: string }>(`/webhooks/${id}/rotate-secret`, { method: 'POST' }),
+  testWebhook: (id: string) => request<WebhookDelivery>(`/webhooks/${id}/test`, { method: 'POST' }),
+  getWebhookDeliveries: (id: string) => request<WebhookDelivery[]>(`/webhooks/${id}/deliveries`),
+  redeliverWebhook: (id: string, deliveryId: string) =>
+    request<WebhookDelivery>(`/webhooks/${id}/deliveries/${deliveryId}/redeliver`, { method: 'POST' }),
+
   getProjects: () => request<Project[]>('/projects'),
   getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
   createProject: (data: { key: string; name: string; description?: string; leadId?: string; strictHierarchy?: boolean; type?: ProjectType }) =>
@@ -783,6 +801,54 @@ export interface SendEmailPayload {
   includeQuote?: boolean;
   attachmentIds?: string[];
   internal?: boolean;
+}
+
+export type ApiTokenAccess = 'READ' | 'WRITE';
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  /** The start of the token, to tell tokens apart */
+  prefix: string;
+  access: ApiTokenAccess;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface Webhook {
+  id: string;
+  name: string;
+  url: string;
+  events: string[];
+  /** null: every project */
+  project: { id: string; key: string; name: string } | null;
+  active: boolean;
+  failureCount: number;
+  disabledReason: string | null;
+  createdAt: string;
+}
+
+export interface WebhookPayload {
+  name: string;
+  url: string;
+  events: string[];
+  projectKey?: string;
+  active: boolean;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  event: string;
+  status: 'PENDING' | 'SUCCESS' | 'FAILED';
+  attempts: number;
+  nextAttemptAt: string | null;
+  responseStatus: number | null;
+  error: string | null;
+  durationMs: number | null;
+  createdAt: string;
+  deliveredAt: string | null;
+  payload: unknown;
 }
 
 export interface EmailTemplate {
