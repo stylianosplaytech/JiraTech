@@ -1,5 +1,6 @@
 import { IsString, IsEmail, IsEnum, IsOptional, MinLength, IsBoolean } from 'class-validator';
 import { UserRole } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateUserDto {
   @IsEmail()
@@ -15,6 +16,7 @@ export class CreateUserDto {
   @MinLength(6)
   password?: string;
 
+  @ApiProperty({ enum: UserRole })
   @IsEnum(UserRole)
   role!: UserRole;
 
@@ -40,6 +42,7 @@ export class UpdateUserDto {
   password?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: UserRole })
   @IsEnum(UserRole)
   role?: UserRole;
 }

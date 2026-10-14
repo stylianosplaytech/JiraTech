@@ -1,15 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
-import { IsString, MaxLength, MinLength } from 'class-validator';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard, Roles, RolesGuard } from '../auth/guards';
 import { OrganizationsService } from './organizations.service';
-
-class OrganizationDto {
-  @IsString()
-  @MinLength(2)
-  @MaxLength(80)
-  name!: string;
-}
+import { OrganizationDto } from './organizations.dto';
 
 /** Staff can list organizations; only global admins change them. */
 @Controller('organizations')

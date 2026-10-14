@@ -2,8 +2,10 @@ import {
   IsString, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, MinLength, MaxLength, IsObject, IsIn,
 } from 'class-validator';
 import { IssueType, Priority } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateIssueDto {
+  @ApiProperty({ enum: IssueType })
   @IsEnum(IssueType)
   type!: IssueType;
 
@@ -24,6 +26,7 @@ export class CreateIssueDto {
   epicName?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: Priority })
   @IsEnum(Priority)
   priority?: Priority;
 
@@ -95,6 +98,7 @@ export class UpdateIssueDto {
   description?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: Priority })
   @IsEnum(Priority)
   priority?: Priority;
 
@@ -219,6 +223,7 @@ export class BulkDto {
   assigneeId?: string | null;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: Priority })
   @IsEnum(Priority)
   priority?: Priority;
 

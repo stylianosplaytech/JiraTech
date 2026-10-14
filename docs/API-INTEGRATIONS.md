@@ -1,7 +1,27 @@
-# API tokens and webhooks
+# API tokens, webhooks and the API reference
 
 Three ways to connect other systems to JiraTech: **API tokens** let a script call JiraTech, **webhooks** make JiraTech call a
 script when something happens, and **incoming webhooks** let monitoring tools and CI systems raise issues by POSTing to a secret address.
+
+## API reference (OpenAPI)
+
+Every endpoint is described in an OpenAPI 3 document, served by JiraTech itself:
+
+| | |
+|---|---|
+| `/api/docs` | Interactive reference (Swagger UI): endpoints by section, request bodies, and **Try it out**. Click **Authorize** and paste an API token (`jt_…`) to make real requests from the page. |
+| `/api/openapi.json` | The machine-readable document, for generating clients (`openapi-generator`, `openapi-typescript`…) or importing into Postman or Insomnia. |
+
+Both are read from the code when the app is built, so they always match the running version. They are open to anyone who can reach the server
+(the endpoints themselves still need a token); set `API_DOCS=false` in `backend/.env` to switch them off.
+
+What is described: every route, its parameters, the request bodies (with their types, allowed values, limits and which fields are required) and
+which routes need no token. What is not, yet: response bodies, which are the JSON the web app uses.
+
+Writing a controller: a `/** comment */` above a route becomes its summary in the reference, and request classes belong in a `*.dto.ts` file
+(that is where the build looks for them). A route that takes a loose body (`@Body() body: { … }`) needs an `@ApiBody({ schema })` to be
+described. After changing the build settings in `backend/nest-cli.json`, delete `backend/dist/tsconfig.tsbuildinfo` once, or the incremental
+build keeps the old output.
 
 ## API tokens
 

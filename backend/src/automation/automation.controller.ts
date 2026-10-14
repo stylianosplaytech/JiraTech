@@ -1,54 +1,10 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { IsArray, IsBoolean, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard, LoginOnlyGuard, Roles, RolesGuard } from '../auth/guards';
 import { AuthUser } from '../common/auth-user';
 import { EDITABLE_FIELDS, PLACEHOLDER_KEYS, TRIGGER_EVENTS, TRIGGER_LABELS } from './automation-actions';
 import { AutomationService } from './automation.service';
-
-class RuleDto {
-  @IsString()
-  @MaxLength(120)
-  name!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  description?: string;
-
-  /** A project key; leave out (or empty) for every project */
-  @IsOptional()
-  @IsString()
-  projectKey?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  enabled?: boolean;
-
-  @IsString()
-  event!: string;
-
-  /** { fields?: string[] } or { toStatus?: string }, checked by the service */
-  @IsOptional()
-  @IsObject()
-  trigger?: Record<string, unknown>;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(2000)
-  jql?: string;
-
-  /** Checked action by action by the service */
-  @IsArray()
-  actions!: unknown[];
-}
-
-class TestDto {
-  /** Scheduled rules may leave it out to see which issues they would act on */
-  @IsOptional()
-  @IsString()
-  issueKey?: string;
-}
+import { RuleDto, TestDto } from './automation.dto';
 
 /** /automation — rules that react to issue events (global admins, logged in). Rules run with the access of the person who last saved them. */
 @Controller('automation')

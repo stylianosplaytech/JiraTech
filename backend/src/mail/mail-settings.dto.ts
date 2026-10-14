@@ -2,11 +2,13 @@ import {
   IsBoolean, IsEmail, IsEnum, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf,
 } from 'class-validator';
 import { MailTransport } from '@prisma/client';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 /** Outgoing email settings. Fields left out keep their value; '' clears the optional ones. */
 export class MailSettingsDto {
   /** SMTP server, or a Gmail account through Google's API */
   @IsOptional()
+  @ApiPropertyOptional({ enum: MailTransport })
   @IsEnum(MailTransport)
   transport?: MailTransport;
 

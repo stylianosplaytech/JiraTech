@@ -1,15 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Put, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { IsObject } from 'class-validator';
 import { JwtAuthGuard, Roles, RolesGuard } from '../auth/guards';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { NotificationSchemeService } from './notification-scheme.service';
-
-class SchemeDto {
-  /** {event: [recipient, ...]}, checked by NotificationSchemeService */
-  @IsObject()
-  scheme!: Record<string, unknown>;
-}
+import { SchemeDto } from './notification-scheme.dto';
 
 /** /notification-scheme — who is emailed about issue events in every project without its own scheme (global admins). */
 @Controller('notification-scheme')

@@ -3,6 +3,7 @@ import {
   UseInterceptors, UploadedFile, Res, StreamableFile, BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { IssueStatus, IssueType } from '@prisma/client';
 import { Response } from 'express';
 import * as fs from 'fs';
@@ -207,6 +208,8 @@ export class IssuesController {
 
   @Post(':id/attachments')
   @RequireAccess('edit', ISSUE)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_ATTACHMENT_BYTES } }))
   addAttachment(
     @Param('id') id: string,

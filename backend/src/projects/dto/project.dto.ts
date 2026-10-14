@@ -1,5 +1,6 @@
 import { ProjectAccess, ProjectRole, ProjectType } from '@prisma/client';
 import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProjectDto {
   @IsString()
@@ -26,11 +27,13 @@ export class CreateProjectDto {
   strictHierarchy?: boolean;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: ProjectAccess })
   @IsEnum(ProjectAccess)
   defaultAccess?: ProjectAccess;
 
   /** Fixed once created. */
   @IsOptional()
+  @ApiPropertyOptional({ enum: ProjectType })
   @IsEnum(ProjectType)
   type?: ProjectType;
 }
@@ -55,11 +58,13 @@ export class UpdateProjectDto {
   strictHierarchy?: boolean;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: ProjectAccess })
   @IsEnum(ProjectAccess)
   defaultAccess?: ProjectAccess;
 }
 
 export class SetMemberDto {
+  @ApiProperty({ enum: ProjectRole })
   @IsEnum(ProjectRole)
   role!: ProjectRole;
 }

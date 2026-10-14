@@ -1,78 +1,10 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
+import { ApiBody } from '@nestjs/swagger';
 import { IssueType, Priority, UserRole } from '@prisma/client';
-import { IsArray, IsBoolean, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard, LoginOnlyGuard, Roles, RolesGuard } from '../auth/guards';
 import { AuthUser } from '../common/auth-user';
 import { InboundWebhooksService } from './inbound-webhooks.service';
-
-class InboundWebhookDto {
-  @IsString()
-  @MaxLength(120)
-  name!: string;
-
-  @IsString()
-  projectKey!: string;
-
-  @IsOptional()
-  @IsBoolean()
-  enabled?: boolean;
-
-  @IsOptional()
-  @IsString()
-  issueType?: string;
-
-  @IsOptional()
-  @IsString()
-  priority?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(300)
-  priorityFrom?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  summary?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(5000)
-  description?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  labels?: string[];
-
-  @IsOptional()
-  @IsString()
-  assigneeId?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(300)
-  dedupe?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  resolvePath?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
-  resolveEquals?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  includePayload?: boolean;
-}
-
-class TestPayloadDto {
-  @IsObject()
-  payload!: Record<string, unknown>;
-}
+import { InboundWebhookDto, TestPayloadDto } from './inbound-webhooks.dto';
 
 /** /inbound-webhooks — setting up the addresses other systems send events to (global admins, logged in). */
 @Controller('inbound-webhooks')
@@ -136,6 +68,7 @@ export class HooksController {
 
   @Post(':token')
   @HttpCode(200)
+  @ApiBody({ description: 'Any JSON object: it is turned into an issue by the webhook\'s templates', schema: { type: 'object', additionalProperties: true } })
   receive(@Param('token') token: string, @Body() body: unknown) {
     return this.hooks.receive(token, body);
   }

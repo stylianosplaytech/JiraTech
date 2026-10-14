@@ -1,5 +1,6 @@
 import { Controller, Get, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { RagStatus } from '@prisma/client';
+import { ApiBody } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/guards';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
@@ -17,6 +18,7 @@ export class DashboardController {
   }
 
   @Patch('issues/:id/rag')
+  @ApiBody({ schema: { type: 'object', required: ['ragStatus'], properties: { ragStatus: { type: 'string', enum: Object.values(RagStatus) } } } })
   @RequireAccess('edit', { from: 'issueParam', param: 'id' })
   updateRag(@Param('id') id: string, @Body() body: { ragStatus: RagStatus }) {
     return this.dashboardService.updateRag(id, body.ragStatus);

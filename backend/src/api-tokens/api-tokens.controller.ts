@@ -1,25 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
-import { ApiTokenAccess } from '@prisma/client';
-import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { JwtAuthGuard, LoginOnlyGuard } from '../auth/guards';
 import { AuthUser } from '../common/auth-user';
 import { ApiTokensService } from './api-tokens.service';
-
-class CreateApiTokenDto {
-  @IsString()
-  @MaxLength(80)
-  name!: string;
-
-  @IsEnum(ApiTokenAccess)
-  access!: ApiTokenAccess;
-
-  /** Days until it stops working; leave out for a token that doesn't expire */
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(3650)
-  expiresInDays?: number;
-}
+import { CreateApiTokenDto } from './api-tokens.dto';
 
 /** /api-tokens — people manage their own tokens. A token can't manage tokens (a leaked one couldn't mint others). */
 @Controller('api-tokens')

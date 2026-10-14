@@ -3,6 +3,7 @@ import {
   IsArray, IsBoolean, IsEmail, IsEnum, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
 } from 'class-validator';
 import { IssueType, Priority } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 class RequestTypeFieldDto {
   @IsString()
@@ -24,6 +25,7 @@ export class RequestTypeDto {
   @MaxLength(500)
   description?: string;
 
+  @ApiProperty({ enum: IssueType })
   @IsEnum(IssueType)
   issueType!: IssueType;
 
@@ -47,6 +49,7 @@ export class UpdateRequestTypeDto {
   description?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: IssueType })
   @IsEnum(IssueType)
   issueType?: IssueType;
 
@@ -61,6 +64,7 @@ export class UpdateRequestTypeDto {
 const MAX_GOAL = 525_600;
 
 export class SlaTargetDto {
+  @ApiProperty({ enum: Priority })
   @IsEnum(Priority)
   priority!: Priority;
 

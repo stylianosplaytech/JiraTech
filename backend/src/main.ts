@@ -6,6 +6,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
+import { setupOpenApi } from './openapi';
 
 // Built frontend (frontend/dist). When present — i.e. in production — the API also
 // serves the UI, so a single service hosts the whole app on one origin.
@@ -18,6 +19,8 @@ async function bootstrap() {
   app.useBodyParser('json', { limit: '2mb' });
   app.enableCors({ origin: ['http://localhost:5172'], credentials: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  setupOpenApi(app);
 
   if (existsSync(frontendDist)) {
     app.useStaticAssets(frontendDist);

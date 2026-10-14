@@ -1,56 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
-import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
-import { IssueStatus } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { WorkflowService } from './workflow.service';
-
-class StatusDto {
-  @IsString()
-  @MinLength(1)
-  name!: string;
-
-  @IsEnum(IssueStatus)
-  category!: IssueStatus;
-}
-
-class UpdateStatusDto {
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  name?: string;
-
-  @IsOptional()
-  @IsEnum(IssueStatus)
-  category?: IssueStatus;
-
-  @IsOptional()
-  @IsBoolean()
-  pausesSla?: boolean;
-}
-
-class ReorderDto {
-  @IsArray()
-  @ArrayMinSize(1)
-  @IsString({ each: true })
-  statusIds!: string[];
-}
-
-class TransitionPairDto {
-  @IsString()
-  fromStatusId!: string;
-
-  @IsString()
-  toStatusId!: string;
-}
-
-class TransitionsDto {
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => TransitionPairDto)
-  transitions!: TransitionPairDto[];
-}
+import { StatusDto, UpdateStatusDto, ReorderDto, TransitionsDto } from './workflow.dto';
 
 const PROJECT = { from: 'projectParam', param: 'key' } as const;
 

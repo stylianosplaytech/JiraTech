@@ -1,34 +1,10 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { ArrayMaxSize, IsArray, IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 import { JwtAuthGuard, LoginOnlyGuard, Roles, RolesGuard } from '../auth/guards';
 import { AuthUser } from '../common/auth-user';
 import { EVENT_LABELS, WEBHOOK_EVENTS } from './webhook-events';
 import { WebhooksService } from './webhooks.service';
-
-class WebhookDto {
-  @IsString()
-  @MaxLength(80)
-  name!: string;
-
-  @IsString()
-  @MaxLength(2000)
-  url!: string;
-
-  @IsArray()
-  @ArrayMaxSize(WEBHOOK_EVENTS.length + 5)
-  @IsString({ each: true })
-  events!: string[];
-
-  /** A project key; leave out (or empty) for every project */
-  @IsOptional()
-  @IsString()
-  projectKey?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  active?: boolean;
-}
+import { WebhookDto } from './webhooks.dto';
 
 /** /webhooks — where JiraTech sends signed events (global admins, logged in). */
 @Controller('webhooks')
