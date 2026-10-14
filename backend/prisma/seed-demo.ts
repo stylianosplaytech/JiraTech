@@ -15,6 +15,8 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { setUpServiceDesk } from '../src/service-desk/defaults';
+import { STARTER_TEMPLATES, normalizeContent } from '../src/service-notices/notice-content';
+import { renderNoticeHtml, renderNoticeText } from '../src/service-notices/notice-html';
 
 const prisma = new PrismaClient();
 
@@ -35,6 +37,7 @@ const PEOPLE: { email: string; name: string; role: UserRole }[] = [
   { email: 'anna@customer.local', name: 'Anna Petrou', role: UserRole.CUSTOMER },
   { email: 'george@customer.local', name: 'George Miller', role: UserRole.CUSTOMER },
   { email: 'peter@customer.local', name: 'Peter Novak', role: UserRole.CUSTOMER },
+  { email: 'stylianos.phedonos@playtech.com', name: 'Stylianos Phedonos', role: UserRole.ADMIN },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -728,6 +731,69 @@ async function removeLegacyAcmeDesk() {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Recipient groups & service notices ──────────────────────────────────────
+
+// A new installation gets the starter templates when the app first starts, but only while there are no notices: the demo
+// notice would stop that, so the templates are added here.
+async function seedServiceNotices(sender: User) {
+  for (const t of STARTER_TEMPLATES) {
+    await prisma.noticeTemplate.upsert({
+      where: { name: t.name },
+      update: {},
+      create: { name: t.name, description: t.description, subject: t.subject, content: JSON.stringify(t.content) },
+    });
+  }
+
+  const orgs = await prisma.organization.findMany({ where: { name: { in: ['Acme Retail', 'Globex'] } } });
+  await prisma.recipientGroup.upsert({
+    where: { name: 'All Companies' },
+    update: {},
+    create: {
+      name: 'All Companies',
+      users: { create: [{ userId: sender.id }] },
+      organizations: { create: orgs.map((o) => ({ organizationId: o.id })) },
+    },
+  });
+
+  const subject = 'P1 Service Interruption Notification';
+  if (await prisma.serviceNotice.findFirst({ where: { subject } })) return;
+  const template = await prisma.noticeTemplate.findUnique({ where: { name: 'P1 service interruption' } });
+  const content = normalizeContent({
+    style: 'alert',
+    color: '#b91c1c',
+    eyebrow: 'PRIORITY 1',
+    headline: subject,
+    title: '',
+    sections: [
+      { kind: 'text', value: 'This notification is to inform you of a service interruption currently impacting our services. Our technical teams are already working on resolving this interruption.' },
+      { kind: 'box', label: 'Date & Time', lines: [
+        { label: 'Date', value: 'Wednesday 14th October 2026', input: 'date' },
+        { label: 'Start', value: '18:15', input: 'time' },
+        { label: 'End', value: '', input: 'time' },
+      ] },
+      { kind: 'small', value: 'Next update will be sent in 30 minutes.' },
+      { kind: 'note', label: 'Latest Information', value: '18:15 - Our teams are working with the highest priority to resolve the issue.' },
+      { kind: 'note', label: '', value: '19:30 - Issue has been identified and fix is progress.' },
+    ],
+    footer: '',
+    brand: 'playtech',
+    brandTag: 'SPORTS',
+  });
+  await prisma.serviceNotice.create({
+    data: {
+      templateId: template?.id ?? null,
+      subject,
+      content: JSON.stringify(content),
+      html: renderNoticeHtml(content),
+      text: renderNoticeText(content),
+      to: JSON.stringify([{ email: sender.email, name: sender.name }]),
+      groups: JSON.stringify({ to: [], cc: [], bcc: [] }),
+      sentById: sender.id,
+      createdAt: ago(0, 1),
+    },
+  });
+}
+
 async function main() {
   const passwordHash = await bcrypt.hash('admin123', 10);
   const byEmail = async (email: string) => prisma.user.findUniqueOrThrow({ where: { email } });
@@ -739,7 +805,7 @@ async function main() {
   const maria = await byEmail('pm@jiratech.local');
   const andreas = await byEmail('dev@jiratech.local');
   const alex = await byEmail('qa@jiratech.local');
-  const [elena, nikos, sofia, daniel, katerina, marcus, lina, anna, george, peter] = await Promise.all(PEOPLE.map((p) => byEmail(p.email)));
+  const [elena, nikos, sofia, daniel, katerina, marcus, lina, anna, george, peter, stylianos] = await Promise.all(PEOPLE.map((p) => byEmail(p.email)));
 
   // ── PAY: Payments Platform ────────────────────────────────────────────────
   const pay = await prisma.project.upsert({
@@ -1143,6 +1209,7 @@ async function main() {
   ]);
 
   await seedServiceDesk({ elena, andreas, sofia, lina, nikos, anna, george, peter });
+  await seedServiceNotices(stylianos);
 
   // ── Saved filters ─────────────────────────────────────────────────────────
   await filter(admin, 'Release blockers', 'labels = release-blocker OR (priority = Highest AND status != CLOSED) ORDER BY priority DESC', true,
