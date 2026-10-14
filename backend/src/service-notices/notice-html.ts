@@ -5,7 +5,10 @@ import { NoticeContent, NoticeSection } from './notice-content';
  * A service notice as an email: tables and inline styles only, so Outlook and Gmail show it the way the preview does.
  * The browser's preview is this same HTML.
  */
-export function renderNoticeHtml(c: NoticeContent): string {
+/** In a sent email the logo is an attachment shown inline (as cid:), which mail clients show where they block data: images. */
+export const LOGO_CID = 'notice-logo@jiratech';
+
+export function renderNoticeHtml(c: NoticeContent, opts: { logoSrc?: string } = {}): string {
   const accent = c.color;
   const dark = mix(accent, '#000000', 0.35);
   const font = "font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
@@ -26,7 +29,11 @@ export function renderNoticeHtml(c: NoticeContent): string {
 
   const body = c.sections.map((s) => section(s, c)).filter(Boolean).join('');
 
-  const brand = c.brand || c.brandTag
+  const brand = c.logo
+    ? '<tr><td style="padding:16px 24px 28px;text-align:center">'
+      + `<img src="${escapeHtml(opts.logoSrc ?? c.logo)}" alt="${t(c.brand || 'Logo')}" height="${c.logoHeight}" style="height:${c.logoHeight}px;width:auto;max-width:100%;border:0;display:inline-block">`
+      + '</td></tr>'
+    : c.brand || c.brandTag
     ? '<tr><td style="padding:16px 24px 28px;text-align:center">'
       + (c.brand ? `<span style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:700;font-size:22px;color:${BRAND_COLOR};letter-spacing:-0.5px;vertical-align:middle">${t(c.brand)}</span>` : '')
       + (c.brandTag ? `<span style="display:inline-block;margin-left:2px;width:40px;height:40px;line-height:40px;border-radius:20px;background:${BRAND_COLOR};color:#ffffff;font-size:9px;font-weight:700;text-align:center;vertical-align:middle">${t(c.brandTag)}</span>` : '')

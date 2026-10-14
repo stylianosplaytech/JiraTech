@@ -21,6 +21,10 @@ export interface NoticeContent {
   /** The text logo at the very bottom: "playtech" and its badge, "SPORTS" (either may be empty) */
   brand: string;
   brandTag: string;
+  /** An uploaded logo (a data: URI of a PNG, JPEG or GIF), shown instead of the text logo; '' for none */
+  logo: string;
+  /** How tall the logo image is drawn, in pixels */
+  logoHeight: number;
 }
 
 export type NoticeStyle = 'banner' | 'alert';
@@ -49,6 +53,10 @@ export interface NoticeLine {
 }
 
 const MAX_SECTIONS = 40;
+/** About 300 KB of image once decoded: plenty for a logo, small enough for every mail server. */
+const MAX_LOGO = 400_000;
+const LOGO = /^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/]+=*$/;
+export const DEFAULT_LOGO_HEIGHT = 48;
 const MAX_LINES = 12;
 const MAX_OPTIONS = 20;
 const SHORT = 200;
@@ -72,7 +80,18 @@ export function normalizeContent(raw: unknown): NoticeContent {
     footer: text(c.footer, LONG),
     brand: text(c.brand, 40),
     brandTag: text(c.brandTag, 20),
+    logo: logo(c.logo),
+    logoHeight: typeof c.logoHeight === 'number' && Number.isFinite(c.logoHeight)
+      ? Math.min(160, Math.max(16, Math.round(c.logoHeight)))
+      : DEFAULT_LOGO_HEIGHT,
   };
+}
+
+function logo(v: unknown) {
+  if (typeof v !== 'string' || !v) return '';
+  if (v.length > MAX_LOGO) throw new BadRequestException('The logo is too large: use an image under 300 KB');
+  if (!LOGO.test(v)) throw new BadRequestException('The logo must be a PNG, JPEG or GIF image');
+  return v;
 }
 
 export function parseContent(json: string): NoticeContent {
@@ -124,6 +143,7 @@ const DEFAULT_COLOR: Record<NoticeStyle, string> = { banner: '#2a7fba', alert: '
 export function blankContent(): NoticeContent {
   return {
     style: 'banner', color: DEFAULT_COLOR.banner, eyebrow: '', headline: '', title: '', sections: [], footer: '', brand: '', brandTag: '',
+    logo: '', logoHeight: DEFAULT_LOGO_HEIGHT,
   };
 }
 
@@ -157,6 +177,8 @@ export const STARTER_TEMPLATES: { name: string; description: string; subject: st
       footer: 'For any details and/or clarifications please contact your Technical Account Manager',
       brand: 'playtech',
       brandTag: 'SPORTS',
+      logo: '',
+      logoHeight: DEFAULT_LOGO_HEIGHT,
     },
   },
   {
@@ -186,6 +208,8 @@ export const STARTER_TEMPLATES: { name: string; description: string; subject: st
       footer: '',
       brand: 'playtech',
       brandTag: 'SPORTS',
+      logo: '',
+      logoHeight: DEFAULT_LOGO_HEIGHT,
     },
   },
 ];

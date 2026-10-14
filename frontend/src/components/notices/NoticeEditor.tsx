@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { NoticeContent, NoticeLine, NoticeSection } from '../../api';
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon, XIcon } from '../Icons';
-import { Dropdown } from '../ui';
+import { Dropdown, errorMessage, useToast } from '../ui';
+import { readLogo } from './logo';
 
 const KINDS: { kind: NoticeSection['kind']; label: string; hint: string }[] = [
   { kind: 'field', label: 'Field', hint: 'A label and its value, e.g. Impact Level' },
@@ -49,6 +50,19 @@ export default function NoticeEditor({ value, onChange, template = false }: {
   template?: boolean;
 }) {
   const [showLook, setShowLook] = useState(template);
+  const [reading, setReading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+  const upload = async (file: File) => {
+    setReading(true);
+    try {
+      set({ logo: await readLogo(file) });
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setReading(false);
+    }
+  };
   const set = (patch: Partial<NoticeContent>) => onChange({ ...value, ...patch });
   const setSection = (i: number, s: NoticeSection) => set({ sections: value.sections.map((x, j) => (j === i ? s : x)) });
   const move = (i: number, by: -1 | 1) => {
@@ -67,6 +81,7 @@ export default function NoticeEditor({ value, onChange, template = false }: {
           </span>
           {!showLook && (
             <span className="flex items-center gap-2 text-xs text-jira-muted">
+              {value.logo && <img src={value.logo} alt="" className="h-4 w-auto max-w-[60px] object-contain" />}
               {value.style === 'alert' ? 'Alert card' : 'Banner'}
               <span className="w-4 h-4 rounded-[3px] border border-jira-border" style={{ background: value.color }} />
             </span>
@@ -101,13 +116,43 @@ export default function NoticeEditor({ value, onChange, template = false }: {
                 ))}
               </div>
             </div>
+            <div className="sm:col-span-2">
+              <span className="field-label">Logo image</span>
+              <div className="flex flex-wrap items-center gap-3">
+                {value.logo && (
+                  <span className="inline-flex items-center justify-center rounded-[3px] border border-jira-border bg-white p-2">
+                    <img src={value.logo} alt="Logo" style={{ height: Math.min(value.logoHeight, 64) }} className="w-auto max-w-[220px] object-contain" />
+                  </span>
+                )}
+                <button type="button" className="btn btn-default btn-sm" disabled={reading} onClick={() => fileRef.current?.click()}>
+                  {reading ? 'Reading…' : value.logo ? 'Replace logo' : 'Upload logo'}
+                </button>
+                {value.logo && <button type="button" className="btn btn-subtle btn-sm" onClick={() => set({ logo: '' })}>Remove</button>}
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f); }}
+                />
+              </div>
+              {value.logo ? (
+                <div className="flex items-center gap-2 mt-2">
+                  <label className="text-xs text-jira-muted shrink-0" htmlFor="notice-logo-height">Height</label>
+                  <input id="notice-logo-height" type="range" min={16} max={160} step={2} className="w-48" value={value.logoHeight} onChange={(e) => set({ logoHeight: Number(e.target.value) })} />
+                  <span className="text-xs text-jira-muted w-12">{value.logoHeight} px</span>
+                </div>
+              ) : (
+                <p className="field-help">PNG, JPEG, GIF, WebP or SVG. Large images are shrunk; it is shown instead of the text logo below.</p>
+              )}
+            </div>
             <div>
-              <label className="field-label" htmlFor="notice-brand">Logo text</label>
+              <label className="field-label" htmlFor="notice-brand">{value.logo ? 'Logo text (the image’s alt text)' : 'Logo text'}</label>
               <input id="notice-brand" className="input" maxLength={40} value={value.brand} onChange={(e) => set({ brand: e.target.value })} placeholder="playtech" />
             </div>
             <div>
               <label className="field-label" htmlFor="notice-brand-tag">Logo badge</label>
-              <input id="notice-brand-tag" className="input" maxLength={20} value={value.brandTag} onChange={(e) => set({ brandTag: e.target.value })} placeholder="SPORTS" />
+              <input id="notice-brand-tag" disabled={!!value.logo} title={value.logo ? 'Not shown while there is a logo image' : undefined} className="input" maxLength={20} value={value.brandTag} onChange={(e) => set({ brandTag: e.target.value })} placeholder="SPORTS" />
             </div>
           </div>
         )}

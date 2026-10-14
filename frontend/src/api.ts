@@ -665,6 +665,10 @@ export interface NoticeContent {
   footer: string;
   brand: string;
   brandTag: string;
+  /** An uploaded logo as a data: URI (PNG, JPEG or GIF), shown instead of the text logo; '' for none */
+  logo: string;
+  /** Height of the logo image in pixels */
+  logoHeight: number;
 }
 
 export interface NoticeLine {

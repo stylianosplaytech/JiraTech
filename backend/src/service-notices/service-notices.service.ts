@@ -7,8 +7,8 @@ import { RecipientGroupsService, RecipientRef } from '../recipient-groups/recipi
 import { Address, formatAddress, parseAddresses } from '../issue-email/email-html';
 import { dedupe, describe } from '../issue-email/issue-email.service';
 import { NoticeTemplateDto, SendNoticeDto } from './dto';
-import { STARTER_TEMPLATES, normalizeContent, parseContent } from './notice-content';
-import { renderNoticeHtml, renderNoticeText } from './notice-html';
+import { NoticeContent, STARTER_TEMPLATES, normalizeContent, parseContent } from './notice-content';
+import { LOGO_CID, renderNoticeHtml, renderNoticeText } from './notice-html';
 
 const TEMPLATE_INCLUDE = { createdBy: { select: { id: true, name: true } } } satisfies Prisma.NoticeTemplateInclude;
 const NOTICE_INCLUDE = {
@@ -105,7 +105,7 @@ export class ServiceNoticesService implements OnModuleInit {
     const text = renderNoticeText(content);
 
     if (dto.test) {
-      const error = await this.mailer.sendReporting({ to: formatAddress({ email: user.email, name: user.name }), subject: `[Test] ${subject}`, html, text });
+      const error = await this.mailer.sendReporting({ to: formatAddress({ email: user.email, name: user.name }), subject: `[Test] ${subject}`, text, ...emailHtml(content) });
       if (error) throw new BadRequestException(error);
       return { test: true, to: user.email };
     }
@@ -149,14 +149,15 @@ export class ServiceNoticesService implements OnModuleInit {
 
   private async deliver(notice: NoticeRow) {
     const to = parseAddresses(notice.to);
+    const content = parseContent(notice.content);
     const error = await this.mailer.sendReporting({
       // Sent only to Bcc, it still needs a To: our own address, as mail clients do for "undisclosed recipients".
       to: to.length ? to.map(formatAddress).join(', ') : this.mailer.fromAddress(),
       cc: parseAddresses(notice.cc).map(formatAddress),
       bcc: parseAddresses(notice.bcc).map(formatAddress),
       subject: notice.subject,
-      html: notice.html,
       text: notice.text,
+      ...emailHtml(content),
     });
     const saved = await this.prisma.serviceNotice.update({
       where: { id: notice.id },
@@ -190,6 +191,16 @@ export class ServiceNoticesService implements OnModuleInit {
       throw e;
     }
   }
+}
+
+/** The HTML as emailed: an uploaded logo goes along as an inline attachment rather than inside the HTML. */
+function emailHtml(content: NoticeContent) {
+  if (!content.logo) return { html: renderNoticeHtml(content) };
+  const type = /^data:image\/(\w+)/.exec(content.logo)?.[1] ?? 'png';
+  return {
+    html: renderNoticeHtml(content, { logoSrc: `cid:${LOGO_CID}` }),
+    attachments: [{ filename: `logo.${type === 'jpeg' ? 'jpg' : type}`, path: content.logo, contentType: `image/${type}`, cid: LOGO_CID }],
+  };
 }
 
 function requireAdmin(user: AuthUser) {

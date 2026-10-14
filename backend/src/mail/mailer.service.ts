@@ -24,7 +24,8 @@ export interface MailMessage {
   messageId?: string;
   inReplyTo?: string;
   references?: string[];
-  attachments?: { filename: string; path: string; contentType?: string }[];
+  /** `path` is a file or a data: URI; `cid` shows it inside the HTML (<img src="cid:…">) */
+  attachments?: { filename: string; path: string; contentType?: string; cid?: string }[];
   /** Shown instead of the usual sender name (the address stays the one email is sent from) */
   fromName?: string;
 }

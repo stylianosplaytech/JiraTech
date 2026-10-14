@@ -12,5 +12,7 @@ export function blankNotice(): NoticeContent {
     footer: '',
     brand: '',
     brandTag: '',
+    logo: '',
+    logoHeight: 48,
   };
 }

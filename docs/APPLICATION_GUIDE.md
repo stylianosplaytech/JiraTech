@@ -428,8 +428,11 @@ lists everyone. People reached through a group or organization don't become part
   in them when it is sent. Put companies in Bcc so recipients don't see each other. *Send test to me* sends it only to you.
 - **Sent** lists every notice with who it went to. Opening one shows it as sent; **Send update** starts a new notice with the same content
   and recipients (e.g. the next P1 update). A notice the mail server refused can be sent again.
-- **Templates** (global admins add, edit, duplicate and delete them) hold the look (*Banner* or *Alert card*, a colour, the logo text) and
-  the texts a notice starts with. A new installation starts with *Maintenance reminder* and *P1 service interruption*.
+- **Templates** (global admins add, edit, duplicate and delete them) hold the look (*Banner* or *Alert card*, a colour, the logo) and
+  the texts a notice starts with.
+- **Logo**: under *Look*, *Upload logo* takes a PNG, JPEG, GIF, WebP or SVG image (large ones are shrunk; WebP and SVG become PNG) and
+  shows it instead of the text logo, with a *Height* slider. Set it on a template once, or on a single notice. In the email it is sent as
+  an embedded image, so mail clients show it without loading anything from JiraTech. A new installation starts with *Maintenance reminder* and *P1 service interruption*.
 
 ### Email settings (global admins)
 
