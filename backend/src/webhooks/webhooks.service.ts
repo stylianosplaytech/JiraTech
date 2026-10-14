@@ -8,7 +8,9 @@ import { AuthUser } from '../common/auth-user';
 import { open, seal } from '../common/secret-box';
 import { toPlainText } from '../common/rich-text';
 import { resolveProject } from '../common/project.util';
+import { SearchService } from '../search/search.service';
 import { IssueChange, IssueEventsService } from '../events/issue-events.service';
+import { WEBHOOK_FORMATS, WebhookFormat, chatBody, isChatFormat } from './chat-format';
 import { PING_EVENT, WEBHOOK_EVENTS, WebhookEvent } from './webhook-events';
 import { parseWebhookUrl, postJson } from './webhook-network';
 
@@ -30,6 +32,10 @@ export interface WebhookInput {
   /** A project key; empty or missing = every project */
   projectKey?: string | null;
   active?: boolean;
+  /** JSON (default), SLACK or TEAMS */
+  format?: string;
+  /** Only issues matching this JQL are sent */
+  jql?: string | null;
 }
 
 type WebhookRow = Prisma.WebhookGetPayload<{ include: { project: { select: { id: true; key: true; name: true } } } }>;
@@ -50,6 +56,8 @@ function present(w: WebhookRow) {
     name: w.name,
     url: w.url,
     events: parseEvents(w.events),
+    format: w.format as WebhookFormat,
+    jql: w.jql,
     project: w.project,
     active: w.active,
     failureCount: w.failureCount,
@@ -69,7 +77,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   /** Deliveries being sent right now, so the retry worker never sends one twice at once. */
   private readonly sending = new Set<string>();
 
-  constructor(private prisma: PrismaService, private mailer: MailerService, private events: IssueEventsService, private access: AccessService) {}
+  constructor(private prisma: PrismaService, private mailer: MailerService, private events: IssueEventsService, private access: AccessService, private search: SearchService) {}
 
   onModuleInit() {
     if (process.env.WEBHOOK_WORKER === 'false') {
@@ -203,13 +211,18 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     const name = input.name?.trim();
     if (!name) throw new BadRequestException('Give the webhook a name');
     const url = parseWebhookUrl(input.url).toString();
+    const format = (input.format ?? 'JSON') as WebhookFormat;
+    if (!WEBHOOK_FORMATS.includes(format)) throw new BadRequestException(`Unknown format ${input.format}`);
     const events = WEBHOOK_EVENTS.filter((e) => input.events?.includes(e));
-    if (!events.length) throw new BadRequestException('Choose at least one event');
+    // A chat webhook may have no events: then it only speaks when an automation rule posts to it.
+    if (!events.length && !isChatFormat(format)) throw new BadRequestException('Choose at least one event');
     const unknown = (input.events ?? []).filter((e) => !(WEBHOOK_EVENTS as readonly string[]).includes(e));
     if (unknown.length) throw new BadRequestException(`Unknown event: ${unknown.join(', ')}`);
     const projectId = input.projectKey?.trim() ? (await resolveProject(this.prisma, input.projectKey)).id : null;
     await this.access.requireManage(user, projectId);
-    return { name, url, events: JSON.stringify(events), projectId, active: input.active ?? true };
+    const jql = input.jql?.trim() || null;
+    if (jql) this.search.validate(jql, user);
+    return { name, url, events: JSON.stringify(events), format, jql, projectId, active: input.active ?? true };
   }
 
   // ─── Events (called by the services that change issues, after their changes are committed) ─────
@@ -228,7 +241,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
     try {
       const issue = await this.prisma.issue.findUnique({ where: { id: issueId }, select: { projectId: true } });
       if (!issue) return;
-      const targets = await this.targets(event, issue.projectId);
+      const targets = await this.targets(event, issue.projectId, issueId);
       if (!targets.length) return;
       await this.enqueue(targets, event, await this.payload(event, issueId, actorId, extra));
     } catch (err) {
@@ -240,33 +253,66 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   async snapshot(issueId: string, actorId: string | null) {
     try {
       const issue = await this.prisma.issue.findUnique({ where: { id: issueId }, select: { projectId: true } });
-      if (!issue || !(await this.targets('issue.deleted', issue.projectId)).length) return null;
-      return { projectId: issue.projectId, payload: await this.payload('issue.deleted', issueId, actorId, {}) };
+      if (!issue) return null;
+      // Who gets it is decided now: once the issue is gone a webhook's JQL filter can't be checked.
+      const targets = await this.targets('issue.deleted', issue.projectId, issueId);
+      if (!targets.length) return null;
+      return { projectId: issue.projectId, targets, payload: await this.payload('issue.deleted', issueId, actorId, {}) };
     } catch (err) {
       this.logger.warn(`Webhook snapshot of issue ${issueId} failed: ${err instanceof Error ? err.message : err}`);
       return null;
     }
   }
 
-  async deleted(snapshot: { projectId: string; payload: Record<string, unknown> } | null) {
+  async deleted(snapshot: { projectId: string; targets: string[]; payload: Record<string, unknown> } | null) {
     if (!snapshot) return;
     try {
-      await this.enqueue(await this.targets('issue.deleted', snapshot.projectId), 'issue.deleted', snapshot.payload);
+      await this.enqueue(snapshot.targets, 'issue.deleted', snapshot.payload);
     } catch (err) {
       this.logger.warn(`Webhook event issue.deleted was not queued: ${err instanceof Error ? err.message : err}`);
     }
   }
 
-  /** Active webhooks in this project (or in all projects) that want this event. */
-  private async targets(event: WebhookEvent, projectId: string) {
+  /**
+   * Active webhooks in this project (or in all projects) that want this event, and whose JQL filter (if any) the issue
+   * matches: the filter is checked as the webhook's author, so it sees what they see.
+   */
+  private async targets(event: WebhookEvent, projectId: string, issueId: string) {
     const rows = await this.prisma.webhook.findMany({
       where: { active: true, OR: [{ projectId: null }, { projectId }] },
-      select: { id: true, events: true },
+      select: { id: true, name: true, events: true, jql: true, createdBy: { select: { id: true, email: true, name: true, role: true } } },
     });
-    return rows.filter((w) => parseEvents(w.events).includes(event)).map((w) => w.id);
+    const out: string[] = [];
+    for (const w of rows.filter((r) => parseEvents(r.events).includes(event))) {
+      if (!w.jql) {
+        out.push(w.id);
+        continue;
+      }
+      // Without an author the filter can't be checked: better quiet than sending what it was meant to hold back.
+      if (!w.createdBy) continue;
+      try {
+        if (await this.search.matches(w.jql, issueId, w.createdBy)) out.push(w.id);
+      } catch (err) {
+        this.logger.warn(`Webhook "${w.name}": its filter could not be checked: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    return out;
   }
 
-  private async payload(event: WebhookEvent, issueId: string, actorId: string | null, extra: { changes?: IssueChange[]; commentId?: string }) {
+  /**
+   * A message from an automation rule for a chat webhook (Slack or Teams). The rule's author must be someone who may manage
+   * that webhook, so a project administrator can't speak into a channel that isn't theirs. Delivery is queued like any other.
+   */
+  async postMessage(webhookId: string, author: AuthUser, text: string, issueId: string) {
+    const hook = await this.prisma.webhook.findUnique({ where: { id: webhookId } });
+    if (!hook || !(await this.access.canManage(author, hook.projectId))) throw new Error('That chat webhook no longer exists, or you may not use it');
+    if (!isChatFormat(hook.format)) throw new Error(`${hook.name} is not a Slack or Teams webhook`);
+    if (!hook.active) throw new Error(`${hook.name} is switched off`);
+    await this.enqueue([hook.id], 'automation.message', await this.payload('automation.message', issueId, author.id, { text }));
+    return hook.name;
+  }
+
+  private async payload(event: string, issueId: string, actorId: string | null, extra: { changes?: IssueChange[]; commentId?: string; text?: string }) {
     const [issue, actor, comment] = await Promise.all([
       this.prisma.issue.findUniqueOrThrow({
         where: { id: issueId },
@@ -318,6 +364,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       },
     };
     if (extra.changes?.length) body.changes = extra.changes;
+    if (extra.text) body.text = extra.text;
     if (comment) {
       body.comment = {
         id: comment.id,
@@ -366,23 +413,29 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       let durationMs: number | null = null;
       let error: string | null = null;
       try {
-        const secret = open(webhook.secret);
-        if (!secret) throw new Error('The signing secret cannot be decrypted (the server secret changed): rotate the webhook secret');
-        const timestamp = Math.floor(Date.now() / 1000).toString();
-        const signature = createHmac('sha256', secret).update(`${timestamp}.${delivery.payload}`).digest('hex');
-        const result = await postJson(parseWebhookUrl(webhook.url), delivery.payload, {
+        const headers: Record<string, string> = {
           'User-Agent': 'JiraTech-Webhooks/1',
           'X-JiraTech-Event': delivery.event,
           'X-JiraTech-Delivery': delivery.id,
-          'X-JiraTech-Timestamp': timestamp,
-          'X-JiraTech-Signature': `sha256=${signature}`,
-        });
+        };
+        let body = delivery.payload;
+        if (isChatFormat(webhook.format)) {
+          // Slack and Teams take a message, not a signed event.
+          body = JSON.stringify(chatBody(webhook.format, this.parsePayload(delivery.payload)));
+        } else {
+          const secret = open(webhook.secret);
+          if (!secret) throw new Error('The signing secret cannot be decrypted (the server secret changed): rotate the webhook secret');
+          const timestamp = Math.floor(Date.now() / 1000).toString();
+          headers['X-JiraTech-Timestamp'] = timestamp;
+          headers['X-JiraTech-Signature'] = `sha256=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`;
+        }
+        const result = await postJson(parseWebhookUrl(webhook.url), body, headers);
         responseStatus = result.status;
         durationMs = result.durationMs;
         if (result.status < 200 || result.status >= 300) {
           error = result.status >= 300 && result.status < 400
             ? `The server answered ${result.status} (redirects are not followed): use the final address`
-            : `The server answered ${result.status}`;
+            : `The server answered ${result.status}${result.body ? `: ${result.body}` : ''}`;
         }
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type Webhook, type WebhookDelivery } from '../api';
+import { api, type Webhook, type WebhookDelivery, type WebhookFormat } from '../api';
 import { timeAgo } from '../utils';
 import SecretReveal from '../components/SecretReveal';
 import { EditIcon, PlusIcon, TrashIcon } from '../components/Icons';
@@ -12,10 +12,26 @@ interface Form {
   id?: string;
   name: string;
   url: string;
+  format: WebhookFormat;
+  jql: string;
   projectKey: string;
   events: string[];
   active: boolean;
 }
+
+const FORMATS: { value: WebhookFormat; label: string }[] = [
+  { value: 'JSON', label: 'Generic: signed JSON event' },
+  { value: 'SLACK', label: 'Slack channel' },
+  { value: 'TEAMS', label: 'Microsoft Teams channel' },
+];
+
+const FORMAT_NAMES: Record<WebhookFormat, string> = { JSON: 'JSON', SLACK: 'Slack', TEAMS: 'Teams' };
+
+const ADDRESS_HELP: Record<WebhookFormat, string> = {
+  JSON: 'Servers on internal networks are refused unless the administrator sets WEBHOOK_ALLOW_PRIVATE=true.',
+  SLACK: 'The channel\'s incoming webhook URL (in Slack: Apps → Incoming Webhooks, or a Slack app with Incoming Webhooks turned on).',
+  TEAMS: 'A Workflows webhook URL (in the Teams channel: ••• → Workflows → "Post to a channel when a webhook request is received").',
+};
 
 const STATUS_STYLE: Record<WebhookDelivery['status'], string> = {
   SUCCESS: 'bg-[#E3FCEF] text-[#006644]',
@@ -42,7 +58,8 @@ export default function WebhooksPage() {
   const save = useMutation({
     mutationFn: async () => {
       const data = {
-        name: form!.name.trim(), url: form!.url.trim(), events: form!.events, projectKey: form!.projectKey || undefined, active: form!.active,
+        name: form!.name.trim(), url: form!.url.trim(), format: form!.format, jql: form!.jql.trim(), events: form!.events,
+        projectKey: form!.projectKey || undefined, active: form!.active,
       };
       if (form!.id) return { hook: await api.updateWebhook(form!.id, data), secret: null as string | null };
       const { secret: created, ...hook } = await api.createWebhook(data);
@@ -51,7 +68,8 @@ export default function WebhooksPage() {
     onSuccess: ({ hook, secret: created }) => {
       refresh();
       setForm(null);
-      if (created) setSecret({ title: `Webhook ${hook.name} created`, value: created });
+      // Slack and Teams don't check a signature, so their secret isn't worth showing.
+      if (created && hook.format === 'JSON') setSecret({ title: `Webhook ${hook.name} created`, value: created });
       else toast(`Webhook ${hook.name} saved`);
     },
     onError,
@@ -82,14 +100,15 @@ export default function WebhooksPage() {
       <PageHeader
         title="Webhooks"
         actions={(
-          <button type="button" className="btn btn-primary" onClick={() => setForm({ name: '', url: '', projectKey: defaultProjectKey(scope), events: events?.map((e) => e.name) ?? [], active: true })}>
+          <button type="button" className="btn btn-primary" onClick={() => setForm({ name: '', url: '', format: 'JSON', jql: '', projectKey: defaultProjectKey(scope), events: events?.map((e) => e.name) ?? [], active: true })}>
             <PlusIcon size={14} /> Add webhook
           </button>
         )}
       />
       <p className="text-jira-subtle mb-4 max-w-3xl">
-        JiraTech sends a signed POST with the event as JSON to each webhook when something happens to an issue. Failed deliveries are retried
-        over several hours. Every request carries an <code className="text-xs">X-JiraTech-Signature</code> header (HMAC-SHA256 of{' '}
+        JiraTech sends a signed POST with the event as JSON to each webhook when something happens to an issue, or, for a Slack or Teams
+        channel, a readable message. Automation rules can also post to a chat webhook. Failed deliveries are retried over several hours.
+        Generic requests carry an <code className="text-xs">X-JiraTech-Signature</code> header (HMAC-SHA256 of{' '}
         <code className="text-xs">timestamp.body</code> with the webhook&apos;s secret) so the receiver can check it is genuine. To call JiraTech
         from scripts instead, create an <Link to="/settings/api-tokens" className="link">API token</Link>.
       </p>
@@ -108,7 +127,11 @@ export default function WebhooksPage() {
                     </td>
                     <td className="text-jira-subtle max-w-xs truncate" title={w.url}>{w.url}</td>
                     <td className="text-jira-subtle whitespace-nowrap">{w.project ? w.project.key : 'All projects'}</td>
-                    <td className="text-jira-subtle whitespace-nowrap">{w.events.length} of {events?.length ?? '…'}</td>
+                    <td className="text-jira-subtle whitespace-nowrap">
+                      {w.format !== 'JSON' && <span className="lozenge bg-[#DEEBFF] text-[#0747A6] mr-1">{FORMAT_NAMES[w.format]}</span>}
+                      {w.events.length} of {events?.length ?? '…'}
+                      {w.jql && <div className="text-xs text-jira-muted font-mono truncate max-w-[12rem]" title={w.jql}>if {w.jql}</div>}
+                    </td>
                     <td className="whitespace-nowrap">
                       {w.active
                         ? <span className="lozenge bg-[#E3FCEF] text-[#006644]">Active</span>
@@ -121,7 +144,7 @@ export default function WebhooksPage() {
                         type="button"
                         className="btn btn-subtle btn-sm btn-icon"
                         aria-label={`Edit ${w.name}`}
-                        onClick={() => setForm({ id: w.id, name: w.name, url: w.url, projectKey: w.project?.key ?? '', events: w.events, active: w.active })}
+                        onClick={() => setForm({ id: w.id, name: w.name, url: w.url, format: w.format, jql: w.jql ?? '', projectKey: w.project?.key ?? '', events: w.events, active: w.active })}
                       >
                         <EditIcon size={14} />
                       </button>
@@ -151,7 +174,7 @@ export default function WebhooksPage() {
           width="max-w-xl"
           footer={(
             <>
-              {form.id && (
+              {form.id && form.format === 'JSON' && (
                 <button
                   type="button"
                   className="btn btn-subtle mr-auto"
@@ -165,7 +188,7 @@ export default function WebhooksPage() {
                 </button>
               )}
               <button type="button" className="btn btn-subtle" onClick={() => setForm(null)}>Cancel</button>
-              <button type="button" className="btn btn-primary" disabled={!form.name.trim() || !form.url.trim() || !form.events.length || (!scope?.global && !form.projectKey) || save.isPending} onClick={() => save.mutate()}>
+              <button type="button" className="btn btn-primary" disabled={!form.name.trim() || !form.url.trim() || (form.format === 'JSON' && !form.events.length) || (!scope?.global && !form.projectKey) || save.isPending} onClick={() => save.mutate()}>
                 {save.isPending ? 'Saving…' : 'Save'}
               </button>
             </>
@@ -177,9 +200,15 @@ export default function WebhooksPage() {
               <input id="hook-name" autoFocus className="input" maxLength={80} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Incident bot" />
             </div>
             <div>
+              <label className="field-label" htmlFor="hook-format">Sends</label>
+              <select id="hook-format" className="input" value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value as WebhookFormat })}>
+                {FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="field-label" htmlFor="hook-url">Address</label>
-              <input id="hook-url" className="input" type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://example.com/hooks/jiratech" />
-              <span className="field-help">Servers on internal networks are refused unless the administrator sets WEBHOOK_ALLOW_PRIVATE=true.</span>
+              <input id="hook-url" className="input" type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder={form.format === 'JSON' ? 'https://example.com/hooks/jiratech' : 'https://hooks…'} />
+              <span className="field-help">{ADDRESS_HELP[form.format]}</span>
             </div>
             <div>
               <label className="field-label" htmlFor="hook-project">Projects</label>
@@ -187,6 +216,11 @@ export default function WebhooksPage() {
                 {scope?.global && <option value="">All projects</option>}
                 {scope?.projects.map((p) => <option key={p.id} value={p.key}>{p.key} — {p.name}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="hook-jql">Only for issues matching (optional)</label>
+              <input id="hook-jql" className="input font-mono text-xs" value={form.jql} onChange={(e) => setForm({ ...form, jql: e.target.value })} placeholder="priority = Highest" />
+              <span className="field-help">A JQL query. Events about other issues are not sent, so a channel only hears about what matters.</span>
             </div>
             <fieldset>
               <legend className="field-label">Events</legend>
@@ -200,6 +234,7 @@ export default function WebhooksPage() {
                 ))}
               </div>
             </fieldset>
+            {form.format !== 'JSON' && !form.events.length && <p className="text-xs text-jira-muted">With no events ticked, this channel only gets messages that an automation rule posts to it.</p>}
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
               Active

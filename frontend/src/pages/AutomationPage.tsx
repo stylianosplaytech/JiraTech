@@ -14,6 +14,7 @@ const ACTION_LABELS: Record<AutomationAction['type'], string> = {
   comment: 'Add a comment',
   add_label: 'Add a label',
   email: 'Send an email',
+  chat: 'Post to chat (Slack or Teams)',
 };
 const EMAIL_ROLES = [
   { value: 'assignee', label: 'The assignee' },
@@ -66,6 +67,7 @@ const blankAction = (type: AutomationAction['type']): AutomationAction => {
     case 'comment': return { type, body: '', internal: false };
     case 'add_label': return { type, label: '' };
     case 'email': return { type, to: ['assignee'], subject: '', body: '' };
+    case 'chat': return { type, webhookId: '', message: '' };
   }
 };
 
@@ -206,6 +208,7 @@ function RuleEditor({ form, setForm, meta, scope, saving, onSave }: {
       case 'comment': return a.body.trim();
       case 'add_label': return a.label.trim() && !/\s/.test(a.label);
       case 'email': return a.to.length && a.subject.trim() && a.body.trim();
+      case 'chat': return a.webhookId && a.message.trim();
       default: return true;
     }
   });
@@ -370,6 +373,8 @@ function ActionFields({ action, onChange, users, anyAddress }: { action: Automat
       );
     case 'add_label':
       return <input aria-label="Label" className="input" value={action.label} onChange={(e) => onChange({ ...action, label: e.target.value })} placeholder="one-word-label" />;
+    case 'chat':
+      return <ChatActionFields action={action} onChange={onChange} />;
     case 'email': {
       const roles = action.to.filter((t) => EMAIL_ROLES.some((r) => r.value === t));
       const addresses = action.to.filter((t) => !EMAIL_ROLES.some((r) => r.value === t));
@@ -398,6 +403,23 @@ function ActionFields({ action, onChange, users, anyAddress }: { action: Automat
       );
     }
   }
+}
+
+/** Picks which Slack or Teams channel (a chat webhook this person may use) and what to say. */
+function ChatActionFields({ action, onChange }: { action: Extract<AutomationAction, { type: 'chat' }>; onChange: (a: AutomationAction) => void }) {
+  const { data: webhooks } = useQuery({ queryKey: ['webhooks'], queryFn: api.getWebhooks });
+  const channels = webhooks?.filter((w) => w.format !== 'JSON' && w.active) ?? [];
+  return (
+    <>
+      <select aria-label="Chat channel" className="input" value={action.webhookId} onChange={(e) => onChange({ ...action, webhookId: e.target.value })}>
+        <option value="">Choose a channel…</option>
+        {channels.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.format === 'SLACK' ? 'Slack' : 'Teams'}{w.project ? `, ${w.project.key}` : ''})</option>)}
+      </select>
+      {webhooks && !channels.length && <span className="field-help">There is no Slack or Teams channel to post to yet: add one under Webhooks, choosing Slack or Teams.</span>}
+      <textarea aria-label="Message" className="input" rows={2} value={action.message} onChange={(e) => onChange({ ...action, message: e.target.value })} placeholder="Urgent: {{issue.key}} {{issue.summary}} needs a look" />
+      <span className="field-help">The message links to the issue.</span>
+    </>
+  );
 }
 
 /** What a rule did lately: only runs whose trigger and condition matched are kept (30 days). */

@@ -6,6 +6,8 @@ import { AccessService } from '../access/access.service';
 import { MailerService } from '../mail/mailer.service';
 import { SearchService } from '../search/search.service';
 import { IssuesService } from '../issues/issues.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
+import { isChatFormat } from '../webhooks/chat-format';
 import { AuthUser } from '../common/auth-user';
 import { issueRef } from '../common/issue-ref';
 import { resolveProject } from '../common/project.util';
@@ -107,6 +109,7 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     private search: SearchService,
     private issues: IssuesService,
     private events: IssueEventsService,
+    private webhooks: WebhooksService,
   ) {}
 
   onModuleInit() {
@@ -257,10 +260,15 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     return rule?.createdBy ?? null;
   }
 
+  /** Names for the ids actions mention (people to assign to, chat webhooks), for describing them. */
   private async userNames(actions: Action[]) {
     const ids = actions.flatMap((a) => (a.type === 'assign' && !['unassigned', 'reporter', 'lead'].includes(a.to) ? [a.to] : []));
-    const users = ids.length ? await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
-    return new Map(users.map((u) => [u.id, u.name]));
+    const hooks = actions.flatMap((a) => (a.type === 'chat' ? [a.webhookId] : []));
+    const [users, webhooks] = await Promise.all([
+      ids.length ? this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [],
+      hooks.length ? this.prisma.webhook.findMany({ where: { id: { in: hooks } }, select: { id: true, name: true } }) : [],
+    ]);
+    return new Map([...users, ...webhooks].map((x) => [x.id, x.name]));
   }
 
   private async validate(input: RuleInput, user: AuthUser) {
@@ -271,6 +279,12 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     for (const a of actions) {
       if (a.type === 'assign' && !['unassigned', 'reporter', 'lead'].includes(a.to)) {
         if (!(await this.prisma.user.findUnique({ where: { id: a.to }, select: { id: true } }))) throw new BadRequestException('The person to assign to does not exist');
+      }
+      if (a.type === 'chat') {
+        // Only a channel the saver may manage: a project administrator can't speak into someone else's.
+        const hook = await this.prisma.webhook.findUnique({ where: { id: a.webhookId }, select: { format: true, projectId: true } });
+        if (!hook || !(await this.access.canManage(user, hook.projectId))) throw new BadRequestException('Choose a chat webhook you are allowed to use');
+        if (!isChatFormat(hook.format)) throw new BadRequestException('That webhook sends JSON, not a Slack or Teams message: set its format to Slack or Teams first');
       }
     }
     const jql = input.jql?.trim() || null;
@@ -412,7 +426,8 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async perform(action: Action, issue: { id: string; key: string; projectId: string }, event: RunEvent, author: AuthUser): Promise<string> {
-    if (action.type !== 'email') await this.access.require(author, issue.projectId, 'edit');
+    // Emailing or posting a message doesn't change the issue, so it doesn't need the right to edit it.
+    if (action.type !== 'email' && action.type !== 'chat') await this.access.require(author, issue.projectId, 'edit');
     const current = await this.prisma.issue.findUniqueOrThrow({
       where: { id: issue.id },
       select: {
@@ -459,6 +474,10 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
       }
       case 'email':
         return this.email(action, issue, current, await this.values(issue.id, event.actorId));
+      case 'chat': {
+        const name = await this.webhooks.postMessage(action.webhookId, author, fill(action.message, await this.values(issue.id, event.actorId)), issue.id);
+        return `Message queued for ${name}`;
+      }
     }
   }
 

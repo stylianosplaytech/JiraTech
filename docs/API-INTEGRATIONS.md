@@ -49,6 +49,10 @@ API: `GET /api/api-tokens`, `POST /api/api-tokens` (`{ name, access: READ|WRITE,
 Add them under profile menu → Integrations → **Webhooks** (`/settings/webhooks`). A webhook has an address, the events it wants, and a
 project, or all projects. See [Who can set things up](#who-can-set-things-up) below for who may add them.
 
+Two settings apply to every webhook. **Format**: *JSON* (the default, described below), or *Slack* / *Teams*, which send a readable message to a chat
+channel instead of the signed event (see [Slack and Teams](CHAT-INTEGRATIONS.md)). **Filter**: an optional JQL query; events about issues that
+don't match are not sent (checked as the person who last saved the webhook). In the API these are `format` (`JSON`, `SLACK`, `TEAMS`) and `jql`.
+
 ### Events
 
 | Event | When |

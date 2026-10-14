@@ -47,9 +47,11 @@ export type Action =
   | { type: 'comment'; body: string; internal?: boolean }
   | { type: 'add_label'; label: string }
   /** `to`: "assignee", "reporter", "lead", or email addresses */
-  | { type: 'email'; to: string[]; subject: string; body: string };
+  | { type: 'email'; to: string[]; subject: string; body: string }
+  /** A message in a Slack or Teams channel, through one of the chat webhooks (see webhooks/chat-format.ts) */
+  | { type: 'chat'; webhookId: string; message: string };
 
-export const ACTION_TYPES = ['assign', 'set_priority', 'transition', 'comment', 'add_label', 'email'] as const;
+export const ACTION_TYPES = ['assign', 'set_priority', 'transition', 'comment', 'add_label', 'email', 'chat'] as const;
 export const MAX_ACTIONS = 10;
 
 const EMAIL = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
@@ -98,6 +100,13 @@ export function parseActions(raw: unknown): Action[] {
         const body = text(input.body, 5000);
         if (!subject || !body) throw new BadRequestException(`Action ${n}: the email needs a subject and a message`);
         return { type: 'email', to: [...new Set(to)], subject, body };
+      }
+      case 'chat': {
+        const webhookId = text(input.webhookId, 64);
+        const message = text(input.message, 2000);
+        if (!webhookId) throw new BadRequestException(`Action ${n}: choose the chat webhook to post to`);
+        if (!message) throw new BadRequestException(`Action ${n}: write the message`);
+        return { type: 'chat', webhookId, message };
       }
       default:
         throw new BadRequestException(`Action ${n}: unknown action`);
@@ -148,5 +157,6 @@ export function describe(action: Action, resolveUser: (id: string) => string): s
     case 'comment': return `Add ${action.internal ? 'an internal note' : 'a comment'}`;
     case 'add_label': return `Add the label ${action.label}`;
     case 'email': return `Email ${action.to.join(', ')}`;
+    case 'chat': return `Post to chat (${resolveUser(action.webhookId)})`;
   }
 }

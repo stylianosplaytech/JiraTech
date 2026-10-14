@@ -48,10 +48,12 @@ export function parseWebhookUrl(raw: string): URL {
 export interface PostResult {
   status: number;
   durationMs: number;
+  /** The start of the answer (e.g. Slack says "invalid_payload" or "no_service"), to explain a refusal */
+  body: string;
 }
 
 /**
- * POSTs a body and discards the answer. Redirects are not followed, and the address is checked when the connection is
+ * POSTs a body and keeps only the start of the answer. Redirects are not followed, and the address is checked when the connection is
  * made (not only when the webhook was saved), so a name that later points at an internal server is refused too.
  */
 export function postJson(url: URL, body: string, headers: Record<string, string>, timeoutMs = 10_000): Promise<PostResult> {
@@ -77,8 +79,10 @@ export function postJson(url: URL, body: string, headers: Record<string, string>
         }) as unknown as LookupFunction,
       },
       (res) => {
-        res.resume();
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, durationMs: Date.now() - started }));
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => { if (body.length < 300) body += chunk; });
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, durationMs: Date.now() - started, body: body.slice(0, 300).trim() }));
         res.on('error', reject);
       },
     );

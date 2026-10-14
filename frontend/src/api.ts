@@ -904,7 +904,8 @@ export type AutomationAction =
   | { type: 'transition'; status: string; resolution?: string }
   | { type: 'comment'; body: string; internal?: boolean }
   | { type: 'add_label'; label: string }
-  | { type: 'email'; to: string[]; subject: string; body: string };
+  | { type: 'email'; to: string[]; subject: string; body: string }
+  | { type: 'chat'; webhookId: string; message: string };
 
 export interface AutomationTrigger {
   fields?: string[];
@@ -993,6 +994,10 @@ export interface Webhook {
   name: string;
   url: string;
   events: string[];
+  /** JSON: the signed event; SLACK / TEAMS: a message for a chat channel */
+  format: WebhookFormat;
+  /** Only issues matching this JQL are sent */
+  jql: string | null;
   /** null: every project */
   project: { id: string; key: string; name: string } | null;
   active: boolean;
@@ -1001,9 +1006,13 @@ export interface Webhook {
   createdAt: string;
 }
 
+export type WebhookFormat = 'JSON' | 'SLACK' | 'TEAMS';
+
 export interface WebhookPayload {
   name: string;
   url: string;
+  format: WebhookFormat;
+  jql: string;
   events: string[];
   projectKey?: string;
   active: boolean;

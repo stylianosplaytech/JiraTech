@@ -255,7 +255,7 @@ Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMo
 
 ## API
 
-The full reference is served at `/api/docs` (Swagger UI) and `/api/openapi.json` (OpenAPI 3). Scripts authenticate with an **API token** (`Authorization: Bearer jt_…`, created under your profile menu), and JiraTech can call out to other systems with signed **webhooks**, and monitoring or CI tools can raise issues through **incoming webhooks**: see [docs/API-INTEGRATIONS.md](docs/API-INTEGRATIONS.md). Rules that react to issue events (assign, comment, transition, email…) are described in [docs/AUTOMATION.md](docs/AUTOMATION.md).
+The full reference is served at `/api/docs` (Swagger UI) and `/api/openapi.json` (OpenAPI 3). Scripts authenticate with an **API token** (`Authorization: Bearer jt_…`, created under your profile menu), and JiraTech can call out to other systems with signed **webhooks**, and monitoring or CI tools can raise issues through **incoming webhooks**: see [docs/API-INTEGRATIONS.md](docs/API-INTEGRATIONS.md). Issue events and automation rules can post to **Slack** and **Microsoft Teams** channels: see [docs/CHAT-INTEGRATIONS.md](docs/CHAT-INTEGRATIONS.md). Rules that react to issue events (assign, comment, transition, email…) are described in [docs/AUTOMATION.md](docs/AUTOMATION.md).
 
 - `POST /api/auth/login` — authenticate
 - `GET /api/issues` — list issues (filterable)

@@ -1210,6 +1210,10 @@ model Webhook {
   /// null = every project
   projectId      String?
   active         Boolean  @default(true)
+  /// JSON (the signed event), SLACK or TEAMS (a readable message for a chat channel)
+  format         String   @default("JSON")
+  /// Optional: only issues matching this JQL are sent (evaluated as the webhook's author)
+  jql            String?
   /// The signing secret, encrypted (see common/secret-box.ts)
   secret         String
   /// Failed attempts in a row: the webhook is switched off after too many
