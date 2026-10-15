@@ -24,6 +24,7 @@ import CreateIssuePage from './pages/CreateIssuePage';
 import UsersPage from './pages/UsersPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectPage from './pages/ProjectPage';
+import ImportProjectPage from './pages/ImportProjectPage';
 import QueuesPage from './pages/QueuesPage';
 import ServiceNoticesPage from './pages/ServiceNoticesPage';
 import NoticeComposePage from './pages/NoticeComposePage';
@@ -101,6 +102,7 @@ export default function App() {
                     <Route path="/issues/:id" element={<IssueDetailPage />} />
                     <Route path="/browse/:id" element={<IssueDetailPage />} />
                     <Route path="/projects" element={<ProjectsPage />} />
+                    <Route path="/projects/import" element={<ImportProjectPage />} />
                     <Route path="/projects/:key" element={<ProjectPage />} />
                     <Route path="/queues" element={<QueuesPage />} />
                     <Route path="/dashboard" element={<DashboardPage />} />

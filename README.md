@@ -89,7 +89,7 @@ CS's are Lina (admin), Nikos and Andreas. The customers only see the help center
 
 ## Jira-style features
 
-- **Projects** — create projects with their own key (`WEB-1`, `PAY-12`…), lead, versions and components; switch project from the header. New projects use standard rules; tick *Enforce SPORTS conventions* to get the SPORTS hierarchy and component naming rules.
+- **Projects** — create projects with their own key (`WEB-1`, `PAY-12`…), lead, versions and components; switch project from the header. New projects use standard rules; tick *Enforce SPORTS conventions* to get the SPORTS hierarchy and component naming rules. *Projects → Import from Jira* creates a project from a Jira "Export CSV (all fields)" file: issues keep their keys, parents, links and statuses (people, descriptions and comments aren't in the export and aren't imported).
 - **Issues** — open any issue at `/browse/KEY-123`; edit, transition (including *Re-open*), delete, attach/delete files, watch.
 - **Comments** — add, edit and delete; `@user@email` mentions add that user as a watcher.
 - **Activity history** — every field change, transition, link and attachment is recorded on the History tab.

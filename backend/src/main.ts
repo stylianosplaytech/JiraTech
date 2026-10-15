@@ -15,8 +15,8 @@ const frontendDist = resolve(__dirname, '../../frontend/dist');
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.setGlobalPrefix('api');
-  // Service notices carry their logo image inside the request.
-  app.useBodyParser('json', { limit: '2mb' });
+  // Service notices carry their logo image inside the request, and a Jira export is sent as one CSV string.
+  app.useBodyParser('json', { limit: '25mb' });
   app.enableCors({ origin: ['http://localhost:5172'], credentials: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 

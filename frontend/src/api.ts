@@ -218,6 +218,11 @@ export const api = {
     request<InboundTestResult>(`/inbound-webhooks/${id}/test`, { method: 'POST', body: JSON.stringify({ payload }) }),
   getInboundDeliveries: (id: string) => request<InboundDelivery[]>(`/inbound-webhooks/${id}/deliveries`),
 
+  previewProjectImport: (data: { csv: string; utcOffsetMinutes: number }) =>
+    request<ProjectImportPreview>('/project-import/preview', { method: 'POST', body: JSON.stringify(data) }),
+  importProject: (data: { csv: string; utcOffsetMinutes: number; key: string; name: string; description?: string; statusCategories: Record<string, StatusCategory> }) =>
+    request<{ key: string; name: string; issues: number; links: number; parentsLinked: number; statuses: number }>('/project-import', { method: 'POST', body: JSON.stringify(data) }),
+
   getProjects: () => request<Project[]>('/projects'),
   getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
   createProject: (data: { key: string; name: string; description?: string; leadId?: string; strictHierarchy?: boolean; type?: ProjectType }) =>
@@ -1629,4 +1634,19 @@ export function formatMinutes(minutes: number): string {
 
 export function isEpicType(type?: string): boolean {
   return !!type && ['EPIC', 'FEATURE_EPIC', 'BAU_EPIC', 'RELEASE_EPIC'].includes(type);
+}
+
+export type StatusCategory = 'BACKLOG' | 'TO_DO' | 'DOING' | 'CLOSED';
+
+export interface ProjectImportPreview {
+  suggestedKey: string;
+  keyTaken: boolean;
+  issues: number;
+  firstNumber: number;
+  lastNumber: number;
+  byType: Record<string, number>;
+  statuses: { name: string; count: number; category: StatusCategory }[];
+  parents: { linked: number; outsideExport: number };
+  links: { kept: number; outsideExport: number; byType: Record<string, number> };
+  warnings: string[];
 }

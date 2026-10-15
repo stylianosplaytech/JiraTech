@@ -7,7 +7,7 @@ import { WorkflowService } from '../workflow/workflow.service';
 import { createDefaultPortal, setUpServiceDesk } from '../service-desk/defaults';
 import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 
-const PROJECT_CREATORS: UserRole[] = [
+export const PROJECT_CREATORS: UserRole[] = [
   UserRole.ADMIN,
   UserRole.PROJECT_MANAGER,
   UserRole.PROGRAM_MANAGER,

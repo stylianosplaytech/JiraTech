@@ -18,6 +18,7 @@ import { LabelsModule } from './labels/labels.module';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { VersionsModule } from './versions/versions.module';
 import { ProjectsModule } from './projects/projects.module';
+import { ProjectImportModule } from './project-import/project-import.module';
 import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
@@ -42,6 +43,7 @@ import { InboundWebhooksModule } from './inbound-webhooks/inbound-webhooks.modul
     AuthModule,
     UsersModule,
     ProjectsModule,
+    ProjectImportModule,
     SearchModule,
     NotificationsModule,
     IssuesModule,
