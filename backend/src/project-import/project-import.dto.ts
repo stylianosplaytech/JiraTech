@@ -1,13 +1,9 @@
-import { IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsInt, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
+/** Sent as the JSON text of the "options" form field next to the uploaded "file". */
 export class PreviewImportDto {
-  /** The text of a Jira "Export CSV (all fields)" file */
-  @IsString()
-  @MinLength(1)
-  csv!: string;
-
-  /** UTC offset the export's "Created" dates are written in, in minutes (e.g. 120 for UTC+2) */
+  /** UTC offset the CSV's dates are written in, in minutes (e.g. 120 for UTC+2). JSON dates carry their own offset. */
   @IsOptional()
   @IsInt()
   @Min(-840)
@@ -30,6 +26,17 @@ export class ImportProjectDto extends PreviewImportDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  /** Ids of the columns to import, from the preview. Issue key and summary are always imported. */
+  @IsArray()
+  @IsString({ each: true })
+  columns!: string[];
+
+  /** New names for custom field columns (the export only knows some of them by id), by column id */
+  @IsOptional()
+  @IsObject()
+  @ApiPropertyOptional({ type: 'object', additionalProperties: { type: 'string' } })
+  columnNames?: Record<string, string>;
 
   /** Status name in the file → category (BACKLOG, TO_DO, DOING or CLOSED). Missing names get the suggested one. */
   @IsOptional()

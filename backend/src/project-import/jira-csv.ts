@@ -1,4 +1,6 @@
-import { IssueStatus, IssueType, LinkType, Priority } from '@prisma/client';
+import {
+  ParsedSource, SourceIssue, buildColumns, checkIssues, collectStatuses, dominantPrefix, keyRe, mapType,
+} from './source';
 
 /** Parse RFC 4180 CSV (quoted fields, doubled quotes, embedded newlines) into rows of cells. */
 export function parseCsv(text: string): string[][] {
@@ -25,203 +27,163 @@ export function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((cell) => cell !== ''));
 }
 
-export type ImportedIssue = {
-  key: string;
-  number: number;
-  /** Jira's internal id, only used to resolve the "Parent id" column */
-  sourceId: string;
-  parentSourceId: string | null;
-  type: IssueType;
-  summary: string;
-  priority: Priority;
-  statusName: string;
-  createdAt: Date;
-};
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-export type ImportedLink = { type: LinkType; sourceKey: string; targetKey: string };
-
-export type JiraExport = {
-  prefix: string;
-  issues: ImportedIssue[];
-  links: ImportedLink[];
-  /** Distinct source statuses with the number of issues in each, in a sensible workflow order */
-  statuses: { name: string; count: number; category: IssueStatus }[];
-  byType: Record<string, number>;
-  skipped: { otherProjects: number; duplicateKeys: number; noSummary: number };
-  parents: { linked: number; outsideExport: number };
-  linkStats: { kept: number; outsideExport: number; byType: Record<string, number> };
-  warnings: string[];
-};
-
-/** Jira issue type → this app's issue type. "Epic Story"/"Epic Bug" are children of epics at Playtech. */
-const TYPE_MAP: Record<string, IssueType> = {
-  epic: IssueType.EPIC,
-  story: IssueType.STORY,
-  'epic story': IssueType.STORY,
-  bug: IssueType.DEFECT,
-  'epic bug': IssueType.DEFECT,
-  defect: IssueType.DEFECT,
-  task: IssueType.TASK,
-  'sub-task': IssueType.SUB_TASK,
-  subtask: IssueType.SUB_TASK,
-};
-
-const PRIORITY_MAP: Record<string, Priority> = {
-  highest: Priority.HIGHEST, blocker: Priority.HIGHEST, critical: Priority.HIGHEST,
-  high: Priority.HIGH, major: Priority.HIGH,
-  medium: Priority.MEDIUM,
-  low: Priority.LOW, minor: Priority.LOW,
-  lowest: Priority.LOWEST, trivial: Priority.LOWEST,
-};
-
-function mapPriority(raw: string): Priority {
-  const p = raw.trim().toLowerCase();
-  // Variants such as "High (Urgent Job)": use the leading word.
-  return PRIORITY_MAP[p] ?? PRIORITY_MAP[p.split(/[\s(]/)[0]] ?? Priority.MEDIUM;
-}
-
-/** Suggested category for a Jira status the importer knows nothing about. The user can change it. */
-export function suggestCategory(name: string): IssueStatus {
-  const n = name.trim().toLowerCase();
-  if (/^(closed|done|resolved|complete[d]?|cancel+ed|rejected)$/.test(n)) return IssueStatus.CLOSED;
-  if (/backlog/.test(n)) return IssueStatus.BACKLOG;
-  if (/doing|progress|review|testing|\bqa\b|prep|reopened/.test(n)) return IssueStatus.DOING;
-  return IssueStatus.TO_DO;
-}
-
-const CATEGORY_ORDER: IssueStatus[] = [IssueStatus.BACKLOG, IssueStatus.TO_DO, IssueStatus.DOING, IssueStatus.CLOSED];
-
-function linkKind(linkName: string): LinkType {
-  switch (linkName.trim().toLowerCase()) {
-    case 'blocks': return LinkType.BLOCKS;
-    case 'depends': case 'depends on': return LinkType.DEPENDS_ON;
-    case 'parent': return LinkType.PARENT_LINK;
-    default: return LinkType.RELATES_TO;
+/**
+ * Jira writes dates as "05.05.2026 20:23" (day.month.year) or "05/May/26 8:23 PM" depending on locale, in the time
+ * zone of whoever exported. Read them in the given UTC offset (minutes). ISO dates carry their own offset.
+ */
+export function parseDate(raw: string, utcOffsetMinutes: number): Date | null {
+  const s = raw.trim();
+  if (!s) return null;
+  let m = /^(\d{1,2})[./](\d{1,2})[./](\d{4})(?:[ T](\d{1,2}):(\d{2}))?/.exec(s);
+  if (m) return fromParts(+m[3], +m[2] - 1, +m[1], +(m[4] ?? 0), +(m[5] ?? 0), utcOffsetMinutes);
+  m = /^(\d{1,2})\/([A-Za-z]{3})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM)?)?/i.exec(s);
+  if (m) {
+    const month = MONTHS.indexOf(m[2].toLowerCase());
+    if (month < 0) return null;
+    let hour = +(m[4] ?? 0);
+    if (m[6]?.toUpperCase() === 'PM' && hour < 12) hour += 12;
+    if (m[6]?.toUpperCase() === 'AM' && hour === 12) hour = 0;
+    const year = +m[3] < 100 ? 2000 + +m[3] : +m[3];
+    return fromParts(year, month, +m[1], hour, +(m[5] ?? 0), utcOffsetMinutes);
   }
+  const iso = new Date(s);
+  return Number.isNaN(iso.getTime()) ? null : iso;
 }
 
-/** "05.05.2026 20:23" (day.month.year, as Jira exports in a European locale), read in the given UTC offset. */
-export function parseCreated(raw: string, utcOffsetMinutes: number): Date | null {
-  const m = /^(\d{1,2})[./](\d{1,2})[./](\d{4})(?:[ T](\d{1,2}):(\d{2}))?/.exec(raw.trim());
-  if (!m) return null;
-  const [, d, mo, y, h = '0', mi = '0'] = m;
-  const ms = Date.UTC(+y, +mo - 1, +d, +h, +mi) - utcOffsetMinutes * 60_000;
+function fromParts(y: number, mo: number, d: number, h: number, mi: number, utcOffsetMinutes: number) {
+  const ms = Date.UTC(y, mo, d, h, mi) - utcOffsetMinutes * 60_000;
   return Number.isNaN(ms) ? null : new Date(ms);
 }
 
+const hours = (seconds: string) => {
+  const n = Number(seconds);
+  return seconds.trim() && Number.isFinite(n) ? Math.round((n / 3600) * 100) / 100 : null;
+};
+
 /**
- * Read a Jira "Export CSV (all fields)" file. Only the columns this app has a place for are used:
- * key, id, parent id, type, summary, priority, status, created and the issue links. People, descriptions and
- * comments aren't in a default export (and people are skipped by design).
+ * Read a Jira "Export CSV (all fields)" file. Columns the app has a field for are mapped; every other column
+ * is offered as a custom field. Jira repeats a column once per value (labels, links, comments), so columns
+ * with the same title are read together.
  */
-export function readJiraExport(text: string, utcOffsetMinutes = 0): JiraExport {
+export function readCsvSource(text: string, utcOffsetMinutes = 0): ParsedSource {
   const rows = parseCsv(text);
   if (rows.length < 2) throw new Error('The file has no issues in it');
   const header = rows[0].map((h) => h.trim());
-  const col = (name: string) => header.indexOf(name);
-  const required = ['Issue key', 'Summary', 'Issue Type', 'Status'];
-  const missing = required.filter((c) => col(c) < 0);
-  if (missing.length) throw new Error(`This doesn't look like a Jira export: missing column ${missing.join(', ')}`);
+  const at = (...names: string[]) => header.flatMap((h, i) => (names.includes(h.toLowerCase()) ? [i] : []));
+  const first = (...names: string[]) => at(...names)[0] ?? -1;
 
-  const iKey = col('Issue key'), iId = col('Issue id'), iParent = col('Parent id'), iSummary = col('Summary');
-  const iType = col('Issue Type'), iPriority = col('Priority'), iStatus = col('Status'), iCreated = col('Created');
-  // Jira repeats a link column once per link of that type, so collect every column with the same title.
+  const iKey = first('issue key'), iSummary = first('summary'), iType = first('issue type'), iStatus = first('status');
+  const missing = [['Issue key', iKey], ['Summary', iSummary], ['Issue Type', iType], ['Status', iStatus]].filter(([, i]) => i === -1);
+  if (missing.length) throw new Error(`This doesn't look like a Jira export: missing column ${missing.map(([n]) => n).join(', ')}`);
+
+  const iId = first('issue id'), iParentId = first('parent id'), iParent = first('parent');
+  const iPriority = first('priority'), iCreated = first('created'), iUpdated = first('updated');
+  const iDescription = first('description'), iReporter = first('reporter'), iAssignee = first('assignee');
+  const iEstimate = first('original estimate'), iRemaining = first('remaining estimate');
+  const iLabels = at('labels'), iComponents = at('component/s', 'components');
+  const iFix = at('fix version/s', 'fix versions'), iAffects = at('affects version/s', 'affected version/s');
+  const iComments = at('comment');
+  const iEpic = header.findIndex((h) => /^custom field \(epic link\)$/i.test(h));
+
   const linkCols = header
     .map((h, i) => ({ i, m: /^(Inward|Outward) issue link \((.+)\)$/.exec(h) }))
     .filter((c): c is { i: number; m: RegExpExecArray } => !!c.m)
-    .map((c) => ({ i: c.i, outward: c.m[1] === 'Outward', type: linkKind(c.m[2]), name: c.m[2] }));
+    .map((c) => ({ i: c.i, outward: c.m[1] === 'Outward', type: c.m[2] }));
 
-  const warnings: string[] = [];
-  const keyRe = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
-  const prefixCounts = new Map<string, number>();
-  for (const r of rows.slice(1)) {
-    const m = keyRe.exec((r[iKey] ?? '').trim());
-    if (m) prefixCounts.set(m[1].toUpperCase(), (prefixCounts.get(m[1].toUpperCase()) ?? 0) + 1);
-  }
-  const prefix = [...prefixCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const used = new Set<number>([
+    iKey, iSummary, iType, iStatus, iId, iParentId, iParent, iPriority, iCreated, iUpdated, iDescription, iReporter, iAssignee,
+    iEstimate, iRemaining, iEpic, ...iLabels, ...iComponents, ...iFix, ...iAffects, ...iComments, ...linkCols.map((c) => c.i),
+  ]);
+  // Every other column becomes a custom field; columns with the same title are one field.
+  const customCols = new Map<string, { label: string; idx: number[] }>();
+  header.forEach((h, i) => {
+    if (used.has(i) || !h) return;
+    const id = h.toLowerCase();
+    const label = /^custom field \((.+)\)$/i.exec(h)?.[1] ?? h;
+    const entry = customCols.get(id) ?? { label, idx: [] };
+    entry.idx.push(i);
+    customCols.set(id, entry);
+  });
+
+  const prefix = dominantPrefix(rows.slice(1).map((r) => r[iKey] ?? ''));
   if (!prefix) throw new Error('No issue keys such as ABC-123 were found in the "Issue key" column');
 
-  const skipped = { otherProjects: 0, duplicateKeys: 0, noSummary: 0 };
-  const issues: ImportedIssue[] = [];
+  const left = { otherProjects: 0, duplicateKeys: 0, noSummary: 0 };
+  const issues: SourceIssue[] = [];
   const seen = new Set<string>();
   const unknownTypes = new Set<string>();
   let badDates = 0;
-  const rowOf = new Map<string, string[]>();
+  const cell = (r: string[], i: number) => (i >= 0 ? (r[i] ?? '').trim() : '');
+  const many = (r: string[], idx: number[]) => idx.map((i) => cell(r, i)).filter(Boolean);
 
   for (const r of rows.slice(1)) {
-    const key = (r[iKey] ?? '').trim().toUpperCase();
+    const key = cell(r, iKey).toUpperCase();
     const m = keyRe.exec(key);
-    if (!m || m[1] !== prefix) { skipped.otherProjects++; continue; }
-    if (seen.has(key)) { skipped.duplicateKeys++; continue; }
-    const summary = (r[iSummary] ?? '').trim();
-    if (!summary) { skipped.noSummary++; continue; }
+    if (!m || m[1] !== prefix) { left.otherProjects++; continue; }
+    if (seen.has(key)) { left.duplicateKeys++; continue; }
+    const summary = cell(r, iSummary);
+    if (!summary) { left.noSummary++; continue; }
     seen.add(key);
-    const rawType = (r[iType] ?? '').trim();
-    let type = TYPE_MAP[rawType.toLowerCase()];
-    if (!type) { unknownTypes.add(rawType); type = IssueType.TASK; }
-    const created = iCreated >= 0 ? parseCreated(r[iCreated] ?? '', utcOffsetMinutes) : null;
+
+    const created = parseDate(cell(r, iCreated), utcOffsetMinutes);
     if (!created) badDates++;
+    const parentKey = cell(r, iParent), parentId = cell(r, iParentId);
+    const person = (v: string) => (v ? { username: v, name: v } : null);
+    const links: SourceIssue['links'] = [];
+    for (const lc of linkCols) {
+      const other = cell(r, lc.i).toUpperCase();
+      if (other) links.push({ type: lc.type, outward: lc.outward, key: other });
+    }
+    const custom: Record<string, string> = {};
+    for (const [id, c] of customCols) {
+      const v = many(r, c.idx).join(', ');
+      if (v) custom[id] = v;
+    }
+
     issues.push({
       key,
       number: +m[2],
-      sourceId: iId >= 0 ? (r[iId] ?? '').trim() : '',
-      parentSourceId: iParent >= 0 ? ((r[iParent] ?? '').trim() || null) : null,
-      type,
+      sourceId: cell(r, iId),
+      parent: parentKey || parentId ? { key: parentKey ? parentKey.toUpperCase() : undefined, sourceId: parentId || undefined } : null,
+      epicKey: cell(r, iEpic).toUpperCase() || null,
+      typeName: cell(r, iType),
       summary: summary.slice(0, 500),
-      priority: mapPriority(iPriority >= 0 ? (r[iPriority] ?? '') : ''),
-      statusName: (r[iStatus] ?? '').trim() || 'Backlog',
-      createdAt: created ?? new Date(),
+      description: (r[iDescription] ?? '').trim() || null,
+      statusName: cell(r, iStatus) || 'Backlog',
+      priorityName: cell(r, iPriority) || null,
+      created,
+      updated: parseDate(cell(r, iUpdated), utcOffsetMinutes),
+      reporter: person(cell(r, iReporter)),
+      assignee: person(cell(r, iAssignee)),
+      labels: many(r, iLabels),
+      components: many(r, iComponents),
+      fixVersions: many(r, iFix).map((name) => ({ name })),
+      affectsVersions: many(r, iAffects).map((name) => ({ name })),
+      estimateHours: hours(cell(r, iEstimate)),
+      remainingHours: hours(cell(r, iRemaining)),
+      links,
+      // "05/May/26 8:23 PM;username;text"
+      comments: many(r, iComments).map((c) => {
+        const p = /^([^;]*);([^;]*);([\s\S]*)$/.exec(c);
+        return p
+          ? { created: parseDate(p[1], utcOffsetMinutes), author: person(p[2].trim()), body: p[3] }
+          : { created: null, author: null, body: c };
+      }),
+      worklogs: [],
+      custom,
     });
-    rowOf.set(key, r);
-  }
-  if (skipped.otherProjects) warnings.push(`${skipped.otherProjects} row(s) belong to other projects than ${prefix} and are left out.`);
-  if (skipped.duplicateKeys) warnings.push(`${skipped.duplicateKeys} duplicate issue key(s) were ignored.`);
-  if (skipped.noSummary) warnings.push(`${skipped.noSummary} row(s) without a summary were left out.`);
-  if (unknownTypes.size) warnings.push(`Issue type(s) ${[...unknownTypes].map((t) => `"${t}"`).join(', ')} aren't known and are imported as Task.`);
-  if (badDates) warnings.push(`${badDates} issue(s) have a created date that couldn't be read and get today's date.`);
-
-  // Parents: "Parent id" is Jira's internal id, resolved to the parent's key.
-  const keyBySourceId = new Map(issues.filter((i) => i.sourceId).map((i) => [i.sourceId, i.key]));
-  const parents = { linked: 0, outsideExport: 0 };
-  for (const i of issues) {
-    if (!i.parentSourceId) continue;
-    if (keyBySourceId.has(i.parentSourceId)) parents.linked++;
-    else { parents.outsideExport++; i.parentSourceId = null; }
   }
 
-  // Links: each link is listed on both issues, so collect them in one canonical direction and drop repeats.
-  const links: ImportedLink[] = [];
-  const have = new Set<string>();
-  const linkTally = { kept: 0, outsideExport: 0, byType: {} as Record<string, number> };
-  for (const i of issues) {
-    const r = rowOf.get(i.key)!;
-    for (const lc of linkCols) {
-      const other = (r[lc.i] ?? '').trim().toUpperCase();
-      if (!other) continue;
-      if (!seen.has(other)) { linkTally.outsideExport++; continue; }
-      if (other === i.key) continue;
-      // Outward column: this issue is the source ("blocks X"); inward column: the other issue is.
-      const [sourceKey, targetKey] = lc.outward ? [i.key, other] : [other, i.key];
-      // "Relates" reads the same both ways, so A→B and B→A are one link.
-      const id = lc.type === LinkType.RELATES_TO && sourceKey > targetKey
-        ? `${lc.type}|${targetKey}|${sourceKey}`
-        : `${lc.type}|${sourceKey}|${targetKey}`;
-      if (have.has(id)) continue;
-      have.add(id);
-      links.push({ type: lc.type, sourceKey, targetKey });
-      linkTally.kept++;
-      linkTally.byType[lc.type] = (linkTally.byType[lc.type] ?? 0) + 1;
-    }
-  }
-
-  const statusCount = new Map<string, number>();
-  for (const i of issues) statusCount.set(i.statusName, (statusCount.get(i.statusName) ?? 0) + 1);
-  const statuses = [...statusCount.entries()]
-    .map(([name, count]) => ({ name, count, category: suggestCategory(name) }))
-    .sort((a, b) => CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category) || b.count - a.count);
-
-  const byType: Record<string, number> = {};
-  for (const i of issues) byType[i.type] = (byType[i.type] ?? 0) + 1;
-
-  return { prefix, issues, links, statuses, byType, skipped, parents, linkStats: linkTally, warnings };
+  for (const i of issues) if (!mapType(i.typeName)) unknownTypes.add(i.typeName);
+  const labels = new Map([...customCols].map(([id, c]) => [id, c.label]));
+  return {
+    format: 'csv',
+    prefix,
+    issues,
+    columns: buildColumns(issues, labels),
+    statuses: collectStatuses(issues, () => null),
+    warnings: checkIssues(issues, prefix, left, unknownTypes, badDates),
+  };
 }

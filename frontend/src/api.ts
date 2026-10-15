@@ -218,10 +218,10 @@ export const api = {
     request<InboundTestResult>(`/inbound-webhooks/${id}/test`, { method: 'POST', body: JSON.stringify({ payload }) }),
   getInboundDeliveries: (id: string) => request<InboundDelivery[]>(`/inbound-webhooks/${id}/deliveries`),
 
-  previewProjectImport: (data: { csv: string; utcOffsetMinutes: number }) =>
-    request<ProjectImportPreview>('/project-import/preview', { method: 'POST', body: JSON.stringify(data) }),
-  importProject: (data: { csv: string; utcOffsetMinutes: number; key: string; name: string; description?: string; statusCategories: Record<string, StatusCategory> }) =>
-    request<{ key: string; name: string; issues: number; links: number; parentsLinked: number; statuses: number }>('/project-import', { method: 'POST', body: JSON.stringify(data) }),
+  previewProjectImport: (file: File, utcOffsetMinutes: number) =>
+    request<ProjectImportPreview>('/project-import/preview', { method: 'POST', body: importForm(file, { utcOffsetMinutes }) }),
+  importProject: (file: File, options: ProjectImportOptions) =>
+    request<ProjectImportResult>('/project-import', { method: 'POST', body: importForm(file, options) }),
 
   getProjects: () => request<Project[]>('/projects'),
   getProject: (key: string) => request<ProjectDetail>(`/projects/${key}`),
@@ -1638,7 +1638,27 @@ export function isEpicType(type?: string): boolean {
 
 export type StatusCategory = 'BACKLOG' | 'TO_DO' | 'DOING' | 'CLOSED';
 
+function importForm(file: File, options: object) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('options', JSON.stringify(options));
+  return form;
+}
+
+export interface ProjectImportColumn {
+  id: string;
+  label: string;
+  group: string;
+  /** Issues that have a value in this column */
+  count: number;
+  sample: string | null;
+  required?: boolean;
+  /** Where the value goes in this app */
+  target: string;
+}
+
 export interface ProjectImportPreview {
+  format: 'csv' | 'json';
   suggestedKey: string;
   keyTaken: boolean;
   issues: number;
@@ -1646,7 +1666,31 @@ export interface ProjectImportPreview {
   lastNumber: number;
   byType: Record<string, number>;
   statuses: { name: string; count: number; category: StatusCategory }[];
+  columns: ProjectImportColumn[];
   parents: { linked: number; outsideExport: number };
   links: { kept: number; outsideExport: number; byType: Record<string, number> };
+  people: { total: number; matched: number; unmatched: string[] };
   warnings: string[];
+}
+
+export interface ProjectImportOptions {
+  utcOffsetMinutes: number;
+  key: string;
+  name: string;
+  description?: string;
+  columns: string[];
+  columnNames: Record<string, string>;
+  statusCategories: Record<string, StatusCategory>;
+}
+
+export interface ProjectImportResult {
+  key: string;
+  name: string;
+  issues: number;
+  parentsLinked: number;
+  links: number;
+  comments: number;
+  worklogs: number;
+  customFields: number;
+  statuses: number;
 }
