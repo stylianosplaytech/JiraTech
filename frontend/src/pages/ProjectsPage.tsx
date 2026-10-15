@@ -136,12 +136,9 @@ export default function ProjectsPage() {
       <PageHeader
         title="Projects"
         actions={canCreate && (
-          <>
-            <Link to="/projects/import" className="btn btn-default">Import from Jira</Link>
-            <button type="button" onClick={() => setSearchParams({ create: '1' })} className="btn btn-primary">
-              <PlusIcon size={14} /> Create project
-            </button>
-          </>
+          <button type="button" onClick={() => setSearchParams({ create: '1' })} className="btn btn-primary">
+            <PlusIcon size={14} /> Create project
+          </button>
         )}
       >
         <div className="relative w-64 mt-4">

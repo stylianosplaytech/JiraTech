@@ -6,7 +6,6 @@ import { useProject } from '../project';
 import { CATEGORY_LABELS } from '../components/Badges';
 import { PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
 
-const CREATOR_ROLES = ['ADMIN', 'PROJECT_MANAGER', 'PROGRAM_MANAGER', 'PRODUCT_MANAGER'];
 const CATEGORIES: StatusCategory[] = ['BACKLOG', 'TO_DO', 'DOING', 'CLOSED'];
 const TYPE_LABELS: Record<string, string> = { EPIC: 'Epics', STORY: 'Stories', DEFECT: 'Defects', TASK: 'Tasks', SUB_TASK: 'Sub-tasks' };
 const LINK_LABELS: Record<string, string> = { RELATES_TO: 'relates to', BLOCKS: 'blocks', DEPENDS_ON: 'depends on', PARENT_LINK: 'parent' };
@@ -67,7 +66,7 @@ export default function ImportProjectPage() {
     analyse.mutate(text);
   };
 
-  const canCreate = !!me && CREATOR_ROLES.includes(me.role);
+  const canCreate = me?.role === 'ADMIN';
   const keyValid = /^[A-Z][A-Z0-9]{1,9}$/.test(form.key);
   const keyClash = preview?.keyTaken && form.key === preview.suggestedKey;
   const ready = !!preview && !!form.name.trim() && keyValid && !keyClash && !run.isPending;
@@ -75,11 +74,11 @@ export default function ImportProjectPage() {
   return (
     <div className="max-w-4xl">
       <PageHeader
-        breadcrumbs={<><Link to="/projects" className="hover:underline">Projects</Link> / Import</>}
+        breadcrumbs="Administration"
         title="Import project from Jira"
       />
       {me && !canCreate && (
-        <div className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2 mb-4">Only admins and managers can create projects. Ask one of them to import this for you.</div>
+        <div className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2 mb-4">Only administrators can import projects.</div>
       )}
 
       <div className="card p-4 mb-6">

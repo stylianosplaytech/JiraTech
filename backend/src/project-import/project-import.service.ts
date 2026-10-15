@@ -1,9 +1,8 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
-import { IssueResolution, IssueStatus, IssueType, ProjectAccess, ProjectRole, ProjectType } from '@prisma/client';
+import { IssueResolution, IssueStatus, IssueType, ProjectAccess, ProjectRole, ProjectType, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
-import { PROJECT_CREATORS } from '../projects/projects.service';
 import { ImportProjectDto, PreviewImportDto } from './project-import.dto';
 import { ImportedIssue, readJiraExport } from './jira-csv';
 
@@ -160,6 +159,6 @@ export class ProjectImportService {
   }
 
   private assertCreator(user: AuthUser) {
-    if (!PROJECT_CREATORS.includes(user.role)) throw new ForbiddenException('Only admins and managers can create projects');
+    if (user.role !== UserRole.ADMIN) throw new ForbiddenException('Only administrators can import projects');
   }
 }

@@ -102,7 +102,7 @@ export default function App() {
                     <Route path="/issues/:id" element={<IssueDetailPage />} />
                     <Route path="/browse/:id" element={<IssueDetailPage />} />
                     <Route path="/projects" element={<ProjectsPage />} />
-                    <Route path="/projects/import" element={<ImportProjectPage />} />
+                    <Route path="/settings/import-jira" element={<ImportProjectPage />} />
                     <Route path="/projects/:key" element={<ProjectPage />} />
                     <Route path="/queues" element={<QueuesPage />} />
                     <Route path="/dashboard" element={<DashboardPage />} />
