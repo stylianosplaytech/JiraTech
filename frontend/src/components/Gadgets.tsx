@@ -24,16 +24,31 @@ function Donut({ pie = false, groups, color, label }: { pie?: boolean; groups: {
   const shown = groups.length > 8 ? [...groups.slice(0, 7), { key: '__other', label: 'Other', count: groups.slice(7).reduce((n, g) => n + g.count, 0) }] : groups;
   const total = shown.reduce((n, g) => n + g.count, 0) || 1;
   const name = (g: { key: string; label: string }) => (g.key === '__other' ? 'Other' : label(g));
-  const R = pie ? 25 : 40;
+  const R = pie ? 50 : 40;
   const C = 2 * Math.PI * R;
   let offset = 0;
   return (
     <div className="flex flex-wrap items-center gap-6">
       <svg viewBox="0 0 100 100" className="w-36 h-36 shrink-0 -rotate-90" role="img" aria-label="Breakdown chart">
         {shown.map((g, i) => {
+          if (pie) {
+            // Real wedges: a very wide stroke on a tiny circle renders unreliably.
+            const start = (offset / C) * 2 * Math.PI;
+            offset += (g.count / total) * C;
+            const end = (offset / C) * 2 * Math.PI;
+            const point = (a: number) => `${50 + 50 * Math.cos(a)} ${50 + 50 * Math.sin(a)}`;
+            const d = shown.length === 1 || end - start >= 2 * Math.PI - 1e-6
+              ? 'M50 0A50 50 0 1 1 50 100A50 50 0 1 1 50 0Z'
+              : `M50 50L${point(start)}A50 50 0 ${end - start > Math.PI ? 1 : 0} 1 ${point(end)}Z`;
+            return (
+              <path key={g.key || 'none'} d={d} fill={color(g.key, i)} stroke="#fff" strokeWidth="0.5">
+                <title>{`${name(g)}: ${g.count}`}</title>
+              </path>
+            );
+          }
           const len = (g.count / total) * C;
           const el = (
-            <circle key={g.key || 'none'} cx="50" cy="50" r={R} fill="none" strokeWidth={pie ? 50 : 16} stroke={color(g.key, i)}
+            <circle key={g.key || 'none'} cx="50" cy="50" r={R} fill="none" strokeWidth={16} stroke={color(g.key, i)}
               strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset}>
               <title>{`${name(g)}: ${g.count}`}</title>
             </circle>
