@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type BreakdownField, type CustomDashboard, type Gadget, type GadgetType } from '../api';
 import { BREAKDOWN_LABELS, GADGET_TYPES, GadgetBody } from '../components/Gadgets';
+import { TYPE_THUMB, ThumbChoice } from '../components/GadgetThumbs';
 import { EmptyState, errorMessage, Modal, PageHeader, Spinner, useDialogs, useToast } from '../components/ui';
 import { PlusIcon, TrashIcon } from '../components/Icons';
 
@@ -61,6 +62,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
   return (
     <Modal
       title={form.id ? 'Edit gadget' : 'Add gadget'}
+      width="max-w-xl"
       onClose={onClose}
       footer={(
         <>
@@ -74,11 +76,15 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
       <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (form.filterId) save.mutate(); }}>
         {!form.id && (
           <div>
-            <label className="field-label" htmlFor="gadget-type">Show</label>
-            <select id="gadget-type" className="input" value={form.type} onChange={(e) => onChange({ ...form, ...defaultsFor(e.target.value as GadgetType) })}>
-              {GADGET_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
-            </select>
-            {hint && <p className="text-xs text-jira-muted mt-1">{hint}</p>}
+            <span className="field-label">What should it show?</span>
+            <ThumbChoice
+              label="Kind of gadget"
+              columns={3}
+              value={form.type}
+              onChange={(type) => onChange({ ...form, ...defaultsFor(type) })}
+              options={GADGET_TYPES.map((t) => ({ value: t.type, label: t.label, thumb: TYPE_THUMB[t.type], hint: t.hint }))}
+            />
+            {hint && <p className="text-xs text-jira-muted mt-1.5">{hint}</p>}
           </div>
         )}
         <div>
@@ -121,24 +127,35 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
               </select>
             </div>
             <div>
-              <label className="field-label" htmlFor="gadget-chart">Chart</label>
-              <select id="gadget-chart" className="input" value={form.chart} onChange={(e) => onChange({ ...form, chart: e.target.value as GadgetForm['chart'] })}>
-                <option value="bars">Bars</option>
-                <option value="donut">Donut</option>
-                <option value="pie">Pie</option>
-              </select>
+              <span className="field-label">Chart</span>
+              <ThumbChoice
+                label="Chart style"
+                value={form.chart}
+                onChange={(chart) => onChange({ ...form, chart })}
+                options={[
+                  { value: 'bars', label: 'Bars', thumb: 'bars' },
+                  { value: 'donut', label: 'Donut', thumb: 'donut' },
+                  { value: 'pie', label: 'Pie', thumb: 'pie' },
+                ]}
+              />
             </div>
           </>
         )}
         {(form.type === 'TREND' || form.type === 'CREATED_VS_RESOLVED') && (
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="field-label" htmlFor="gadget-series-chart">Chart</label>
-              <select id="gadget-series-chart" className="input" value={form.chart} onChange={(e) => onChange({ ...form, chart: e.target.value as GadgetForm['chart'] })}>
-                <option value="bars">Bars</option>
-                <option value="line">Line</option>
-              </select>
-            </div>
+          <>
+          <div>
+            <span className="field-label">Chart</span>
+            <ThumbChoice
+              label="Chart style"
+              columns={3}
+              value={form.chart}
+              onChange={(chart) => onChange({ ...form, chart })}
+              options={form.type === 'TREND'
+                ? [{ value: 'bars', label: 'Bars', thumb: 'created' }, { value: 'line', label: 'Line', thumb: 'created-line' }]
+                : [{ value: 'line', label: 'Lines', thumb: 'cvr' }, { value: 'bars', label: 'Bars', thumb: 'cvr-bars' }]}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="field-label" htmlFor="gadget-days">Period</label>
               <select id="gadget-days" className="input" value={form.days} onChange={(e) => onChange({ ...form, days: Number(e.target.value) as GadgetForm['days'] })}>
@@ -153,6 +170,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
               </select>
             </div>
           </div>
+          </>
         )}
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={form.wide} onChange={(e) => onChange({ ...form, wide: e.target.checked })} />
