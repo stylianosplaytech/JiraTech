@@ -50,6 +50,21 @@ export class GadgetConfigDto {
   @IsOptional()
   @IsIn(BREAKDOWN_FIELDS)
   groupBy?: (typeof BREAKDOWN_FIELDS)[number];
+
+  /** BREAKDOWN: how to draw it. */
+  @IsOptional()
+  @IsIn(['bars', 'donut'])
+  chart?: 'bars' | 'donut';
+
+  /** TREND: how far back to look. */
+  @IsOptional()
+  @IsIn([7, 14, 30, 90])
+  days?: 7 | 14 | 30 | 90;
+
+  /** TREND: count per day or per week. */
+  @IsOptional()
+  @IsIn(['day', 'week'])
+  bucket?: 'day' | 'week';
 }
 
 export class CreateGadgetDto {

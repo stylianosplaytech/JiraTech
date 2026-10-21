@@ -153,13 +153,35 @@ export class DashboardsService {
         return { type: gadget.type, ...base, total: await this.search.count(filter.jql, user) };
       case GadgetType.BREAKDOWN: {
         const groupBy = config.groupBy ?? 'status';
-        return { type: gadget.type, ...base, groupBy, ...(await this.search.countBy(filter.jql, groupBy, user)) };
+        return { type: gadget.type, ...base, groupBy, chart: config.chart ?? 'bars', ...(await this.search.countBy(filter.jql, groupBy, user)) };
+      }
+      case GadgetType.TREND: {
+        const days = config.days ?? 30;
+        const bucket = config.bucket ?? 'day';
+        return { type: gadget.type, ...base, days, bucket, ...(await this.trend(filter.jql, days, bucket, user)) };
       }
       case GadgetType.FILTER_RESULTS: {
         const result = await this.search.search(filter.jql, user, 0, config.maxRows ?? DEFAULT_ROWS);
         return { type: gadget.type, ...base, total: result.total, issues: result.issues };
       }
     }
+  }
+
+  /** Issues created per day (or per week, weeks starting Monday) over the last `days` days, empty buckets included. */
+  private async trend(jql: string, days: number, bucket: 'day' | 'week', user: AuthUser) {
+    const today = startOfDay(new Date());
+    const first = addDays(today, -(days - 1));
+    const step = bucket === 'week' ? 7 : 1;
+    const start = bucket === 'week' ? addDays(first, -((first.getDay() + 6) % 7)) : first;
+    const counts = new Map<string, number>();
+    for (let d = start; d <= today; d = addDays(d, step)) counts.set(dayKey(d), 0);
+    for (const created of await this.search.createdSince(jql, first, user)) {
+      const day = startOfDay(created);
+      const key = dayKey(bucket === 'week' ? addDays(day, -((day.getDay() + 6) % 7)) : day);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const points = [...counts].map(([date, count]) => ({ date, count }));
+    return { total: points.reduce((n, p) => n + p.count, 0), points };
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -181,6 +203,19 @@ export class DashboardsService {
   }
 }
 
+function startOfDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function addDays(d: Date, n: number) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+}
+
+/** yyyy-mm-dd in the server's local time. */
+function dayKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function parseConfig(raw: string): GadgetConfigDto {
   try {
     const value = JSON.parse(raw);
@@ -196,7 +231,11 @@ function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDt
   if (type === GadgetType.BREAKDOWN) {
     const groupBy: BreakdownField = config?.groupBy ?? 'status';
     if (!BREAKDOWN_FIELDS.includes(groupBy)) throw new BadRequestException('Unknown field to count by');
-    return { groupBy };
+    return { groupBy, chart: config?.chart ?? 'bars' };
+  }
+  if (type === GadgetType.TREND) {
+    const days = config?.days ?? 30;
+    return { days, bucket: config?.bucket ?? (days > 30 ? 'week' : 'day') };
   }
   return {};
 }

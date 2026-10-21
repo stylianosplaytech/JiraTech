@@ -8,12 +8,71 @@ import { humanize } from '../utils';
 export const GADGET_TYPES: { type: GadgetType; label: string; hint: string }[] = [
   { type: 'FILTER_RESULTS', label: 'Issue list', hint: 'The issues a filter finds, newest first unless the filter sorts them.' },
   { type: 'FILTER_COUNT', label: 'Issue count', hint: 'One big number: how many issues a filter finds.' },
-  { type: 'BREAKDOWN', label: 'Breakdown', hint: 'A filter’s issues counted by status, priority, type or assignee.' },
+  { type: 'BREAKDOWN', label: 'Breakdown', hint: 'A filter’s issues counted by status, priority, type, assignee, reporter or project, as bars or a donut.' },
+  { type: 'TREND', label: 'Created over time', hint: 'How many of a filter’s issues were created each day or week.' },
 ];
 
 export const BREAKDOWN_LABELS: Record<BreakdownField, string> = {
-  status: 'Status', priority: 'Priority', type: 'Issue type', assignee: 'Assignee',
+  status: 'Status', priority: 'Priority', type: 'Issue type', assignee: 'Assignee', reporter: 'Reporter', project: 'Project',
 };
+
+const PALETTE = ['#0052CC', '#36B37E', '#FFAB00', '#DE350B', '#6554C0', '#00B8D9', '#FF8B00', '#97A0AF'];
+
+/** Donut of the groups, largest first; groups past the seventh are folded into "Other". */
+function Donut({ groups, color, label }: { groups: { key: string; label: string; count: number }[]; color: (key: string, i: number) => string; label: (g: { key: string; label: string }) => string }) {
+  const shown = groups.length > 8 ? [...groups.slice(0, 7), { key: '__other', label: 'Other', count: groups.slice(7).reduce((n, g) => n + g.count, 0) }] : groups;
+  const total = shown.reduce((n, g) => n + g.count, 0) || 1;
+  const R = 40;
+  const C = 2 * Math.PI * R;
+  let offset = 0;
+  return (
+    <div className="flex flex-wrap items-center gap-6">
+      <svg viewBox="0 0 100 100" className="w-36 h-36 shrink-0 -rotate-90" role="img" aria-label="Breakdown chart">
+        {shown.map((g, i) => {
+          const len = (g.count / total) * C;
+          const el = (
+            <circle key={g.key || 'none'} cx="50" cy="50" r={R} fill="none" strokeWidth="16" stroke={color(g.key, i)}
+              strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset}>
+              <title>{`${label(g)}: ${g.count}`}</title>
+            </circle>
+          );
+          offset += len;
+          return el;
+        })}
+      </svg>
+      <ul className="flex-1 min-w-[140px] space-y-1.5">
+        {shown.map((g, i) => (
+          <li key={g.key || 'none'} className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: color(g.key, i) }} />
+            <span className="truncate flex-1">{label(g)}</span>
+            <span className="font-semibold">{g.count}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Trend({ points, bucket }: { points: { date: string; count: number }[]; bucket: 'day' | 'week' }) {
+  const max = Math.max(...points.map((p) => p.count), 1);
+  const fmt = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return (
+    <div>
+      <div className="flex items-end gap-px h-32" role="img" aria-label="Issues created over time">
+        {points.map((p) => (
+          <div key={p.date} className="flex-1 h-full flex items-end" title={`${bucket === 'week' ? 'Week of ' : ''}${fmt(p.date)}: ${p.count}`}>
+            <div className="w-full rounded-t-[2px] bg-[#0052CC]" style={{ height: p.count ? `${Math.max((p.count / max) * 100, 4)}%` : '2px', opacity: p.count ? 1 : 0.25 }} />
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between text-xs text-jira-muted mt-1.5">
+        <span>{fmt(points[0].date)}</span>
+        <span>peak {max} per {bucket}</span>
+        <span>{fmt(points[points.length - 1].date)}</span>
+      </div>
+    </div>
+  );
+}
 
 const COLORS: Record<string, string> = {
   BACKLOG: '#97A0AF', TO_DO: '#5E6C84', DOING: '#0052CC', CLOSED: '#36B37E',
@@ -56,9 +115,34 @@ function GadgetView({ data }: { data: Exclude<GadgetData, { filterMissing: true 
     );
   }
 
+  if (data.type === 'TREND') {
+    return (
+      <div className="p-4">
+        <Trend points={data.points} bucket={data.bucket} />
+        <p className="text-xs text-jira-muted pt-3">
+          {data.total} created in the last {data.days} days · <Link to={searchLink} className="link">Open filter in search</Link>
+        </p>
+      </div>
+    );
+  }
+
   if (data.type === 'BREAKDOWN') {
     const max = Math.max(...data.groups.map((g) => g.count), 1);
     if (!data.groups.length) return <p className="p-4 text-jira-muted">No issues match this filter.</p>;
+    if (data.chart === 'donut') {
+      return (
+        <div className="p-4">
+          <Donut
+            groups={data.groups}
+            color={(key, i) => COLORS[key] ?? PALETTE[i % PALETTE.length]}
+            label={(g) => groupLabel(data.groupBy, g.key, g.label)}
+          />
+          <p className="text-xs text-jira-muted pt-3">
+            {data.total} {data.total === 1 ? 'issue' : 'issues'} · <Link to={searchLink} className="link">Open in search</Link>
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="p-4 space-y-3">
         {data.groups.map((g) => (

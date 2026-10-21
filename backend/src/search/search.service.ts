@@ -20,7 +20,7 @@ export const SEARCH_INCLUDE = {
   _count: { select: { comments: true, children: true } },
 } satisfies Prisma.IssueInclude;
 
-export const BREAKDOWN_FIELDS = ['status', 'priority', 'type', 'assignee'] as const;
+export const BREAKDOWN_FIELDS = ['status', 'priority', 'type', 'assignee', 'reporter', 'project'] as const;
 export type BreakdownField = (typeof BREAKDOWN_FIELDS)[number];
 
 const STATUS_ORDER =['BACKLOG', 'TO_DO', 'DOING', 'CLOSED'];
@@ -101,22 +101,33 @@ export class SearchService {
   /** The issues a JQL query finds, counted by one field, largest group first. */
   async countBy(jql: string, field: BreakdownField, user: AuthUser) {
     const where = await this.visible(user, this.compile(jql, user).where);
-    const column = field === 'assignee' ? 'assigneeId' : field;
+    const column = ({ assignee: 'assigneeId', reporter: 'reporterId', project: 'projectId' } as const)[field as 'assignee'] ?? field;
     const rows = await this.prisma.issue.groupBy({ by: [column], where, _count: true });
-    const people = field === 'assignee'
-      ? await this.prisma.user.findMany({
-          where: { id: { in: rows.flatMap((r) => (r.assigneeId ? [r.assigneeId] : [])) } },
-          select: { id: true, name: true },
-        })
-      : [];
-    const names = new Map(people.map((p) => [p.id, p.name]));
+    const valueOf = (r: object) => (r as Record<string, string | null>)[column];
+    const ids = rows.flatMap((r) => valueOf(r) ?? []);
+    const names = new Map<string, string>();
+    if (field === 'assignee' || field === 'reporter') {
+      for (const u of await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })) names.set(u.id, u.name);
+    } else if (field === 'project') {
+      for (const p of await this.prisma.project.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })) names.set(p.id, p.name);
+    }
     const groups = rows
       .map((r) => {
-        const value = (r as unknown as Record<string, string | null>)[column];
-        return { key: value ?? '', label: field === 'assignee' ? (value ? names.get(value) ?? 'Unknown' : 'Unassigned') : value ?? 'None', count: r._count };
+        const value = valueOf(r);
+        const named = field === 'assignee' || field === 'reporter' || field === 'project';
+        const label = named ? (value ? names.get(value) ?? 'Unknown' : field === 'assignee' ? 'Unassigned' : 'None') : value ?? 'None';
+        return { key: value ?? '', label, count: r._count };
       })
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
     return { total: groups.reduce((n, g) => n + g.count, 0), groups };
+  }
+
+  /** When the issues a JQL query finds were created, for counting per day or week. */
+  async createdSince(jql: string, since: Date, user: AuthUser) {
+    const compiled = this.compile(jql, user);
+    const where = await this.visible(user, { AND: [compiled.where, { createdAt: { gte: since } }] });
+    const rows = await this.prisma.issue.findMany({ where, select: { createdAt: true }, take: MEMORY_SORT_LIMIT * 10 });
+    return rows.map((r) => r.createdAt);
   }
 
   async quickSearch(q: string, user: AuthUser) {

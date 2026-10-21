@@ -14,6 +14,9 @@ interface GadgetForm {
   title: string;
   maxRows: number;
   groupBy: BreakdownField;
+  chart: 'bars' | 'donut';
+  days: 7 | 14 | 30 | 90;
+  bucket: 'day' | 'week';
   wide: boolean;
 }
 
@@ -30,7 +33,9 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
 
   const save = useMutation({
     mutationFn: () => {
-      const config = form.type === 'FILTER_RESULTS' ? { maxRows: form.maxRows } : form.type === 'BREAKDOWN' ? { groupBy: form.groupBy } : {};
+      const config = form.type === 'FILTER_RESULTS' ? { maxRows: form.maxRows }
+        : form.type === 'BREAKDOWN' ? { groupBy: form.groupBy, chart: form.chart }
+        : form.type === 'TREND' ? { days: form.days, bucket: form.bucket } : {};
       const title = form.title.trim() || undefined;
       return form.id
         ? api.updateGadget(dashboardId, form.id, { title, filterId: form.filterId, config, wide: form.wide })
@@ -103,11 +108,37 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
           </div>
         )}
         {form.type === 'BREAKDOWN' && (
-          <div>
-            <label className="field-label" htmlFor="gadget-group">Count by</label>
-            <select id="gadget-group" className="input" value={form.groupBy} onChange={(e) => onChange({ ...form, groupBy: e.target.value as BreakdownField })}>
-              {(Object.keys(BREAKDOWN_LABELS) as BreakdownField[]).map((f) => <option key={f} value={f}>{BREAKDOWN_LABELS[f]}</option>)}
-            </select>
+          <>
+            <div>
+              <label className="field-label" htmlFor="gadget-group">Count by</label>
+              <select id="gadget-group" className="input" value={form.groupBy} onChange={(e) => onChange({ ...form, groupBy: e.target.value as BreakdownField })}>
+                {(Object.keys(BREAKDOWN_LABELS) as BreakdownField[]).map((f) => <option key={f} value={f}>{BREAKDOWN_LABELS[f]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="gadget-chart">Chart</label>
+              <select id="gadget-chart" className="input" value={form.chart} onChange={(e) => onChange({ ...form, chart: e.target.value as 'bars' | 'donut' })}>
+                <option value="bars">Bars</option>
+                <option value="donut">Donut</option>
+              </select>
+            </div>
+          </>
+        )}
+        {form.type === 'TREND' && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="field-label" htmlFor="gadget-days">Period</label>
+              <select id="gadget-days" className="input" value={form.days} onChange={(e) => onChange({ ...form, days: Number(e.target.value) as GadgetForm['days'] })}>
+                {[7, 14, 30, 90].map((n) => <option key={n} value={n}>Last {n} days</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="gadget-bucket">Count per</label>
+              <select id="gadget-bucket" className="input" value={form.bucket} onChange={(e) => onChange({ ...form, bucket: e.target.value as 'day' | 'week' })}>
+                <option value="day">Day</option>
+                <option value="week">Week</option>
+              </select>
+            </div>
           </div>
         )}
         <label className="flex items-center gap-2 cursor-pointer">
@@ -184,7 +215,8 @@ export default function CustomDashboardPage() {
   };
   const editGadget = (g: Gadget) => setGadgetForm({
     id: g.id, type: g.type, filterId: g.filterId ?? '', title: g.title,
-    maxRows: g.config.maxRows ?? 10, groupBy: g.config.groupBy ?? 'status', wide: g.wide,
+    maxRows: g.config.maxRows ?? 10, groupBy: g.config.groupBy ?? 'status', chart: g.config.chart ?? 'bars',
+    days: g.config.days ?? 30, bucket: g.config.bucket ?? 'day', wide: g.wide,
   });
 
   return (
@@ -194,7 +226,7 @@ export default function CustomDashboardPage() {
         title={<>{dashboard.name}{dashboard.shared && <span className="ml-3 lozenge bg-jira-blue-light text-jira-blue align-middle">Shared</span>}</>}
         actions={isOwner ? (
           <>
-            <button type="button" className="btn btn-primary" onClick={() => setGadgetForm({ type: 'FILTER_RESULTS', filterId: '', title: '', maxRows: 10, groupBy: 'status', wide: true })}>
+            <button type="button" className="btn btn-primary" onClick={() => setGadgetForm({ type: 'FILTER_RESULTS', filterId: '', title: '', maxRows: 10, groupBy: 'status', chart: 'bars', days: 30, bucket: 'day', wide: true })}>
               <PlusIcon size={14} /> Add gadget
             </button>
             <button type="button" className="btn btn-default" onClick={() => update.mutate({ shared: !dashboard.shared })}>
@@ -233,7 +265,7 @@ export default function CustomDashboardPage() {
           <EmptyState
             title="This dashboard is empty"
             action={isOwner && (
-              <button type="button" className="btn btn-default" onClick={() => setGadgetForm({ type: 'FILTER_RESULTS', filterId: '', title: '', maxRows: 10, groupBy: 'status', wide: true })}>Add a gadget</button>
+              <button type="button" className="btn btn-default" onClick={() => setGadgetForm({ type: 'FILTER_RESULTS', filterId: '', title: '', maxRows: 10, groupBy: 'status', chart: 'bars', days: 30, bucket: 'day', wide: true })}>Add a gadget</button>
             )}
           >
             {isOwner ? 'Add gadgets that show the results of your saved filters.' : 'Its owner hasn’t added any gadgets yet.'}

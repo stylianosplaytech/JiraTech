@@ -648,7 +648,8 @@ model SavedFilter {
 enum GadgetType {
   FILTER_RESULTS // the issues a saved filter finds
   FILTER_COUNT   // how many issues a saved filter finds
-  BREAKDOWN      // a saved filter's issues counted by status, priority, type or assignee
+  BREAKDOWN      // a saved filter's issues counted by status, priority, type, assignee, reporter or project
+  TREND          // how many of a saved filter's issues were created each day or week
 }
 
 model Dashboard {
@@ -673,7 +674,7 @@ model DashboardGadget {
   title       String
   /// Cleared (not deleted) when the saved filter is deleted, so the gadget can say so
   filterId    String?
-  /// JSON: { maxRows?: number, groupBy?: 'status' | 'priority' | 'type' | 'assignee' }
+  /// JSON: { maxRows?, groupBy?, chart?: 'bars' | 'donut', days?: number, bucket?: 'day' | 'week' }
   config      String     @default("{}")
   position    Int        @default(0)
   /// Spans both columns

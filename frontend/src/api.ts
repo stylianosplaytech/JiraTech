@@ -1119,12 +1119,15 @@ export interface SavedFilter {
   owner: { id: string; name: string };
 }
 
-export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN';
-export type BreakdownField = 'status' | 'priority' | 'type' | 'assignee';
+export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND';
+export type BreakdownField = 'status' | 'priority' | 'type' | 'assignee' | 'reporter' | 'project';
 
 export interface GadgetConfig {
   maxRows?: number;
   groupBy?: BreakdownField;
+  chart?: 'bars' | 'donut';
+  days?: 7 | 14 | 30 | 90;
+  bucket?: 'day' | 'week';
 }
 
 export interface Gadget {
@@ -1158,7 +1161,8 @@ export type GadgetData =
   | { filterMissing: true }
   | { type: 'FILTER_COUNT'; filterId: string; filterName: string; jql: string; total: number }
   | { type: 'FILTER_RESULTS'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
-  | { type: 'BREAKDOWN'; filterId: string; filterName: string; jql: string; groupBy: BreakdownField; total: number; groups: { key: string; label: string; count: number }[] };
+  | { type: 'BREAKDOWN'; filterId: string; filterName: string; jql: string; groupBy: BreakdownField; chart: 'bars' | 'donut'; total: number; groups: { key: string; label: string; count: number }[] }
+  | { type: 'TREND'; filterId: string; filterName: string; jql: string; days: number; bucket: 'day' | 'week'; total: number; points: { date: string; count: number }[] };
 
 export interface Issue {
   id: string;
