@@ -4,11 +4,12 @@ import { api, type BulkRequest, type BulkResult, type Issue } from '../api';
 import { MultiPicker, SelectPicker } from './Pickers';
 import { CATEGORY_LABELS, PriorityIcon } from './Badges';
 import UserPicker from './UserPicker';
-import { EditIcon, EyeIcon, TrashIcon, XIcon } from './Icons';
+import { EditIcon, EyeIcon, MoveIcon, TrashIcon, XIcon } from './Icons';
+import { useProject } from '../project';
 import { Modal, errorMessage, useDialogs, useToast } from './ui';
 
 const PRIORITIES = ['HIGHEST', 'HIGH', 'MEDIUM', 'LOW', 'LOWEST'];
-type Dialog = 'edit' | 'transition' | null;
+type Dialog = 'edit' | 'transition' | 'move' | null;
 
 function NotifySwitch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -39,6 +40,9 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
   // Transition form
   const [statusName, setStatusName] = useState<string | null>(null);
   const [resolution, setResolution] = useState('COMPLETED');
+  // Move form
+  const { projects } = useProject();
+  const [moveTo, setMoveTo] = useState<string | null>(null);
 
   const projectKeys = useMemo(() => [...new Set(selected.map((i) => i.project?.key).filter(Boolean) as string[])], [selected]);
   const singleProject = projectKeys.length === 1 ? projectKeys[0] : null;
@@ -75,8 +79,9 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
       queryClient.invalidateQueries({ queryKey: ['search'] });
       queryClient.invalidateQueries({ queryKey: ['issue'] });
       queryClient.invalidateQueries({ queryKey: ['board'] });
+      if (req.action === 'move') queryClient.invalidateQueries({ queryKey: ['projects'] });
       setDialog(null);
-      const verb = { edit: 'Updated', transition: 'Moved', watch: 'Watching', delete: 'Deleted' }[req.action];
+      const verb = { edit: 'Updated', transition: 'Moved', watch: 'Watching', delete: 'Deleted', move: 'Moved' }[req.action];
       if (data.failed.length) {
         setResult({ title: `${verb} ${data.succeeded.length} of ${selected.length} issues`, data });
       } else {
@@ -93,6 +98,8 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
     setNotify(true); setDialog('edit');
   };
   const openTransition = () => { setStatusName(null); setResolution('COMPLETED'); setNotify(true); setDialog('transition'); };
+  const openMove = () => { setMoveTo(null); setNotify(true); setDialog('move'); };
+  const moveTargets = projects.filter((p) => (p.myRole === 'MEMBER' || p.myRole === 'ADMIN') && p.key !== singleProject);
 
   const editRequest = (): Omit<BulkRequest, 'issueIds'> => ({
     action: 'edit',
@@ -115,6 +122,7 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
         <span className="font-medium mr-2">{n} selected</span>
         <button type="button" className="btn btn-sm bg-white/10 hover:bg-white/20 text-white" onClick={openEdit}><EditIcon size={13} /> Edit</button>
         <button type="button" className="btn btn-sm bg-white/10 hover:bg-white/20 text-white" onClick={openTransition}>Change status</button>
+        <button type="button" className="btn btn-sm bg-white/10 hover:bg-white/20 text-white" onClick={openMove}><MoveIcon size={13} /> Move</button>
         <button type="button" className="btn btn-sm bg-white/10 hover:bg-white/20 text-white" disabled={run.isPending} onClick={() => run.mutate({ action: 'watch' })}><EyeIcon size={13} /> Watch</button>
         <button
           type="button"
@@ -186,7 +194,7 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
             </div>
             {singleProject ? (
               <>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <span className="field-label">Add labels</span>
                     <div className="rounded-[3px] border-2 border-jira-border bg-jira-input">
@@ -200,7 +208,7 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <span className="field-label">Add components</span>
                     <div className="rounded-[3px] border-2 border-jira-border bg-jira-input">
@@ -273,6 +281,44 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
             <p className="text-xs text-jira-muted">
               Each issue follows its own project's workflow. Issues that can't move to this status from where they are,
               or that you can't edit, are skipped and listed afterwards.
+            </p>
+          </div>
+        </Modal>
+      )}
+
+      {dialog === 'move' && (
+        <Modal
+          title={`Move ${label} to another project`}
+          onClose={() => setDialog(null)}
+          width="max-w-md"
+          footer={(
+            <div className="flex items-center justify-between w-full">
+              <NotifySwitch value={notify} onChange={setNotify} />
+              <div className="flex gap-2">
+                <button type="button" className="btn btn-subtle" onClick={() => setDialog(null)}>Cancel</button>
+                <button type="button" className="btn btn-primary" disabled={!moveTo || run.isPending} onClick={() => run.mutate({ action: 'move', projectKey: moveTo!, notify })}>
+                  {run.isPending ? 'Moving…' : 'Move issues'}
+                </button>
+              </div>
+            </div>
+          )}
+        >
+          <div className="space-y-4">
+            <div>
+              <span className="field-label">Move to project</span>
+              <SelectPicker
+                variant="field"
+                value={moveTo}
+                onChange={setMoveTo}
+                placeholder="Choose a project"
+                options={moveTargets.map((p) => ({ id: p.key, label: p.name, hint: p.key }))}
+              />
+            </div>
+            <p className="text-xs text-jira-muted">
+              Each issue gets a new key in that project (its old key keeps working) and takes its sub-tasks along. Statuses,
+              components, versions and custom fields are matched by name; what has no match there, and sprints, are cleared.
+              Issues already in that project, that you can't edit, or that need a parent there, are skipped and listed
+              afterwards. To choose the status or a parent yourself, move issues one at a time.
             </p>
           </div>
         </Modal>

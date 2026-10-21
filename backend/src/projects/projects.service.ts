@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ProjectAccess, ProjectRole, UserRole } from '@prisma/client';
+import { ProjectAccess, ProjectRole, ProjectType, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
 import { AccessService } from '../access/access.service';
+import { WorkflowService } from '../workflow/workflow.service';
+import { createDefaultPortal, setUpServiceDesk } from '../service-desk/defaults';
 import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 
 const PROJECT_CREATORS: UserRole[] = [
@@ -16,7 +18,7 @@ const LEAD_SELECT = { select: { id: true, name: true, email: true } };
 
 @Injectable()
 export class ProjectsService {
-  constructor(private prisma: PrismaService, private access: AccessService) {}
+  constructor(private prisma: PrismaService, private access: AccessService, private workflow: WorkflowService) {}
 
   /** Projects the user can see, each with their role in it. */
   async findAll(user: AuthUser) {
@@ -62,19 +64,30 @@ export class ProjectsService {
     }
     if (dto.leadId) await this.assertUser(dto.leadId);
     const leadId = dto.leadId ?? user.id;
+    const serviceDesk = dto.type === ProjectType.SERVICE_DESK;
 
-    return this.prisma.project.create({
-      data: {
-        key,
-        name: dto.name,
-        description: dto.description,
-        leadId,
-        strictHierarchy: dto.strictHierarchy ?? false,
-        defaultAccess: dto.defaultAccess ?? ProjectAccess.MEMBER,
-        // The creator administers the project even if someone else is lead.
-        members: { create: [...new Set([user.id, leadId])].map((userId) => ({ userId, role: ProjectRole.ADMIN })) },
-      },
-      include: { lead: LEAD_SELECT, _count: { select: { issues: true } } },
+    return this.prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
+        data: {
+          key,
+          name: dto.name,
+          description: dto.description,
+          leadId,
+          type: dto.type ?? ProjectType.SOFTWARE,
+          // SPORTS hierarchy rules don't apply to customer requests.
+          strictHierarchy: serviceDesk ? false : (dto.strictHierarchy ?? false),
+          defaultAccess: dto.defaultAccess ?? ProjectAccess.MEMBER,
+          // The creator administers the project even if someone else is lead.
+          members: { create: [...new Set([user.id, leadId])].map((userId) => ({ userId, role: ProjectRole.ADMIN })) },
+        },
+        include: { lead: LEAD_SELECT, _count: { select: { issues: true } } },
+      });
+      if (serviceDesk) {
+        await this.workflow.ensure(tx, project.id, 'SERVICE_DESK');
+        await setUpServiceDesk(tx, project.id);
+        await createDefaultPortal(tx, project);
+      }
+      return project;
     });
   }
 
@@ -130,9 +143,12 @@ export class ProjectsService {
     return project;
   }
 
+  /** Leads and members are staff: customers only ever use the help center. */
   private async assertUser(id: string) {
-    if (!(await this.prisma.user.findUnique({ where: { id } }))) {
-      throw new NotFoundException('User not found');
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { role: true } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role === UserRole.CUSTOMER) {
+      throw new BadRequestException('Customers can\'t be project leads or members. Add them as service desk customers instead.');
     }
   }
 }

@@ -1,43 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
-import { IsBoolean, IsDateString, IsOptional, IsString, MinLength } from 'class-validator';
 import { VersionsService } from './versions.service';
 import { JwtAuthGuard } from '../auth/guards';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { ProjectKey } from '../common/project-key.decorator';
 import { AuthRequest } from '../common/auth-user';
-
-class CreateVersionDto {
-  @IsString()
-  @MinLength(1)
-  name!: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @IsOptional()
-  @IsDateString()
-  releaseDate?: string;
-}
-
-class UpdateVersionDto {
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  name?: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @IsOptional()
-  @IsDateString()
-  releaseDate?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  released?: boolean;
-}
+import { CreateVersionDto, UpdateVersionDto } from './versions.dto';
 
 @Controller('versions')
 @UseGuards(JwtAuthGuard, AccessGuard)

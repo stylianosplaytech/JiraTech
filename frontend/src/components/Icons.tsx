@@ -21,7 +21,8 @@ export const PlusIcon = (p: IconProps) => <svg {...base(p)}><path d="M12 5v14M5 
 export const SearchIcon = (p: IconProps) => <svg {...base(p)}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>;
 export const ChevronDownIcon = (p: IconProps) => <svg {...base(p)}><path d="m6 9 6 6 6-6" /></svg>;
 export const ChevronRightIcon = (p: IconProps) => <svg {...base(p)}><path d="m9 6 6 6-6 6" /></svg>;
-export const XIcon = (p: IconProps) => <svg {...base(p)}><path d="M18 6 6 18M6 6l12 12" /></svg>;
+export const MenuIcon = (p: IconProps) => <svg {...base(p)}><path d="M4 6h16M4 12h16M4 18h16" /></svg>;
+export const XIcon =(p: IconProps) => <svg {...base(p)}><path d="M18 6 6 18M6 6l12 12" /></svg>;
 export const CheckIcon = (p: IconProps) => <svg {...base(p)}><path d="M20 6 9 17l-5-5" /></svg>;
 export const MoreIcon = (p: IconProps) => <svg {...base(p)}><circle cx="5" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="19" cy="12" r="1.2" fill="currentColor" /></svg>;
 export const LinkIcon = (p: IconProps) => <svg {...base(p)}><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>;
@@ -45,6 +46,11 @@ export const CalendarIcon = (p: IconProps) => <svg {...base(p)}><rect x="3" y="4
 export const UsersIcon = (p: IconProps) => <svg {...base(p)}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" /></svg>;
 export const BellIcon = (p: IconProps) => <svg {...base(p)}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" /></svg>;
 export const MessageIcon =(p: IconProps) => <svg {...base(p)}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" /></svg>;
+export const MailIcon = (p: IconProps) => <svg {...base(p)}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>;
+export const ReplyIcon = (p: IconProps) => <svg {...base(p)}><path d="M9 17 4 12l5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></svg>;
+export const ReplyAllIcon = (p: IconProps) => <svg {...base(p)}><path d="M7 17 2 12l5-5" /><path d="m12 17-5-5 5-5" /><path d="M22 18v-2a4 4 0 0 0-4-4H7" /></svg>;
+export const ForwardIcon = (p: IconProps) => <svg {...base(p)}><path d="m15 17 5-5-5-5" /><path d="M4 18v-2a4 4 0 0 1 4-4h12" /></svg>;
+export const MoveIcon = (p: IconProps) => <svg {...base(p)}><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /><path d="M5 5v14" /></svg>;
 
 // ─── Issue type icons (16px rounded squares, Jira-style) ─────────────────────
 

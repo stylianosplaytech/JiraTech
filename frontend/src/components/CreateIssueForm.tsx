@@ -100,7 +100,7 @@ export default function CreateIssueForm({
     >
       <p className="text-xs text-jira-muted">Required fields are marked with an asterisk <span className="text-[#DE350B]">*</span></p>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <span className="field-label">Project <span className="text-[#DE350B]">*</span></span>
           <SelectPicker
@@ -159,7 +159,7 @@ export default function CreateIssueForm({
         {parent && <span className="field-help">Child issues are created in their parent's project.</span>}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <span className="field-label">Assignee</span>
           <UserPicker value={form.assigneeId || undefined} onChange={(id) => setForm({ ...form, assigneeId: id ?? '' })} currentUserId={me?.id} />
@@ -176,7 +176,7 @@ export default function CreateIssueForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <span className="field-label">Labels</span>
           <div className="rounded-[3px] border-2 border-jira-border bg-jira-input">
@@ -200,7 +200,7 @@ export default function CreateIssueForm({
         </label>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <span className="field-label">Components</span>
           <div className="rounded-[3px] border-2 border-jira-border bg-jira-input">

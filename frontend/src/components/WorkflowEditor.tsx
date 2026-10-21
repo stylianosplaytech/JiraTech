@@ -13,7 +13,7 @@ const CATEGORY_OPTIONS = CATEGORIES.map((c) => ({ id: c, label: CATEGORY_LABELS[
 const pairKey = (from: string, to: string) => `${from}>${to}`;
 
 /** Project admins edit statuses and allowed transitions; everyone else sees the workflow read-only. */
-export default function WorkflowEditor({ projectKey, canAdmin }: { projectKey: string; canAdmin: boolean }) {
+export default function WorkflowEditor({ projectKey, canAdmin, serviceDesk = false }: { projectKey: string; canAdmin: boolean; serviceDesk?: boolean }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { data: wf } = useQuery({ queryKey: ['workflow', projectKey], queryFn: () => api.getWorkflow(projectKey) });
@@ -45,7 +45,7 @@ export default function WorkflowEditor({ projectKey, canAdmin }: { projectKey: s
     onError,
   });
   const update = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { name?: string; category?: string } }) => api.updateWorkflowStatus(projectKey, id, data),
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; category?: string; pausesSla?: boolean } }) => api.updateWorkflowStatus(projectKey, id, data),
     onSuccess: refetch,
     onError,
   });
@@ -98,79 +98,94 @@ export default function WorkflowEditor({ projectKey, canAdmin }: { projectKey: s
         ))}
       </div>
 
-      <table className="data-table mb-3">
-        <thead>
-          <tr>
-            {canAdmin && <th className="w-16">Order</th>}
-            <th>Status</th>
-            <th className="w-44">Category</th>
-            <th>Can move to</th>
-            <th className="w-20 text-right">Issues</th>
-            {canAdmin && <th className="w-12" />}
-          </tr>
-        </thead>
-        <tbody>
-          {statuses.map((s, i) => (
-            <tr key={s.id}>
-              {canAdmin && (
-                <td>
-                  <div className="flex">
-                    <button type="button" className="btn btn-subtle btn-sm btn-icon" disabled={i === 0 || reorder.isPending} onClick={() => move(i, -1)} aria-label={`Move ${s.name} up`}>
-                      <ChevronDownIcon size={14} className="rotate-180" />
-                    </button>
-                    <button type="button" className="btn btn-subtle btn-sm btn-icon" disabled={i === statuses.length - 1 || reorder.isPending} onClick={() => move(i, 1)} aria-label={`Move ${s.name} down`}>
-                      <ChevronDownIcon size={14} />
-                    </button>
-                  </div>
-                </td>
-              )}
-              <td>
-                <div className="flex items-center gap-2">
-                  {i === 0 && <span className="lozenge bg-jira-gray-hover text-jira-subtle" title="New issues start here">Start</span>}
-                  <div className="flex-1 min-w-0">
-                    <InlineText
-                      readOnly={!canAdmin}
-                      value={s.name}
-                      onSave={(name) => update.mutate({ id: s.id, data: { name } })}
-                      validate={(v) => (!v ? 'Name is required' : null)}
-                      className="mx-0 font-medium"
-                    />
-                  </div>
-                </div>
-              </td>
-              <td>
-                <SelectPicker
-                  disabled={!canAdmin}
-                  searchable={false}
-                  value={s.category}
-                  onChange={(category) => category && category !== s.category && update.mutate({ id: s.id, data: { category } })}
-                  options={CATEGORY_OPTIONS}
-                />
-              </td>
-              <td>
-                <div className="flex flex-wrap gap-1">
-                  {outgoing(s.id).map((t) => <StatusBadge key={t.id} status={t.category} name={t.name} />)}
-                  {outgoing(s.id).length === 0 && <span className="text-xs text-[#974F0C]">No way out</span>}
-                </div>
-              </td>
-              <td className="text-right">{s.issueCount ?? 0}</td>
-              {canAdmin && (
-                <td className="text-right">
-                  <button
-                    type="button"
-                    className="btn btn-subtle btn-sm btn-icon"
-                    disabled={statuses.length <= 1}
-                    aria-label={`Delete status ${s.name}`}
-                    onClick={() => { setDeleting(s); setMoveTo(statuses.find((x) => x.id !== s.id)?.id ?? null); }}
-                  >
-                    <TrashIcon size={14} />
-                  </button>
-                </td>
-              )}
+      <div className="overflow-x-auto">
+        <table className="data-table mb-3">
+          <thead>
+            <tr>
+              {canAdmin && <th className="w-16">Order</th>}
+              <th>Status</th>
+              <th className="w-44">Category</th>
+              {serviceDesk && <th className="w-24" title="SLA clocks pause while a request is in this status">Pauses SLA</th>}
+              <th>Can move to</th>
+              <th className="w-20 text-right">Issues</th>
+              {canAdmin && <th className="w-12" />}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {statuses.map((s, i) => (
+              <tr key={s.id}>
+                {canAdmin && (
+                  <td>
+                    <div className="flex">
+                      <button type="button" className="btn btn-subtle btn-sm btn-icon" disabled={i === 0 || reorder.isPending} onClick={() => move(i, -1)} aria-label={`Move ${s.name} up`}>
+                        <ChevronDownIcon size={14} className="rotate-180" />
+                      </button>
+                      <button type="button" className="btn btn-subtle btn-sm btn-icon" disabled={i === statuses.length - 1 || reorder.isPending} onClick={() => move(i, 1)} aria-label={`Move ${s.name} down`}>
+                        <ChevronDownIcon size={14} />
+                      </button>
+                    </div>
+                  </td>
+                )}
+                <td>
+                  <div className="flex items-center gap-2">
+                    {i === 0 && <span className="lozenge bg-jira-gray-hover text-jira-subtle" title="New issues start here">Start</span>}
+                    <div className="flex-1 min-w-0">
+                      <InlineText
+                        readOnly={!canAdmin}
+                        value={s.name}
+                        onSave={(name) => update.mutate({ id: s.id, data: { name } })}
+                        validate={(v) => (!v ? 'Name is required' : null)}
+                        className="mx-0 font-medium"
+                      />
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <SelectPicker
+                    disabled={!canAdmin}
+                    searchable={false}
+                    value={s.category}
+                    onChange={(category) => category && category !== s.category && update.mutate({ id: s.id, data: { category } })}
+                    options={CATEGORY_OPTIONS}
+                  />
+                </td>
+                {serviceDesk && (
+                  <td className="text-center">
+                    <input
+                      type="checkbox"
+                      checked={!!s.pausesSla}
+                      disabled={!canAdmin || s.category === 'CLOSED'}
+                      title={s.category === 'CLOSED' ? 'SLAs always stop in Done statuses' : 'Pause SLA clocks while a request is in this status'}
+                      onChange={(e) => update.mutate({ id: s.id, data: { pausesSla: e.target.checked } })}
+                      aria-label={`${s.name} pauses SLA`}
+                    />
+                  </td>
+                )}
+                <td>
+                  <div className="flex flex-wrap gap-1">
+                    {outgoing(s.id).map((t) => <StatusBadge key={t.id} status={t.category} name={t.name} />)}
+                    {outgoing(s.id).length === 0 && <span className="text-xs text-[#974F0C]">No way out</span>}
+                  </div>
+                </td>
+                <td className="text-right">{s.issueCount ?? 0}</td>
+                {canAdmin && (
+                  <td className="text-right">
+                    <button
+                      type="button"
+                      className="btn btn-subtle btn-sm btn-icon"
+                      disabled={statuses.length <= 1}
+                      aria-label={`Delete status ${s.name}`}
+                      onClick={() => { setDeleting(s); setMoveTo(statuses.find((x) => x.id !== s.id)?.id ?? null); }}
+                    >
+                      <TrashIcon size={14} />
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {canAdmin && (
         <form onSubmit={(e) => { e.preventDefault(); if (newStatus.name.trim()) add.mutate(); }} className="flex items-end gap-2 mb-8">

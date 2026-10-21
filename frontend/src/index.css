@@ -91,3 +91,7 @@ body {
   @page { size: A4; margin: 12mm; }
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff; }
 }
+
+@keyframes slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+}

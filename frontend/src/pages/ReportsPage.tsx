@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { api, type ReportData, type ReportIssueRow, type TypeGroup } from '../api';
+import {
+  api, formatDuration, type ReportData, type ReportIssueRow, type SlaClock, type SlaOutcomes, type SlaReport, type TypeGroup,
+} from '../api';
 import { useProject } from '../project';
 import { typeLabel } from '../components/Badges';
 import { EmptyState, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
@@ -238,39 +240,41 @@ function ReportBanner({ title, subtitle, pdf }: { title: string; subtitle: strin
 
 function IssueTable({ rows, showStatus = true }: { rows: ReportIssueRow[]; showStatus?: boolean }) {
   return (
-    <table className="data-table text-xs bg-white">
-      <thead>
-        <tr>
-          <th>Parent</th>
-          <th>Key</th>
-          <th>Summary</th>
-          <th>Type</th>
-          <th>Priority</th>
-          {showStatus && <th>Status</th>}
-          <th>Created</th>
-          <th>Assignee</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.key}>
-            <td className="whitespace-nowrap">{r.parentKey ? <Link to={`/browse/${r.parentKey}`} className="link">{r.parentKey}</Link> : ''}</td>
-            <td className="whitespace-nowrap"><Link to={`/browse/${r.key}`} className="link">{r.key}</Link></td>
-            <td className="min-w-[240px]">{r.summary}</td>
-            <td className="whitespace-nowrap">{typeLabel(r.type)}</td>
-            <td className="whitespace-nowrap">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ background: PRIORITY_COLORS[r.priority] }} />
-                {priorityLabel(r.priority)}
-              </span>
-            </td>
-            {showStatus && <td className="whitespace-nowrap">{r.statusName}</td>}
-            <td className="whitespace-nowrap">{fmtDate(r.createdAt)}</td>
-            <td className="whitespace-nowrap">{r.assignee ?? <span className="text-jira-muted">Unassigned</span>}</td>
+    <div className="overflow-x-auto">
+      <table className="data-table text-xs bg-white">
+        <thead>
+          <tr>
+            <th>Parent</th>
+            <th>Key</th>
+            <th>Summary</th>
+            <th>Type</th>
+            <th>Priority</th>
+            {showStatus && <th>Status</th>}
+            <th>Created</th>
+            <th>Assignee</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key}>
+              <td className="whitespace-nowrap">{r.parentKey ? <Link to={`/browse/${r.parentKey}`} className="link">{r.parentKey}</Link> : ''}</td>
+              <td className="whitespace-nowrap"><Link to={`/browse/${r.key}`} className="link">{r.key}</Link></td>
+              <td className="min-w-[240px]">{r.summary}</td>
+              <td className="whitespace-nowrap">{typeLabel(r.type)}</td>
+              <td className="whitespace-nowrap">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: PRIORITY_COLORS[r.priority] }} />
+                  {priorityLabel(r.priority)}
+                </span>
+              </td>
+              {showStatus && <td className="whitespace-nowrap">{r.statusName}</td>}
+              <td className="whitespace-nowrap">{fmtDate(r.createdAt)}</td>
+              <td className="whitespace-nowrap">{r.assignee ?? <span className="text-jira-muted">Unassigned</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -459,13 +463,251 @@ function OpenIssues({ data, pdf }: ReportProps) {
   );
 }
 
+// ─── SLA performance (service desks) ─────────────────────────────────────────
+
+const SLA_OUTCOMES = ['met', 'missed', 'breached', 'atRisk', 'onTrack', 'paused'] as const;
+type SlaOutcome = (typeof SLA_OUTCOMES)[number];
+const SLA_COLORS: Record<SlaOutcome, string> = {
+  met: '#2C6A50', missed: '#C0442B', breached: '#8E2C1B', atRisk: '#D9A066', onTrack: '#8FCFAB', paused: '#B9C2BE',
+};
+const SLA_LABELS: Record<SlaOutcome, string> = {
+  met: 'Met', missed: 'Missed', breached: 'Breached (open)', atRisk: 'At risk', onTrack: 'On track', paused: 'Paused',
+};
+
+const outcomeSlices = (o: SlaOutcomes): Slice[] =>
+  SLA_OUTCOMES.map((k) => ({ label: SLA_LABELS[k], value: o[k], color: SLA_COLORS[k] })).filter((s) => s.value > 0);
+
+/** Green from 90%, amber from 70%, red below. */
+function MetPill({ pct: value }: { pct: number | null }) {
+  if (value == null) return <span className="text-jira-muted">—</span>;
+  const tone = value >= 90 ? 'bg-[#E3FCEF] text-[#1F4E3D]' : value >= 70 ? 'bg-[#FBF0DF] text-[#8A4B14]' : 'bg-[#FDE8E4] text-[#8E2C1B]';
+  return <span className={`inline-block rounded px-1.5 py-0.5 font-semibold ${tone}`}>{value}%</span>;
+}
+
+const duration = (m: number | null) => (m == null ? '—' : formatDuration(m));
+
+/** Where a running clock stands, for the attention table. */
+function ClockCell({ clock }: { clock: SlaClock | null }) {
+  if (!clock) return <span className="text-jira-muted">No goal</span>;
+  if (clock.completed) return <span className={clock.breached ? 'text-[#C0442B]' : 'text-[#2C6A50]'}>{clock.breached ? 'Missed' : 'Met'}</span>;
+  if (clock.breached) return <span className="font-semibold text-[#8E2C1B]">Breached {formatDuration(-clock.remainingMinutes)} ago</span>;
+  if (clock.paused) return <span className="text-jira-subtle">Paused · {formatDuration(clock.remainingMinutes)} left</span>;
+  const atRisk = clock.remainingMinutes <= clock.goalMinutes / 4;
+  return <span className={atRisk ? 'font-semibold text-[#8A4B14]' : ''}>{formatDuration(clock.remainingMinutes)} left</span>;
+}
+
+function SlaMonthlyChart({ months }: { months: SlaReport['perMonth'] }) {
+  const max = Math.max(...months.map((m) => m.met + m.missed), 1);
+  const height = 240;
+  const top = 18;
+  const bottom = 28;
+  const plot = height - top - bottom;
+  const w = 40;
+  const width = months.length * w;
+  return (
+    <>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ maxHeight: height }} role="img">
+        <line x1={0} x2={width} y1={top + plot} y2={top + plot} stroke="#DFE1E6" />
+        {months.map((m, i) => {
+          const x = i * w + w * 0.18;
+          const bw = w * 0.64;
+          const total = m.met + m.missed;
+          const hMet = (m.met / max) * plot;
+          const hMissed = (m.missed / max) * plot;
+          const share = total ? Math.round((m.met / total) * 100) : null;
+          return (
+            <g key={m.month}>
+              {hMet > 0 && <rect x={x} y={top + plot - hMet} width={bw} height={hMet} fill={SLA_COLORS.met}><title>{`${monthLabel(m.month)} · met: ${m.met}`}</title></rect>}
+              {hMissed > 0 && <rect x={x} y={top + plot - hMet - hMissed} width={bw} height={hMissed} fill={SLA_COLORS.missed}><title>{`${monthLabel(m.month)} · missed: ${m.missed}`}</title></rect>}
+              {share != null && <text x={x + bw / 2} y={top + plot - hMet - hMissed - 4} textAnchor="middle" fontSize={9} fill="#42526E">{share}%</text>}
+              <text x={x + bw / 2} y={top + plot + 14} textAnchor="middle" fontSize={8.5} fill="#42526E">{monthLabel(m.month)}</text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mt-2">
+        {(['met', 'missed'] as const).map((k) => (
+          <span key={k} className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: SLA_COLORS[k] }} /> {SLA_LABELS[k]}</span>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** Per portal: % of each clock met, as two bars. */
+function PortalCompliance({ portals }: { portals: SlaReport['byPortal'] }) {
+  if (!portals.length) return <p className="text-jira-muted text-sm py-10 text-center">No data</p>;
+  const bar = (value: number | null, color: string, label: string) => (
+    <div className="flex items-center gap-1.5" title={`${label}: ${value == null ? 'no decided requests yet' : `${value}% met`}`}>
+      <span className="w-6 text-[10px] text-jira-muted">{label}</span>
+      <div className="flex-1 h-2.5 bg-jira-gray rounded-sm overflow-hidden">
+        <div className="h-full rounded-sm" style={{ width: `${value ?? 0}%`, background: color }} />
+      </div>
+      <span className="w-9 text-right font-medium">{value == null ? '—' : `${value}%`}</span>
+    </div>
+  );
+  return (
+    <div className="space-y-3 text-xs">
+      {portals.map((p) => (
+        <div key={p.name}>
+          <div className="flex justify-between mb-1"><span className="font-medium truncate">{p.name}</span><span className="text-jira-muted">{p.requests} req.</span></div>
+          {bar(p.firstResponseMetPct, '#4CAF7D', 'FR')}
+          {bar(p.resolutionMetPct, '#1F4E3D', 'Res')}
+        </div>
+      ))}
+      <p className="text-[10px] text-jira-muted">FR: time to first response · Res: time to resolution</p>
+    </div>
+  );
+}
+
+function SlaPerformance({ data, pdf }: ReportProps) {
+  const sla = data.sla;
+  if (!sla) return null;
+  const openBreached = sla.attention.filter((r) => [r.firstResponse, r.resolution].some((c) => c && !c.completed && c.breached)).length;
+  const cards = [
+    { label: 'Requests in period', value: String(sla.requests) },
+    { label: 'First response SLA met', value: sla.firstResponse.metPct == null ? '—' : `${sla.firstResponse.metPct}%` },
+    { label: 'Resolution SLA met', value: sla.resolution.metPct == null ? '—' : `${sla.resolution.metPct}%` },
+    { label: 'Open & breached', value: String(openBreached) },
+  ];
+  const cols3 = pdf ? 'grid-cols-3' : 'grid-cols-1 lg:grid-cols-3';
+  // The PDF can't scroll sideways: let the attention table's cells wrap to fit the A4 width.
+  const nowrap = pdf ? '' : 'whitespace-nowrap';
+  const frSlices = outcomeSlices(sla.firstResponse);
+  const resSlices = outcomeSlices(sla.resolution);
+
+  return (
+    <div>
+      <Block className="mb-4">
+        <h2 className="text-xl font-semibold text-[#1F4E3D]">SLA Performance Report</h2>
+        <p className="text-xs text-jira-muted mb-4">
+          Requests raised {fmtDate(data.period.from)} – {fmtDate(data.period.to)} · clocks run around the clock and pause while waiting for the customer
+        </p>
+        {!sla.goalsSet && (
+          <p className="rounded-md bg-[#FBF0DF] text-[#8A4B14] px-3 py-2 text-sm mb-4">
+            This service desk has no SLA goals yet. Set them on the project page under Service desk → SLA goals.
+          </p>
+        )}
+        <div className={`grid gap-3 ${pdf ? 'grid-cols-4' : 'grid-cols-2 lg:grid-cols-4'}`}>
+          {cards.map((c) => (
+            <div key={c.label} className="rounded-md overflow-hidden border border-[#D9A066]">
+              <div className="px-3 py-1 text-[11px] font-semibold text-jira-subtle bg-white">{c.label}</div>
+              <div className="px-3 py-2 text-center font-semibold bg-[#D9A066] text-[#1F2D27] truncate">{c.value}</div>
+            </div>
+          ))}
+        </div>
+      </Block>
+
+      <Block className={`grid ${cols3} gap-4 mb-4`}>
+        <Panel title="Time to First Response" subtitle={`Average ${duration(sla.firstResponse.avgMinutes)} once answered`}>
+          <Donut slices={frSlices} /><Legend slices={frSlices} columns={2} />
+        </Panel>
+        <Panel title="Time to Resolution" subtitle={`Average ${duration(sla.resolution.avgMinutes)} once resolved`}>
+          <Donut slices={resSlices} /><Legend slices={resSlices} columns={2} />
+        </Panel>
+        <Panel title="Compliance by Portal" subtitle="Share of requests that met each goal">
+          <PortalCompliance portals={sla.byPortal} />
+        </Panel>
+      </Block>
+
+      <Block className={`grid ${pdf ? 'grid-cols-[3fr_2fr]' : 'grid-cols-1 lg:grid-cols-[3fr_2fr]'} gap-4 mb-4`}>
+        <Panel title="Compliance by Priority" subtitle="Goal vs. average time, and share met">
+          <div className="overflow-x-auto">
+            <table className="data-table text-xs bg-white">
+              <thead>
+                <tr>
+                  <th>Priority</th>
+                  <th className="text-right">Requests</th>
+                  <th>First response goal / avg</th>
+                  <th>Met</th>
+                  <th>Resolution goal / avg</th>
+                  <th>Met</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sla.byPriority.map((p) => (
+                  <tr key={p.priority}>
+                    <td className="whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full" style={{ background: PRIORITY_COLORS[p.priority] }} />
+                        {priorityLabel(p.priority)}
+                      </span>
+                    </td>
+                    <td className="text-right">{p.requests}</td>
+                    <td className="whitespace-nowrap">{duration(p.firstResponseGoal)} / {duration(p.firstResponseAvg)}</td>
+                    <td><MetPill pct={p.firstResponseMetPct} /></td>
+                    <td className="whitespace-nowrap">{duration(p.resolutionGoal)} / {duration(p.resolutionAvg)}</td>
+                    <td><MetPill pct={p.resolutionMetPct} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {sla.byPriority.length === 0 && <p className="text-jira-muted text-sm py-6 text-center">No requests in the period</p>}
+        </Panel>
+        <Panel title="Resolution SLA per Month" subtitle="Whole project · 12 months to the end of the period · by resolution date">
+          <SlaMonthlyChart months={sla.perMonth} />
+        </Panel>
+      </Block>
+
+      <Block className="mb-0">
+        <div className="rounded-md px-5 py-4 text-white bg-gradient-to-r from-[#1F4E3D] to-[#2E8B57]">
+          <h2 className="text-lg font-semibold">Requests Needing Attention ({sla.attention.length})</h2>
+          <p className="text-xs text-white/80 mt-0.5">Open requests whose first response or resolution clock is breached or has under a quarter of its goal left · most urgent first</p>
+        </div>
+      </Block>
+      {sla.attention.length === 0 ? (
+        <Block className="pt-3"><p className="text-sm text-jira-muted">Nothing is breached or at risk right now.</p></Block>
+      ) : (
+        <Block table className={`pt-3 ${pdf ? '' : 'overflow-x-auto'}`}>
+          <table className="data-table text-xs bg-white">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Summary</th>
+                <th>Priority</th>
+                <th>Portal</th>
+                <th>Status</th>
+                <th>Assignee</th>
+                <th>First response</th>
+                <th>Resolution</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sla.attention.map((r) => (
+                <tr key={r.key}>
+                  <td className="whitespace-nowrap"><Link to={`/browse/${r.key}`} className="link">{r.key}</Link></td>
+                  <td className={pdf ? '' : 'min-w-[200px]'}>{r.summary}{r.organization && <span className="block text-[10px] text-jira-muted">{r.organization}</span>}</td>
+                  <td className={nowrap}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full" style={{ background: PRIORITY_COLORS[r.priority] }} />
+                      {priorityLabel(r.priority)}
+                    </span>
+                  </td>
+                  <td className={nowrap}>{r.portal ?? '—'}</td>
+                  <td className={nowrap}>{r.statusName}</td>
+                  <td className={nowrap}>{r.assignee ?? <span className="text-jira-muted">Unassigned</span>}</td>
+                  <td className={nowrap}><ClockCell clock={r.firstResponse} /></td>
+                  <td className={nowrap}><ClockCell clock={r.resolution} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Block>
+      )}
+    </div>
+  );
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'status', label: 'Status dashboard', Component: StatusDashboard },
-  { id: 'timeline', label: 'Issue timeline', Component: IssueTimeline },
-  { id: 'priority', label: 'Priority analysis', Component: PriorityAnalysis },
-  { id: 'open', label: 'Open issues', Component: OpenIssues },
+  { id: 'status', label: 'Status dashboard', Component: StatusDashboard, serviceDesk: false },
+  { id: 'timeline', label: 'Issue timeline', Component: IssueTimeline, serviceDesk: false },
+  { id: 'priority', label: 'Priority analysis', Component: PriorityAnalysis, serviceDesk: false },
+  { id: 'open', label: 'Open issues', Component: OpenIssues, serviceDesk: false },
+  // Only for service desk projects, which have SLAs.
+  { id: 'sla', label: 'SLA performance', Component: SlaPerformance, serviceDesk: true },
 ] as const;
 
 /** CSS width the PDF is laid out at; it is scaled to the 190 mm printable width of A4. */
@@ -478,13 +720,14 @@ export default function ReportsPage() {
   const [exporting, setExporting] = useState(false);
   const pdfRoot = useRef<HTMLDivElement>(null);
   const exportRunning = useRef(false);
-  const tab = TABS.find((t) => t.id === params.get('tab'))?.id ?? 'status';
   const from = params.get('from') ?? '';
   const to = params.get('to') ?? '';
   const { data, isLoading, error } = useQuery({
     queryKey: ['reports', from, to],
     queryFn: () => api.getReport(from || undefined, to || undefined),
   });
+  const tabs = TABS.filter((t) => !t.serviceDesk || !!data?.sla);
+  const tab = tabs.find((t) => t.id === params.get('tab'))?.id ?? 'status';
 
   // Once the off-screen PDF layout has rendered, capture it page by page.
   useEffect(() => {
@@ -501,7 +744,7 @@ export default function ReportsPage() {
         const { exportReportPdf } = await import('../reports/pdf');
         await exportReportPdf(root, {
           filename: `${data.project.key}-report-${data.period.from}-to-${data.period.to}.pdf`,
-          footer: `JiraTech · ${data.project.name} (${data.project.key}) · ${fmtDate(data.period.from)} – ${fmtDate(data.period.to)} · generated ${new Date().toLocaleString('en-GB')}`,
+          footer: `Conductor · ${data.project.name} (${data.project.key}) · ${fmtDate(data.period.from)} – ${fmtDate(data.period.to)} · generated ${new Date().toLocaleString('en-GB')}`,
         });
       } catch (e) {
         toast(`Could not create the PDF: ${errorMessage(e)}`, 'error');
@@ -531,7 +774,7 @@ export default function ReportsPage() {
     const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - months + 1, 1));
     update({ from: isoDay(start), to: isoDay(end) });
   };
-  const Active = TABS.find((t) => t.id === tab)!.Component;
+  const Active = tabs.find((t) => t.id === tab)!.Component;
 
   return (
     <div>
@@ -558,15 +801,15 @@ export default function ReportsPage() {
           ))}
         </div>
       </PageHeader>
-      <div className="flex gap-1 border-b border-jira-border mb-5" role="tablist">
-        {TABS.map((t) => (
+      <div className="flex gap-1 border-b border-jira-border mb-5 overflow-x-auto [scrollbar-width:none]" role="tablist">
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
             role="tab"
             aria-selected={tab === t.id}
             onClick={() => update({ tab: t.id === 'status' ? '' : t.id })}
-            className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t.id ? 'border-[#2E8B57] text-[#1F4E3D]' : 'border-transparent text-jira-subtle hover:text-jira-navy'}`}
+            className={`px-3 py-2 text-sm font-medium whitespace-nowrap -mb-px border-b-2 ${tab === t.id ? 'border-[#2E8B57] text-[#1F4E3D]' : 'border-transparent text-jira-subtle hover:text-jira-navy'}`}
           >
             {t.label}
           </button>
@@ -576,7 +819,7 @@ export default function ReportsPage() {
       {isLoading ? <Spinner label="Building reports…" /> : error ? (
         <EmptyState title="Reports unavailable">{errorMessage(error)}</EmptyState>
       ) : data && (
-        <div className="bg-[#F3F6F1] -mx-6 px-6 py-5">
+        <div className="bg-[#F3F6F1] -mx-4 px-4 sm:-mx-6 sm:px-6 py-5">
           <Active data={data} />
         </div>
       )}
@@ -584,7 +827,7 @@ export default function ReportsPage() {
       {/* The full report pack at a fixed A4-proportioned width, rendered off screen while exporting. */}
       {exporting && data && (
         <div ref={pdfRoot} aria-hidden="true" className="fixed top-0 bg-[#F3F6F1]" style={{ left: -20000, width: PDF_WIDTH_PX }}>
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <div key={t.id} data-pdf-section="">
               <t.Component data={data} pdf />
             </div>

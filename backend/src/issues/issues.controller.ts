@@ -3,13 +3,14 @@ import {
   UseInterceptors, UploadedFile, Res, StreamableFile, BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { IssueStatus, IssueType } from '@prisma/client';
 import { Response } from 'express';
 import * as fs from 'fs';
 import { IssuesService } from './issues.service';
 import {
   CreateIssueDto, UpdateIssueDto, TransitionDto, CreateLinkDto,
-  AddWatcherDto, CreateWorkLogDto, UpdateCustomFieldsDto, CommentDto, BulkDto,
+  AddWatcherDto, CreateWorkLogDto, UpdateCustomFieldsDto, CommentDto, BulkDto, MoveIssueDto,
 } from './dto/issue.dto';
 import { JwtAuthGuard } from '../auth/guards';
 import { ProjectKey } from '../common/project-key.decorator';
@@ -17,6 +18,7 @@ import { AuthRequest } from '../common/auth-user';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
 import { AccessService } from '../access/access.service';
 import { BulkService } from './bulk.service';
+import { MoveService } from './move.service';
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const ISSUE = { from: 'issueParam', param: 'id' } as const;
@@ -24,7 +26,7 @@ const ISSUE = { from: 'issueParam', param: 'id' } as const;
 @Controller('issues')
 @UseGuards(JwtAuthGuard, AccessGuard)
 export class IssuesController {
-  constructor(private issuesService: IssuesService, private access: AccessService, private bulk: BulkService) {}
+  constructor(private issuesService: IssuesService, private access: AccessService, private bulk: BulkService, private mover: MoveService) {}
 
   /** Apply one change to many issues; checked per issue. Declared before ":id" routes. */
   @Post('bulk')
@@ -94,6 +96,20 @@ export class IssuesController {
     return this.issuesService.transition(id, dto, req.user.id);
   }
 
+  /** What moving to another project would change (statuses to choose from, fields that would be dropped). */
+  @Get(':id/move')
+  @RequireAccess('edit', ISSUE)
+  movePreview(@Param('id') id: string, @Query('to') to: string, @Request() req: AuthRequest) {
+    if (!to) throw new BadRequestException('Choose the project to move to (?to=KEY)');
+    return this.mover.preview(id, to, req.user);
+  }
+
+  @Post(':id/move')
+  @RequireAccess('edit', ISSUE)
+  move(@Param('id') id: string, @Body() dto: MoveIssueDto, @Request() req: AuthRequest) {
+    return this.mover.move(id, dto, req.user);
+  }
+
   @Get(':id/transitions')
   @RequireAccess('browse', ISSUE)
   transitions(@Param('id') id: string) {
@@ -131,7 +147,7 @@ export class IssuesController {
   @Post(':id/comments')
   @RequireAccess('browse', ISSUE)
   addComment(@Param('id') id: string, @Body() dto: CommentDto, @Request() req: AuthRequest) {
-    return this.issuesService.addComment(id, req.user.id, dto.body);
+    return this.issuesService.addComment(id, req.user, dto.body, { internal: dto.internal });
   }
 
   @Patch(':id/comments/:commentId')
@@ -192,6 +208,8 @@ export class IssuesController {
 
   @Post(':id/attachments')
   @RequireAccess('edit', ISSUE)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_ATTACHMENT_BYTES } }))
   addAttachment(
     @Param('id') id: string,

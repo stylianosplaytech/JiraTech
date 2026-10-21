@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { IssueStatus, IssueType, Priority } from '@prisma/client';
+import { IssueStatus, IssueType, Priority, ProjectType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveProject } from '../common/project.util';
+import { computeSla, SlaClock } from '../common/sla';
 
 /** Broad buckets used where the report groups many issue types together. */
 export type TypeGroup = 'EPIC' | 'STORY' | 'BUG' | 'TASK' | 'OTHER';
@@ -167,7 +168,9 @@ export class ReportsService {
     const openPriorityCounts = count(open.map((i) => i.priority));
 
     const doing = issues.some((i) => i.status === IssueStatus.DOING);
+    const sla = project.type === ProjectType.SERVICE_DESK ? await this.slaReport(project.id, from, to, monthsStart, now) : null;
     return {
+      sla,
       project: { key: project.key, name: project.name },
       period: { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) },
       generatedAt: now,
@@ -190,4 +193,137 @@ export class ReportsService {
       openIssues: openRows,
     };
   }
+
+  /**
+   * Service desks: how well SLA goals were kept for requests raised in the period (both clocks), by priority
+   * and by portal, the resolution SLA per month (whole project, 12 months to the end of the period, by
+   * resolution date) and the open requests that are breached or close to it.
+   */
+  private async slaReport(projectId: string, from: Date, to: Date, monthsStart: Date, now: Date) {
+    const select = {
+      id: true, key: true, summary: true, priority: true, status: true, createdAt: true,
+      firstRespondedAt: true, resolvedAt: true, slaPausedAt: true, slaPausedSeconds: true,
+      workflowStatus: { select: { name: true } },
+      assignee: { select: { name: true } },
+      portal: { select: { name: true } },
+      organization: { select: { name: true } },
+    } as const;
+    const [targets, requests, resolvedInWindow] = await Promise.all([
+      this.prisma.slaTarget.findMany({ where: { projectId } }),
+      this.prisma.issue.findMany({ where: { projectId, createdAt: { gte: from, lte: to } }, select, orderBy: { createdAt: 'asc' } }),
+      this.prisma.issue.findMany({ where: { projectId, resolvedAt: { gte: monthsStart, lte: to } }, select }),
+    ]);
+    const goals = new Map(targets.map((t) => [t.priority, t]));
+    const withSla = <T extends (typeof requests)[number]>(i: T) => ({ ...i, sla: computeSla(i, goals.get(i.priority), now) });
+    const rows = requests.map(withSla);
+
+    type Row = (typeof rows)[number];
+    /** Outcome counts of one clock over some requests, the share that met the goal, and the average time once it stopped. */
+    const summarize = (list: Row[], pick: (r: Row) => SlaClock | null) => {
+      const counts: Record<Outcome, number> = { met: 0, missed: 0, breached: 0, atRisk: 0, onTrack: 0, paused: 0, noGoal: 0 };
+      const done: number[] = [];
+      for (const r of list) {
+        const c = pick(r);
+        counts[slaOutcome(c)]++;
+        if (c?.completed) done.push(c.elapsedMinutes);
+      }
+      return {
+        ...counts,
+        metPct: metShare(counts),
+        avgMinutes: done.length ? Math.round(done.reduce((a, b) => a + b, 0) / done.length) : null,
+      };
+    };
+    const group = <K extends string>(keyOf: (r: Row) => K) => {
+      const map = new Map<K, Row[]>();
+      for (const r of rows) map.set(keyOf(r), [...(map.get(keyOf(r)) ?? []), r]);
+      return map;
+    };
+
+    const byPriorityMap = group((r) => r.priority);
+    const byPriority = PRIORITY_ORDER.filter((p) => byPriorityMap.has(p)).map((p) => {
+      const list = byPriorityMap.get(p)!;
+      const fr = summarize(list, (r) => r.sla.firstResponse);
+      const res = summarize(list, (r) => r.sla.resolution);
+      return {
+        priority: p,
+        requests: list.length,
+        firstResponseGoal: goals.get(p)?.firstResponseMinutes ?? null,
+        firstResponseAvg: fr.avgMinutes,
+        firstResponseMetPct: fr.metPct,
+        resolutionGoal: goals.get(p)?.resolutionMinutes ?? null,
+        resolutionAvg: res.avgMinutes,
+        resolutionMetPct: res.metPct,
+      };
+    });
+
+    const byPortalMap = group((r) => r.portal?.name ?? 'No portal');
+    const byPortal = [...byPortalMap.entries()].map(([name, list]) => ({
+      name,
+      requests: list.length,
+      firstResponseMetPct: summarize(list, (r) => r.sla.firstResponse).metPct,
+      resolutionMetPct: summarize(list, (r) => r.sla.resolution).metPct,
+    })).sort((a, b) => b.requests - a.requests);
+
+    // Resolution SLA per month, by when requests were resolved.
+    const perMonth = Array.from({ length: 12 }, (_, n) => {
+      const d = new Date(Date.UTC(monthsStart.getUTCFullYear(), monthsStart.getUTCMonth() + n, 1));
+      return { month: d.toISOString().slice(0, 7), met: 0, missed: 0 };
+    });
+    for (const r of resolvedInWindow.map(withSla)) {
+      const clock = r.sla.resolution;
+      if (!clock || !r.resolvedAt) continue;
+      const m = perMonth.find((x) => x.month === r.resolvedAt!.toISOString().slice(0, 7));
+      if (m) m[clock.breached ? 'missed' : 'met']++;
+    }
+
+    // Open requests needing attention: a running clock that is breached or at risk, most urgent first.
+    const urgency = (r: Row) => Math.min(
+      ...[r.sla.firstResponse, r.sla.resolution].filter((c): c is SlaClock => !!c && !c.completed && !c.paused).map((c) => c.remainingMinutes),
+      Number.MAX_SAFE_INTEGER,
+    );
+    const attention = rows
+      .filter((r) => r.status !== IssueStatus.CLOSED)
+      .filter((r) => [r.sla.firstResponse, r.sla.resolution].some((c) => ['breached', 'atRisk'].includes(slaOutcome(c))))
+      .sort((a, b) => urgency(a) - urgency(b))
+      .map((r) => ({
+        key: r.key,
+        summary: r.summary,
+        priority: r.priority,
+        statusName: r.workflowStatus?.name ?? r.status,
+        portal: r.portal?.name ?? null,
+        organization: r.organization?.name ?? null,
+        assignee: r.assignee?.name ?? null,
+        createdAt: r.createdAt,
+        firstResponse: r.sla.firstResponse,
+        resolution: r.sla.resolution,
+      }));
+
+    return {
+      goalsSet: targets.some((t) => t.firstResponseMinutes != null || t.resolutionMinutes != null),
+      requests: rows.length,
+      firstResponse: summarize(rows, (r) => r.sla.firstResponse),
+      resolution: summarize(rows, (r) => r.sla.resolution),
+      byPriority,
+      byPortal,
+      perMonth,
+      attention,
+    };
+  }
+}
+
+type Outcome = 'met' | 'missed' | 'breached' | 'atRisk' | 'onTrack' | 'paused' | 'noGoal';
+
+/** Where one SLA clock stands: kept or missed once it stopped; otherwise breached, at risk (under a quarter left), on track or paused. */
+function slaOutcome(c: SlaClock | null): Outcome {
+  if (!c) return 'noGoal';
+  if (c.completed) return c.breached ? 'missed' : 'met';
+  if (c.breached) return 'breached';
+  if (c.paused) return 'paused';
+  return c.remainingMinutes <= c.goalMinutes / 4 ? 'atRisk' : 'onTrack';
+}
+
+/** Share of decided clocks that met the goal: met vs. missed or already breached (a breach can't be met any more). */
+function metShare(t: { met: number; missed: number; breached: number }) {
+  const decided = t.met + t.missed + t.breached;
+  return decided ? Math.round((t.met / decided) * 100) : null;
 }

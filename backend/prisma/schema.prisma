@@ -21,6 +21,13 @@ enum UserRole {
   RELEASE_MANAGER
   SCRUM_MASTER
   TEAM_LEAD
+  /// Service desk customer: can only use the help center portal
+  CUSTOMER
+}
+
+enum ProjectType {
+  SOFTWARE
+  SERVICE_DESK
 }
 
 enum ComponentType {
@@ -100,6 +107,12 @@ enum EscalationAction {
   REOPEN
 }
 
+/// How a service desk request came in (null for ordinary issues and requests from before this was recorded)
+enum IssueSource {
+  EMAIL
+  PORTAL
+}
+
 enum CustomFieldType {
   TEXT
   NUMBER
@@ -119,6 +132,8 @@ model User {
   role         UserRole @default(DEVELOPER)
   /// Send an email for each notification (in-app notifications are always on)
   emailNotifications Boolean @default(true)
+  /// Added without a password and invited by email to choose one; false once they have
+  invitePending Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -133,9 +148,76 @@ model User {
   comments         Comment[]
   historyEntries   IssueHistory[]
   savedFilters     SavedFilter[]
+  dashboards       Dashboard[]
   notifications    Notification[]    @relation("NotificationRecipient")
   projectMemberships ProjectMember[]
   notificationsSent Notification[]   @relation("NotificationActor")
+  customerOf       ProjectCustomer[]
+  organizations    OrganizationMember[]
+  portalAccess     PortalCustomer[]
+  portalExclusions PortalExclusion[]
+  passwordTokens   PasswordToken[]
+  emailsSent       IssueEmail[]
+  emailTemplates   EmailTemplate[]
+  recipientGroups  RecipientGroupUser[]
+  noticeTemplates  NoticeTemplate[]
+  noticesSent      ServiceNotice[]
+  noticeFiles      NoticeFile[]
+  apiTokens        ApiToken[]
+  webhooksCreated  Webhook[]
+  automationRules  AutomationRule[]
+  inboundWebhooks  InboundWebhook[]
+}
+
+/** A one-time link for choosing a password (the welcome email); deleted once used. Only a hash of the token is stored. */
+model PasswordToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/**
+ * Outgoing email for the whole application (notifications of every project, welcome emails). A single row.
+ * When it has no SMTP server, the SMTP_* environment variables are used, and without those emails go to backend/mail-outbox.
+ */
+model MailSettings {
+  id           String   @id @default("default")
+  smtpHost     String?
+  smtpPort     Int      @default(587)
+  /// TLS from the start (port 465); otherwise STARTTLS when the server offers it
+  smtpSecure   Boolean  @default(false)
+  smtpUser     String?
+  /// Encrypted with MAIL_SECRET (or JWT_SECRET); never sent to the browser
+  smtpPassword String?
+  fromName     String?
+  fromAddress  String?
+  /// The address people open Conductor at, used for links in emails (otherwise APP_URL)
+  appUrl       String?
+  /// How email is sent: an SMTP server, or a Gmail account through Google's API (HTTPS, for hosts that block SMTP)
+  transport    MailTransport @default(SMTP)
+  /// Google Cloud OAuth client the Gmail account is connected through
+  gmailClientId     String?
+  /// Encrypted like smtpPassword
+  gmailClientSecret String?
+  /// Encrypted; lets Conductor send as the connected account until it is disconnected or revoked in Google
+  gmailRefreshToken String?
+  /// The connected Gmail address (emails are sent from it)
+  gmailAccount      String?
+  /// Who is emailed about each issue event, as JSON {event: [recipient, ...]}; null = the built-in defaults.
+  /// A project can override it (Project.notificationScheme).
+  notificationScheme String?
+  updatedAt    DateTime @updatedAt
+}
+
+enum MailTransport {
+  SMTP
+  GMAIL
 }
 
 // ─── Project ─────────────────────────────────────────────────────────────────
@@ -152,6 +234,14 @@ model Project {
   strictHierarchy Boolean  @default(true)
   /// What people who aren't project members can do
   defaultAccess   ProjectAccess @default(MEMBER)
+  type            ProjectType   @default(SOFTWARE)
+  /// Legacy, from before a project could have several portals: copied into its first Portal at startup, no longer read.
+  portalOpen      Boolean       @default(true)
+  portalWelcome   String?
+  portalColor     String?
+  portalLogo      String?
+  /// Who is emailed about each issue event in this project (JSON, like MailSettings.notificationScheme); null = the global one
+  notificationScheme String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -166,6 +256,17 @@ model Project {
   programIncrements     ProgramIncrement[]
   labels                Label[]
   customFieldDefinitions CustomFieldDefinition[]
+  requestTypes          RequestType[]
+  slaTargets            SlaTarget[]
+  queues                Queue[]
+  customers             ProjectCustomer[]
+  organizations         ProjectOrganization[]
+  portals               Portal[]
+  emailChannel          EmailChannel?
+  emailTemplates        EmailTemplate[]
+  webhooks              Webhook[]
+  automationRules       AutomationRule[]
+  inboundWebhooks       InboundWebhook[]
 }
 
 // ─── Components ──────────────────────────────────────────────────────────────
@@ -279,6 +380,7 @@ model CustomFieldDefinition {
 
   project Project            @relation(fields: [projectId], references: [id])
   values  CustomFieldValue[]
+  requestTypes RequestTypeField[]
 
   @@unique([projectId, key])
 }
@@ -324,6 +426,19 @@ model Issue {
   reporterId        String?
   sprintId          String?
   piId              String?
+  /// Service desk request type (null for ordinary issues)
+  requestTypeId     String?
+  /// Service desks: the customer organization this request is shared with
+  organizationId    String?
+  /// Service desks: the portal it was raised through
+  portalId          String?
+  /// Service desks: raised by email or on the portal
+  source            IssueSource?
+  /// SLA clocks: first public reply by an agent, when it was resolved, and time spent paused
+  firstRespondedAt  DateTime?
+  resolvedAt        DateTime?
+  slaPausedAt       DateTime?
+  slaPausedSeconds  Int              @default(0)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -335,6 +450,9 @@ model Issue {
   reporter          User?              @relation("Reporter", fields: [reporterId], references: [id])
   sprint            Sprint?            @relation(fields: [sprintId], references: [id])
   pi                ProgramIncrement?  @relation(fields: [piId], references: [id])
+  requestType       RequestType?       @relation(fields: [requestTypeId], references: [id], onDelete: SetNull)
+  organization      Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  portal            Portal?            @relation(fields: [portalId], references: [id], onDelete: SetNull)
   components        IssueComponent[]
   versions          IssueVersion[]
   linksFrom         IssueLink[]        @relation("LinkSource")
@@ -348,10 +466,23 @@ model Issue {
   comments          Comment[]
   history           IssueHistory[]
   notifications     Notification[]
+  emails            IssueEmail[]
+  previousKeys      IssueKeyAlias[]
 
   @@index([projectId, type])
   @@index([projectId, status])
   @@index([parentId])
+}
+
+/// A key the issue had before it was moved to another project; looking it up still finds the issue.
+model IssueKeyAlias {
+  key       String   @id
+  issueId   String
+  createdAt DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId])
 }
 
 model IssueWatcher {
@@ -413,6 +544,7 @@ model Attachment {
 
   issue      Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
   uploadedBy User  @relation(fields: [uploadedById], references: [id])
+  emails     IssueEmailAttachment[]
 }
 
 // ─── Work Logs ───────────────────────────────────────────────────────────────
@@ -465,11 +597,15 @@ model Comment {
   issueId   String
   authorId  String
   body      String
+  /// Internal notes are only visible to agents, never to service desk customers
+  internal  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   issue  Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
   author User  @relation(fields: [authorId], references: [id])
+  /// Set when the comment is an email received or sent on a service desk request
+  email  IssueEmail?
 
   @@index([issueId, createdAt])
 }
@@ -503,12 +639,59 @@ model SavedFilter {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  gadgets DashboardGadget[]
+}
+
+// ─── Dashboards ──────────────────────────────────────────────────────────────
+
+enum GadgetType {
+  FILTER_RESULTS // the issues a saved filter finds
+  FILTER_COUNT   // how many issues a saved filter finds
+  BREAKDOWN      // a saved filter's issues counted by status, priority, type, assignee, reporter or project
+  TREND          // how many of a saved filter's issues were created each day or week
+  CREATED_VS_RESOLVED // created and resolved per day or week, side by side
+}
+
+model Dashboard {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  shared      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  gadgets DashboardGadget[]
+
+  @@index([ownerId])
+}
+
+model DashboardGadget {
+  id          String     @id @default(cuid())
+  dashboardId String
+  type        GadgetType
+  title       String
+  /// Cleared (not deleted) when the saved filter is deleted, so the gadget can say so
+  filterId    String?
+  /// JSON: { maxRows?, groupBy?, chart?: 'bars' | 'donut' | 'pie' | 'line', days?: number, bucket?: 'day' | 'week' }
+  config      String     @default("{}")
+  position    Int        @default(0)
+  /// Spans both columns
+  wide        Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+
+  dashboard Dashboard    @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  filter    SavedFilter? @relation(fields: [filterId], references: [id], onDelete: SetNull)
+
+  @@index([dashboardId, position])
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────
 
 enum NotificationType {
+  CREATED
   ASSIGNED
   MENTIONED
   COMMENTED
@@ -577,6 +760,8 @@ model WorkflowStatus {
   name      String
   category  IssueStatus
   position  Int         @default(0)
+  /// Service desks: SLA clocks pause while a request is in this status (e.g. "Waiting for customer")
+  pausesSla Boolean     @default(false)
   createdAt DateTime    @default(now())
 
   project         Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -600,4 +785,679 @@ model WorkflowTransition {
   toStatus   WorkflowStatus @relation("TransitionTo", fields: [toStatusId], references: [id], onDelete: Cascade)
 
   @@unique([fromStatusId, toStatusId])
+}
+
+// ─── Service desk ────────────────────────────────────────────────────────────
+
+/** What customers can ask for on the portal, e.g. "Get IT help" or "Request access". */
+model RequestType {
+  id          String    @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  /// Issue type the request is created as
+  issueType   IssueType @default(TASK)
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fields  RequestTypeField[]
+  issues  Issue[]
+  portals PortalRequestType[]
+  emailChannels EmailChannel[]
+
+  @@unique([projectId, name])
+}
+
+/** A project custom field shown on a request type's portal form. */
+model RequestTypeField {
+  requestTypeId String
+  fieldId       String
+  required      Boolean @default(false)
+  position      Int     @default(0)
+
+  requestType RequestType           @relation(fields: [requestTypeId], references: [id], onDelete: Cascade)
+  field       CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@id([requestTypeId, fieldId])
+}
+
+/** SLA goals per priority, in minutes (null = no goal). Clocks run around the clock. */
+model SlaTarget {
+  projectId            String
+  priority             Priority
+  firstResponseMinutes Int?
+  resolutionMinutes    Int?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, priority])
+}
+
+/** An agent queue: a named JQL filter within the service desk project. */
+model Queue {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  jql       String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+}
+
+/** Legacy (one portal per project): copied into the project's first Portal at startup, no longer read. */
+model ProjectCustomer {
+  projectId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+}
+
+/** A customer company. Members see requests shared with it; service desks can grant their help center to it. */
+model Organization {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members  OrganizationMember[]
+  projects ProjectOrganization[]
+  portals  PortalOrganization[]
+  issues   Issue[]
+  recipientGroups RecipientGroupOrganization[]
+}
+
+model OrganizationMember {
+  organizationId String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, userId])
+  @@index([userId])
+}
+
+/** Legacy (one portal per project): copied into the project's first Portal at startup, no longer read. */
+model ProjectOrganization {
+  projectId      String
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, organizationId])
+  @@index([organizationId])
+}
+
+/**
+ * A customer-facing help center for a service desk project. A project can have several, e.g. one per client
+ * company, all feeding the same project and team. Each has its own link (/portal/:slug), branding, request types
+ * and the customers / organizations allowed to use it.
+ */
+model Portal {
+  id        String   @id @default(cuid())
+  /// URL name: lowercase letters, digits and hyphens, unique across all portals
+  slug      String   @unique
+  name      String
+  projectId String
+  /// Any customer may use it (otherwise only the listed organizations and customers)
+  open      Boolean  @default(false)
+  welcome   String?
+  /// Accent colour, #RRGGBB
+  color     String?
+  /// Logo as an image data URL
+  logo      String?
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project       Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organizations PortalOrganization[]
+  customers     PortalCustomer[]
+  /// Customers kept off it although it's open or serves one of their organizations
+  exclusions    PortalExclusion[]
+  /// Request types offered here; none listed means all of the project's
+  requestTypes  PortalRequestType[]
+  issues        Issue[]
+  emailChannels EmailChannel[]
+
+  @@index([projectId])
+}
+
+model PortalOrganization {
+  portalId       String
+  organizationId String
+
+  portal       Portal       @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([portalId, organizationId])
+  @@index([organizationId])
+}
+
+model PortalCustomer {
+  portalId String
+  userId   String
+
+  portal Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([portalId, userId])
+  @@index([userId])
+}
+
+/** A customer who may not use a portal they would otherwise reach (it's open, or serves one of their organizations). */
+model PortalExclusion {
+  portalId String
+  userId   String
+
+  portal Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([portalId, userId])
+  @@index([userId])
+}
+
+model PortalRequestType {
+  portalId      String
+  requestTypeId String
+
+  portal      Portal      @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  requestType RequestType @relation(fields: [requestTypeId], references: [id], onDelete: Cascade)
+
+  @@id([portalId, requestTypeId])
+}
+
+/**
+ * A service desk's email address. The mailbox is read over IMAP: each new email becomes a request,
+ * and replies whose subject mentions an existing request (e.g. "(HELP-12)") are added to it as comments.
+ */
+model EmailChannel {
+  id            String   @id @default(cuid())
+  projectId     String   @unique
+  /// The address customers write to, unique across service desks; also the Reply-To of emails sent to customers
+  address       String   @unique
+  /// Polled only when enabled (and the mailbox settings are complete)
+  enabled       Boolean  @default(false)
+  imapHost      String?
+  imapPort      Int      @default(993)
+  /// TLS from the start (port 993); otherwise STARTTLS when the server offers it
+  imapSecure    Boolean  @default(true)
+  imapUser      String?
+  /// Encrypted with MAIL_SECRET (or JWT_SECRET); never sent to the browser
+  imapPassword  String?
+  imapFolder    String   @default("INBOX")
+  /// Where new requests are filed when the sender's own portal can't be told (null: the project's first portal)
+  portalId      String?
+  /// Request type of new requests (null: the portal's first)
+  requestTypeId String?
+  /// Unknown senders get a customer account; otherwise only existing customers of the service desk are accepted
+  createCustomers Boolean @default(true)
+  /// Defined by EMAIL_<KEY>_* environment variables: applied at every start, read-only in the app, and the password
+  /// stays in the environment (imapPassword is null)
+  fromEnvironment Boolean @default(false)
+  lastCheckedAt DateTime?
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  portal      Portal?        @relation(fields: [portalId], references: [id], onDelete: SetNull)
+  requestType RequestType?   @relation(fields: [requestTypeId], references: [id], onDelete: SetNull)
+  messages    EmailMessage[]
+}
+
+enum EmailOutcome {
+  /// A new request was raised
+  CREATED
+  /// Added as a reply to an existing request
+  COMMENTED
+  /// Deliberately skipped (auto-reply, unknown sender…)
+  IGNORED
+  FAILED
+}
+
+/** One email the channel received, and what became of it. Also stops a message being processed twice. */
+model EmailMessage {
+  id         String       @id @default(cuid())
+  channelId  String
+  /// The Message-ID header (or a hash of the message when it has none)
+  messageId  String
+  fromEmail  String?
+  fromName   String?
+  subject    String?
+  outcome    EmailOutcome
+  /// Why it was ignored or failed
+  detail     String?
+  issueKey   String?
+  /// Sent with "Send a test email" rather than received in the mailbox
+  test       Boolean      @default(false)
+  receivedAt DateTime     @default(now())
+
+  channel EmailChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, messageId])
+  @@index([channelId, receivedAt])
+}
+
+// ─── Emails on service desk requests ─────────────────────────────────────────
+
+enum EmailDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum EmailStatus {
+  SENT
+  FAILED
+}
+
+/**
+ * An email received on a request or sent from it. Each is also shown as a comment (commentId; deleting the comment
+ * deletes the email), except the email that raised the request, whose text became its description.
+ */
+model IssueEmail {
+  id         String         @id @default(cuid())
+  issueId    String
+  commentId  String?        @unique
+  direction  EmailDirection
+  /// The Message-ID header, without angle brackets; replies point at it with In-Reply-To / References
+  messageId  String
+  inReplyTo  String?
+  /// Space-separated Message-IDs of the earlier emails in the thread
+  references String?
+  fromEmail  String
+  fromName   String?
+  /// JSON arrays of {email, name}
+  to         String         @default("[]")
+  cc         String         @default("[]")
+  bcc        String         @default("[]")
+  /// Where replies should go when the sender asked for somewhere else than From
+  replyTo    String?
+  subject    String
+  /// Sanitized HTML, quoted earlier messages included (as the email was sent or received)
+  html       String
+  text       String         @default("")
+  sentById   String?
+  status     EmailStatus    @default(SENT)
+  error      String?
+  createdAt  DateTime       @default(now())
+
+  issue       Issue                  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  comment     Comment?               @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  sentBy      User?                  @relation(fields: [sentById], references: [id], onDelete: SetNull)
+  attachments IssueEmailAttachment[]
+
+  @@index([issueId, createdAt])
+  @@index([messageId])
+}
+
+model IssueEmailAttachment {
+  emailId      String
+  attachmentId String
+
+  email      IssueEmail @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@id([emailId, attachmentId])
+}
+
+/** A ready-made email agents start from: global (projectId null, managed by admins) or a service desk's own. */
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  projectId   String?
+  name        String
+  /// Optional: used as the subject when picked for a new email (replies keep "Re: …")
+  subject     String?
+  /// Rich-text HTML with {{placeholders}}
+  body        String
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+}
+
+/**
+ * A named list of recipients agents can put in an email's To, Cc or Bcc in one go: people, whole organizations (their
+ * members when the email is sent) and addresses of people without an account. Managed by global admins.
+ */
+model RecipientGroup {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  /// JSON array of {email, name}: people without an account, e.g. a supplier
+  addresses   String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users         RecipientGroupUser[]
+  organizations RecipientGroupOrganization[]
+}
+
+model RecipientGroupUser {
+  groupId String
+  userId  String
+
+  group RecipientGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+}
+
+model RecipientGroupOrganization {
+  groupId        String
+  organizationId String
+
+  group        RecipientGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, organizationId])
+}
+
+// ─── Service notices ─────────────────────────────────────────────────────────
+
+/**
+ * A ready-made service notice (a maintenance reminder, an incident notification…) staff start from: its look and
+ * every text in it, which they can still change each time they send one. Managed by global admins.
+ */
+model NoticeTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  subject     String
+  /// JSON NoticeContent: style, colours, header texts, sections and footer
+  content     String
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  notices   ServiceNotice[]
+}
+
+/** A service notice as it was sent: its content, the email made from it and who it went to. */
+model ServiceNotice {
+  id         String      @id @default(cuid())
+  templateId String?
+  subject    String
+  /// JSON NoticeContent as sent
+  content    String
+  html       String
+  text       String      @default("")
+  /// JSON arrays of {email, name, via}: everyone it went to, groups and organizations expanded
+  to         String      @default("[]")
+  cc         String      @default("[]")
+  bcc        String      @default("[]")
+  /// JSON {to, cc, bcc} of {type, id}: the groups and organizations picked as a whole, so an update can reuse them
+  groups     String      @default("{}")
+  status     EmailStatus @default(SENT)
+  error      String?
+  sentById   String?
+  createdAt  DateTime    @default(now())
+
+  template NoticeTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  sentBy   User?              @relation(fields: [sentById], references: [id], onDelete: SetNull)
+  files    ServiceNoticeFile[]
+
+  @@index([createdAt])
+}
+
+/**
+ * A file uploaded to send with service notices. It is uploaded while the notice is written and belongs to it once
+ * sent; an update can send it again. Files no notice was sent with are deleted after a day.
+ */
+model NoticeFile {
+  id           String   @id @default(cuid())
+  filename     String
+  mimeType     String
+  size         Int
+  storagePath  String
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  uploadedBy User?               @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  notices    ServiceNoticeFile[]
+}
+
+model ServiceNoticeFile {
+  noticeId String
+  fileId   String
+
+  notice ServiceNotice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  file   NoticeFile    @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@id([noticeId, fileId])
+}
+
+// ─── API tokens & webhooks ───────────────────────────────────────────────────
+
+enum ApiTokenAccess {
+  /// GET requests only
+  READ
+  /// Everything the owner can do (but managing API tokens)
+  WRITE
+}
+
+/**
+ * A key for scripts and integrations, acting as its owner (so it reaches exactly what they can). Only a SHA-256 hash is
+ * stored; the token itself is shown once, when it is created.
+ */
+model ApiToken {
+  id         String         @id @default(cuid())
+  userId     String
+  name       String
+  /// The first characters of the token, so people can tell their tokens apart
+  prefix     String
+  tokenHash  String         @unique
+  access     ApiTokenAccess @default(READ)
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// An address that is sent a signed POST when something happens to an issue: in one project, or in all of them.
+model Webhook {
+  id             String   @id @default(cuid())
+  name           String
+  url            String
+  /// Event names (JSON array of strings), see webhooks/webhook-events.ts
+  events         String
+  /// null = every project
+  projectId      String?
+  active         Boolean  @default(true)
+  /// JSON (the signed event), SLACK or TEAMS (a readable message for a chat channel)
+  format         String   @default("JSON")
+  /// Optional: only issues matching this JQL are sent (evaluated as the webhook's author)
+  jql            String?
+  /// The signing secret, encrypted (see common/secret-box.ts)
+  secret         String
+  /// Failed attempts in a row: the webhook is switched off after too many
+  failureCount   Int      @default(0)
+  disabledReason String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project    Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy  User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deliveries WebhookDelivery[]
+
+  @@index([projectId])
+}
+
+enum WebhookDeliveryStatus {
+  /// Waiting for its first attempt, or for a retry
+  PENDING
+  SUCCESS
+  /// Out of attempts
+  FAILED
+}
+
+/// One event sent to one webhook, with how the attempts went.
+model WebhookDelivery {
+  id             String                @id @default(cuid())
+  webhookId      String
+  event          String
+  /// The JSON body that is sent (so a redelivery sends the same event)
+  payload        String
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  nextAttemptAt  DateTime?
+  responseStatus Int?
+  error          String?
+  durationMs     Int?
+  createdAt      DateTime              @default(now())
+  deliveredAt    DateTime?
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+  @@index([status, nextAttemptAt])
+}
+
+// ─── Automation ──────────────────────────────────────────────────────────────
+
+/// When something happens to an issue (and it matches), do these things. Runs as the person who wrote the rule.
+model AutomationRule {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  /// null = every project
+  projectId      String?
+  enabled        Boolean  @default(true)
+  /// issue.created, issue.updated, issue.assigned, issue.transitioned, comment.created, or "schedule" (runs on the issues the JQL matches)
+  event          String
+  /// JSON: { fields?: string[] } for issue.updated, { toStatus?: string } for issue.transitioned, { frequency, time, weekday? } for schedule
+  triggerConfig  String   @default("{}")
+  /// Optional condition: the issue must match this JQL
+  jql            String?
+  /// JSON array of actions, see automation/automation-actions.ts
+  actions        String
+  disabledReason String?
+  runCount       Int      @default(0)
+  lastRunAt      DateTime?
+  /// Scheduled rules (event "schedule"): when they run next
+  nextRunAt      DateTime?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project   Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  runs      AutomationRun[]
+
+  @@index([event, enabled, nextRunAt])
+}
+
+enum AutomationRunStatus {
+  SUCCESS
+  /// An action failed; the ones after it did not run
+  FAILED
+  /// Stopped by loop protection
+  SKIPPED
+}
+
+/// One time a rule's trigger and condition matched.
+model AutomationRun {
+  id        String              @id @default(cuid())
+  ruleId    String
+  event     String
+  issueKey  String
+  status    AutomationRunStatus
+  message   String?
+  /// JSON: [{ type, ok, detail }] per action
+  results   String              @default("[]")
+  createdAt DateTime            @default(now())
+
+  rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId, createdAt])
+}
+
+// ─── Incoming webhooks ───────────────────────────────────────────────────────
+
+/// A URL other systems (monitoring, CI, chat) POST JSON to, turned into issues in one project. Acts as its author.
+model InboundWebhook {
+  id             String    @id @default(cuid())
+  name           String
+  projectId      String
+  enabled        Boolean   @default(true)
+  /// Only a SHA-256 hash of the secret URL token is kept
+  tokenHash      String    @unique
+  tokenPrefix    String
+  /// JSON: how a payload becomes an issue, see inbound-webhooks/inbound-config.ts
+  config         String
+  receivedCount  Int       @default(0)
+  lastReceivedAt DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy  User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deliveries InboundDelivery[]
+  links      InboundLink[]
+
+  @@index([projectId])
+}
+
+enum InboundStatus {
+  CREATED
+  /// Added to the open issue the same alert already raised
+  COMMENTED
+  RESOLVED
+  /// Nothing to do (e.g. a "resolved" message for an alert with no open issue)
+  IGNORED
+  FAILED
+}
+
+/// One request received, with what became of it.
+model InboundDelivery {
+  id        String        @id @default(cuid())
+  hookId    String
+  status    InboundStatus
+  dedupeKey String?
+  issueKey  String?
+  message   String?
+  /// The JSON received (shortened)
+  payload   String
+  createdAt DateTime      @default(now())
+
+  hook InboundWebhook @relation(fields: [hookId], references: [id], onDelete: Cascade)
+
+  @@index([hookId, createdAt])
+}
+
+/// Which issue an alert (a webhook's dedupe key) is being tracked in.
+model InboundLink {
+  id        String         @id @default(cuid())
+  hookId    String
+  dedupeKey String
+  issueId   String
+  updatedAt DateTime       @updatedAt
+
+  hook InboundWebhook @relation(fields: [hookId], references: [id], onDelete: Cascade)
+
+  @@unique([hookId, dedupeKey])
 }

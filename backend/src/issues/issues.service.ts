@@ -1,7 +1,7 @@
 import {
   Injectable, BadRequestException, NotFoundException, ConflictException, ForbiddenException,
 } from '@nestjs/common';
-import { IssueStatus, IssueResolution, LinkType, IssueType, Prisma, UserRole } from '@prisma/client';
+import { IssueStatus, IssueResolution, IssueSource, LinkType, IssueType, Prisma, ProjectType, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { isValidParentChild } from '../common/issue-rules';
 import { ISSUE_INCLUDE } from '../common/issue-include';
@@ -9,8 +9,11 @@ import { nextIssueKey, resolveProject } from '../common/project.util';
 import { AuthUser } from '../common/auth-user';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { extractMentions, sanitizeRich, toPlainText } from '../common/rich-text';
 import { contains } from '../common/text-match';
+import { slaOnStatusChange } from '../common/sla';
+import { issueRef } from '../common/issue-ref';
 import { AccessService } from '../access/access.service';
 import { WorkflowService, CATEGORY_NAMES } from '../workflow/workflow.service';
 import {
@@ -39,6 +42,7 @@ export class IssuesService {
     private prisma: PrismaService,
     private customFieldsService: CustomFieldsService,
     private notifications: NotificationsService,
+    private webhooks: WebhooksService,
     private access: AccessService,
     private workflow: WorkflowService,
   ) {
@@ -87,7 +91,7 @@ export class IssuesService {
   /** Look up by id or by key (e.g. SPORTS-12), like Jira's /browse/KEY. */
   async findOne(idOrKey: string) {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       include: ISSUE_INCLUDE,
     });
     if (!issue) throw new NotFoundException('Issue not found');
@@ -96,7 +100,7 @@ export class IssuesService {
 
   private async findIdOrThrow(idOrKey: string) {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       select: { id: true },
     });
     if (!issue) throw new NotFoundException('Issue not found');
@@ -105,7 +109,17 @@ export class IssuesService {
 
   // ─── Create / update / delete ──────────────────────────────────────────────
 
-  async create(dto: CreateIssueDto, user: AuthUser, headerProjectKey?: string) {
+  /**
+   * `portal`: a service desk request raised through the help center (by the customer, or by an agent on behalf
+   * of `reporterId`). The caller has already checked that the user may raise requests in the project, so the
+   * usual edit permission isn't required.
+   */
+  async create(
+    dto: CreateIssueDto,
+    user: AuthUser,
+    headerProjectKey?: string,
+    portal?: { requestTypeId: string; reporterId?: string; organizationId?: string | null; portalId?: string; source?: IssueSource },
+  ) {
     const reporterId = user.id;
     let parent: { id: string; type: IssueType; projectId: string } | null = null;
     if (dto.parentId) {
@@ -120,7 +134,7 @@ export class IssuesService {
     const project = parent
       ? await this.prisma.project.findUniqueOrThrow({ where: { id: parent.projectId } })
       : await resolveProject(this.prisma, dto.projectKey ?? headerProjectKey);
-    await this.access.require(user, project.id, 'edit');
+    if (!portal) await this.access.require(user, project.id, 'edit');
 
     if ((parent || project.strictHierarchy) && !isValidParentChild(dto.type, parent?.type ?? null)) {
       throw new BadRequestException(
@@ -149,16 +163,20 @@ export class IssuesService {
           parentLinkKey: dto.parentLinkKey,
           estimate: dto.estimate,
           remainingEstimate: dto.remainingEstimate ?? dto.estimate,
-          reporterId: dto.reporterId ?? reporterId,
+          reporterId: portal ? (portal.reporterId ?? reporterId) : (dto.reporterId ?? reporterId),
           projectId: project.id,
+          requestTypeId: portal?.requestTypeId,
+          organizationId: portal?.organizationId ?? undefined,
+          portalId: portal?.portalId,
+          source: portal?.source,
           components: dto.componentIds?.length
             ? { create: dto.componentIds.map((componentId) => ({ componentId })) }
             : undefined,
           labels: dto.labelIds?.length
             ? { create: dto.labelIds.map((labelId) => ({ labelId })) }
             : undefined,
-          // Reporter watches their own issue by default, as in Jira.
-          watchers: { create: { userId: reporterId } },
+          // Reporter watches their own issue by default, as in Jira (and so does a customer it was raised for).
+          watchers: { create: [...new Set([reporterId, portal?.reporterId ?? reporterId])].map((userId) => ({ userId })) },
         },
         select: { id: true, key: true },
       });
@@ -171,6 +189,7 @@ export class IssuesService {
       await this.customFieldsService.setIssueValues(issueId, dto.customFields);
     }
     await this.notifications.issueCreated(issueId, reporterId);
+    await this.webhooks.issueEvent('issue.created', issueId, reporterId);
     return this.findOne(issueId);
   }
 
@@ -246,23 +265,30 @@ export class IssuesService {
       await tx.issue.update({ where: { id }, data: clean });
       const real = changes.filter((c) => c.from !== c.to);
       await this.recordHistory(tx, id, userId, real);
-      return real.map((c) => c.field);
+      return real;
     });
 
     if (dto.customFields) {
       await this.customFieldsService.setIssueValues(id, dto.customFields);
     }
+    const changedFields = changed.map((c) => c.field);
     if (opts.notify !== false) await this.notifications.issueUpdated(id, userId, {
-      fields: changed,
+      fields: changedFields,
       previousAssigneeId: before.assigneeId,
       previousDescription: before.description,
     });
+    if (changed.length) {
+      const changes = changed.map((c) => ({ field: c.field, from: c.from ?? null, to: c.to ?? null }));
+      await this.webhooks.issueEvent('issue.updated', id, userId, { changes });
+      const assignment = changes.filter((c) => c.field === 'assignee');
+      if (assignment.length) await this.webhooks.issueEvent('issue.assigned', id, userId, { changes: assignment });
+    }
     return this.findOne(id);
   }
 
   async remove(idOrKey: string, user: AuthUser, opts: { notify?: boolean } = {}) {
     const issue = await this.prisma.issue.findFirst({
-      where: { OR: [{ id: idOrKey }, { key: idOrKey.toUpperCase() }] },
+      where: issueRef(idOrKey),
       include: { project: true, attachments: true, _count: { select: { children: true } } },
     });
     if (!issue) throw new NotFoundException('Issue not found');
@@ -274,6 +300,7 @@ export class IssuesService {
     }
 
     if (opts.notify !== false) await this.notifications.issueDeleted(issue.id, user.id);
+    const deletedSnapshot = await this.webhooks.snapshot(issue.id, user.id);
     await this.prisma.$transaction(async (tx) => {
       await tx.issueComponent.deleteMany({ where: { issueId: issue.id } });
       await tx.issueVersion.deleteMany({ where: { issueId: issue.id } });
@@ -282,6 +309,7 @@ export class IssuesService {
     for (const a of issue.attachments) {
       fs.rm(a.storagePath, { force: true }, () => undefined);
     }
+    await this.webhooks.deleted(deletedSnapshot);
     return { deleted: true, key: issue.key };
   }
 
@@ -305,18 +333,24 @@ export class IssuesService {
     const resolution = closing ? (dto.resolution as IssueResolution) : null;
     const fromName = issue.workflowStatus?.name ?? CATEGORY_NAMES[issue.status];
 
+    const changes: HistoryChange[] = [{ field: 'status', from: fromName, to: to.name }];
+    if ((issue.resolution ?? null) !== resolution) {
+      changes.push({ field: 'resolution', from: issue.resolution, to: resolution });
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.issue.update({
         where: { id: issue.id },
-        data: { statusId: to.id, status: to.category, resolution },
+        data: { statusId: to.id, status: to.category, resolution, ...slaOnStatusChange(issue, to) },
       });
-      const changes: HistoryChange[] = [{ field: 'status', from: fromName, to: to.name }];
-      if ((issue.resolution ?? null) !== resolution) {
-        changes.push({ field: 'resolution', from: issue.resolution, to: resolution });
-      }
       await this.recordHistory(tx, issue.id, userId, changes);
     });
-    if (opts.notify !== false) await this.notifications.statusChanged(issue.id, userId, fromName, to.name);
+    if (opts.notify !== false) {
+      await this.notifications.statusChanged(issue.id, userId, fromName, to.name);
+      await this.notifications.requestStatusChanged(issue.id, userId, to.name);
+    }
+    await this.webhooks.issueEvent('issue.transitioned', issue.id, userId, {
+      changes: changes.map((c) => ({ field: c.field, from: c.from ?? null, to: c.to ?? null })),
+    });
     return this.findOne(issue.id);
   }
 
@@ -399,19 +433,37 @@ export class IssuesService {
     });
   }
 
-  async addComment(idOrKey: string, authorId: string, body: string) {
-    const issueId = await this.findIdOrThrow(idOrKey);
+  /**
+   * In service desk projects a comment is either a reply the customer sees or an internal note (agents only).
+   * Customers can't write internal notes, and elsewhere every comment is an ordinary one.
+   * `emailed`: addresses that already got it as an email (an email reply), so they aren't notified about it by email.
+   */
+  async addComment(idOrKey: string, author: AuthUser, body: string, opts: { internal?: boolean; emailed?: string[] } = {}) {
+    const authorId = author.id;
+    const issue = await this.prisma.issue.findFirst({
+      where: issueRef(idOrKey),
+      select: { id: true, reporterId: true, firstRespondedAt: true, project: { select: { type: true } } },
+    });
+    if (!issue) throw new NotFoundException('Issue not found');
+    const issueId = issue.id;
+    const serviceDesk = issue.project.type === ProjectType.SERVICE_DESK;
+    const isCustomer = author.role === UserRole.CUSTOMER;
+    const internal = serviceDesk && !isCustomer && !!opts.internal;
     const text = sanitizeRich(body);
     if (!text) throw new BadRequestException('Comment cannot be empty');
     const created = await this.prisma.$transaction(async (tx) => {
       const comment = await tx.comment.create({
-        data: { issueId, authorId, body: text },
+        data: { issueId, authorId, body: text, internal },
         include: { author: USER_BRIEF },
       });
       // Commenters (and anyone @mentioned by email) start watching the issue, as in Jira.
+      // An internal note never makes a customer a participant of the request.
       const { ids, emails } = extractMentions(text);
       const mentioned = await tx.user.findMany({
-        where: { OR: [{ id: { in: ids } }, { email: { in: emails } }] },
+        where: {
+          OR: [{ id: { in: ids } }, { email: { in: emails } }],
+          ...(internal ? { role: { not: UserRole.CUSTOMER } } : {}),
+        },
         select: { id: true },
       });
       for (const userId of new Set([authorId, ...mentioned.map((u) => u.id)])) {
@@ -421,10 +473,17 @@ export class IssuesService {
           update: {},
         });
       }
-      await tx.issue.update({ where: { id: issueId }, data: { updatedAt: new Date() } });
+      // The first public reply from an agent stops the "time to first response" clock.
+      const firstResponse = serviceDesk && !internal && !isCustomer && authorId !== issue.reporterId && !issue.firstRespondedAt;
+      await tx.issue.update({
+        where: { id: issueId },
+        data: { updatedAt: new Date(), ...(firstResponse ? { firstRespondedAt: new Date() } : {}) },
+      });
       return comment;
     });
-    await this.notifications.commentAdded(issueId, authorId, text);
+    await this.notifications.commentAdded(issueId, authorId, text, opts.emailed);
+    await this.webhooks.issueEvent('comment.created', issueId, authorId, { commentId: created.id });
+    if (!internal) await this.notifications.requestCommented(issueId, authorId, text, opts.emailed);
     return created;
   }
 
@@ -439,6 +498,7 @@ export class IssuesService {
       include: { author: USER_BRIEF },
     });
     await this.notifications.commentEdited(comment.issueId, user.id, comment.body, text);
+    await this.webhooks.issueEvent('comment.updated', comment.issueId, user.id, { commentId: comment.id });
     return updated;
   }
 

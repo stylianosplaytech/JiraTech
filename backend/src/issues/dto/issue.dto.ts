@@ -2,8 +2,10 @@ import {
   IsString, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, MinLength, MaxLength, IsObject, IsIn,
 } from 'class-validator';
 import { IssueType, Priority } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateIssueDto {
+  @ApiProperty({ enum: IssueType })
   @IsEnum(IssueType)
   type!: IssueType;
 
@@ -24,6 +26,7 @@ export class CreateIssueDto {
   epicName?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: Priority })
   @IsEnum(Priority)
   priority?: Priority;
 
@@ -95,6 +98,7 @@ export class UpdateIssueDto {
   description?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: Priority })
   @IsEnum(Priority)
   priority?: Priority;
 
@@ -206,8 +210,8 @@ export class BulkDto {
   @IsString({ each: true })
   issueIds!: string[];
 
-  @IsIn(['edit', 'transition', 'watch', 'delete'])
-  action!: 'edit' | 'transition' | 'watch' | 'delete';
+  @IsIn(['edit', 'transition', 'watch', 'delete', 'move'])
+  action!: 'edit' | 'transition' | 'watch' | 'delete' | 'move';
 
   @IsOptional()
   @IsBoolean()
@@ -219,6 +223,7 @@ export class BulkDto {
   assigneeId?: string | null;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: Priority })
   @IsEnum(Priority)
   priority?: Priority;
 
@@ -249,6 +254,11 @@ export class BulkDto {
   @IsOptional()
   @IsString()
   resolution?: string;
+
+  // move
+  @IsOptional()
+  @IsString()
+  projectKey?: string;
 }
 
 export class CommentDto {
@@ -256,4 +266,28 @@ export class CommentDto {
   @MinLength(1)
   @MaxLength(32000)
   body!: string;
+
+  /** Service desk projects: an internal note that customers don't see. */
+  @IsOptional()
+  @IsBoolean()
+  internal?: boolean;
+}
+
+export class MoveIssueDto {
+  @IsString()
+  @MinLength(1)
+  projectKey!: string;
+
+  @IsOptional()
+  @IsString()
+  statusId?: string;
+
+  /** New parent in the target project; null or omitted for none. */
+  @IsOptional()
+  @IsString()
+  parentId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  requestTypeId?: string | null;
 }

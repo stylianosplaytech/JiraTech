@@ -20,7 +20,10 @@ export const SEARCH_INCLUDE = {
   _count: { select: { comments: true, children: true } },
 } satisfies Prisma.IssueInclude;
 
-const STATUS_ORDER = ['BACKLOG', 'TO_DO', 'DOING', 'CLOSED'];
+export const BREAKDOWN_FIELDS = ['status', 'priority', 'type', 'assignee', 'reporter', 'project'] as const;
+export type BreakdownField = (typeof BREAKDOWN_FIELDS)[number];
+
+const STATUS_ORDER =['BACKLOG', 'TO_DO', 'DOING', 'CLOSED'];
 // Above this many matches, priority/status sorting (done in memory) is truncated.
 const MEMORY_SORT_LIMIT = 5000;
 
@@ -74,6 +77,68 @@ export class SearchService {
   validate(jql: string, user: AuthUser) {
     this.compile(jql, user);
     return { valid: true };
+  }
+
+  /** Whether one issue matches a JQL query (ordering and who may browse the issue are not considered). */
+  async matches(jql: string, issueId: string, user: AuthUser) {
+    const compiled = this.compile(jql, user);
+    return (await this.prisma.issue.count({ where: { AND: [compiled.where, { id: issueId }] } })) > 0;
+  }
+
+  /** Up to `take` issues matching a JQL query that the user can browse, oldest first (for scheduled automation). */
+  async findMatching(jql: string, user: AuthUser, take: number, projectId?: string) {
+    const compiled = this.compile(jql, user);
+    const where = await this.visible(user, projectId ? { AND: [compiled.where, { projectId }] } : compiled.where);
+    return this.prisma.issue.findMany({ where, select: { id: true, key: true, projectId: true }, orderBy: { createdAt: 'asc' }, take });
+  }
+
+  /** How many issues a JQL query finds (the user's browsable projects only). */
+  async count(jql: string, user: AuthUser) {
+    const where = await this.visible(user, this.compile(jql, user).where);
+    return this.prisma.issue.count({ where });
+  }
+
+  /** The issues a JQL query finds, counted by one field, largest group first. */
+  async countBy(jql: string, field: BreakdownField, user: AuthUser) {
+    const where = await this.visible(user, this.compile(jql, user).where);
+    const column = ({ assignee: 'assigneeId', reporter: 'reporterId', project: 'projectId' } as const)[field as 'assignee'] ?? field;
+    const rows = await this.prisma.issue.groupBy({ by: [column], where, _count: true });
+    const valueOf = (r: object) => (r as Record<string, string | null>)[column];
+    const ids = rows.flatMap((r) => valueOf(r) ?? []);
+    const names = new Map<string, string>();
+    if (field === 'assignee' || field === 'reporter') {
+      for (const u of await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })) names.set(u.id, u.name);
+    } else if (field === 'project') {
+      for (const p of await this.prisma.project.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })) names.set(p.id, p.name);
+    }
+    const groups = rows
+      .map((r) => {
+        const value = valueOf(r);
+        const named = field === 'assignee' || field === 'reporter' || field === 'project';
+        const label = named ? (value ? names.get(value) ?? 'Unknown' : field === 'assignee' ? 'Unassigned' : 'None') : value ?? 'None';
+        return { key: value ?? '', label, count: r._count };
+      })
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    return { total: groups.reduce((n, g) => n + g.count, 0), groups };
+  }
+
+  /** Created and resolved dates of the issues a JQL query finds that were created or resolved since `since`. */
+  async createdAndResolvedSince(jql: string, since: Date, user: AuthUser) {
+    const compiled = this.compile(jql, user);
+    const where = await this.visible(user, {
+      AND: [compiled.where, { OR: [{ createdAt: { gte: since } }, { resolvedAt: { gte: since } }, { status: 'CLOSED', updatedAt: { gte: since } }] }],
+    });
+    const rows = await this.prisma.issue.findMany({ where, select: { createdAt: true, resolvedAt: true, updatedAt: true, status: true }, take: MEMORY_SORT_LIMIT * 10 });
+    // Issues closed before resolution dates were recorded count as resolved when last updated.
+    return rows.map((r) => ({ createdAt: r.createdAt, resolvedAt: r.resolvedAt ?? (r.status === 'CLOSED' ? r.updatedAt : null) }));
+  }
+
+  /** When the issues a JQL query finds were created, for counting per day or week. */
+  async createdSince(jql: string, since: Date, user: AuthUser) {
+    const compiled = this.compile(jql, user);
+    const where = await this.visible(user, { AND: [compiled.where, { createdAt: { gte: since } }] });
+    const rows = await this.prisma.issue.findMany({ where, select: { createdAt: true }, take: MEMORY_SORT_LIMIT * 10 });
+    return rows.map((r) => r.createdAt);
   }
 
   async quickSearch(q: string, user: AuthUser) {
@@ -184,7 +249,7 @@ function toPrismaOrder(s: JqlSort): Prisma.IssueOrderByWithRelationInput[] {
   }
 }
 
-interface SortRow {
+export interface SortRow {
   key: string;
   number: number;
   summary: string;
@@ -196,7 +261,7 @@ interface SortRow {
   assignee: { name: string } | null;
 }
 
-function compareRows(a: SortRow, b: SortRow, sorts: JqlSort[]): number {
+export function compareRows(a: SortRow, b: SortRow, sorts: JqlSort[]): number {
   for (const s of sorts) {
     let cmp = 0;
     switch (s.field) {

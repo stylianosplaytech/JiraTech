@@ -7,6 +7,8 @@ import { jqlValue } from '../utils';
 import UserPicker from '../components/UserPicker';
 import ProjectPeople, { ACCESS_INFO } from '../components/ProjectPeople';
 import WorkflowEditor from '../components/WorkflowEditor';
+import ServiceDeskSettings from '../components/ServiceDeskSettings';
+import ProjectNotifications from '../components/ProjectNotifications';
 import Avatar from '../components/Avatar';
 import { StatusBadge, STATUS_LABELS, typeLabel } from '../components/Badges';
 import { SelectPicker } from '../components/Pickers';
@@ -91,6 +93,12 @@ export default function ProjectPage() {
         )}
         actions={(
           <>
+            {project.type === 'SERVICE_DESK' && (
+              <>
+                <Link to="/queues" className="btn btn-default">Queues</Link>
+                <Link to="#service-desk" onClick={() => document.getElementById('service-desk')?.scrollIntoView()} className="btn btn-default">Portals</Link>
+              </>
+            )}
             <Link to={searchLink(project.key)} className="btn btn-default">View issues</Link>
             <Link to="/" className="btn btn-default">Board</Link>
             {canAdmin && (
@@ -118,7 +126,7 @@ export default function ProjectPage() {
                 return n ? <div key={s} style={{ width: `${(n / Math.max(total, 1)) * 100}%`, background: STATUS_BAR[s] }} title={`${STATUS_LABELS[s]}: ${n}`} /> : null;
               })}
             </div>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {STATUSES.map((s) => (
                 <Link key={s} to={searchLink(project.key, `status = ${s}`)} className="card p-4 hover:bg-jira-gray transition-colors">
                   <div className="text-2xl font-semibold mb-1">{project.issueCountsByStatus[s] ?? 0}</div>
@@ -133,29 +141,31 @@ export default function ProjectPage() {
               <h2 className="text-base font-semibold">Versions</h2>
             </div>
             {project.versions.length > 0 && (
-              <table className="data-table mb-3">
-                <thead><tr><th>Version</th><th>Status</th><th>Release date</th><th /></tr></thead>
-                <tbody>
-                  {project.versions.map((v) => (
-                    <tr key={v.id}>
-                      <td><Link to={searchLink(project.key, `fixVersion = ${jqlValue(v.name)}`)} className="link font-medium">{v.name}</Link></td>
-                      <td>
-                        <span className={`lozenge ${v.released ? 'bg-[#E3FCEF] text-[#006644]' : 'bg-jira-gray-hover text-[#42526E]'}`}>
-                          {v.released ? 'Released' : 'Unreleased'}
-                        </span>
-                      </td>
-                      <td className="text-jira-subtle">{v.releaseDate ? new Date(v.releaseDate).toLocaleDateString() : '—'}</td>
-                      <td className="text-right">
-                        {canManageVersions && (
-                          <button type="button" onClick={() => toggleRelease.mutate({ id: v.id, released: !v.released })} className="btn btn-subtle btn-sm">
-                            {v.released ? 'Unrelease' : 'Release'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto">
+                <table className="data-table mb-3">
+                  <thead><tr><th>Version</th><th>Status</th><th>Release date</th><th /></tr></thead>
+                  <tbody>
+                    {project.versions.map((v) => (
+                      <tr key={v.id}>
+                        <td><Link to={searchLink(project.key, `fixVersion = ${jqlValue(v.name)}`)} className="link font-medium">{v.name}</Link></td>
+                        <td>
+                          <span className={`lozenge ${v.released ? 'bg-[#E3FCEF] text-[#006644]' : 'bg-jira-gray-hover text-[#42526E]'}`}>
+                            {v.released ? 'Released' : 'Unreleased'}
+                          </span>
+                        </td>
+                        <td className="text-jira-subtle">{v.releaseDate ? new Date(v.releaseDate).toLocaleDateString() : '—'}</td>
+                        <td className="text-right">
+                          {canManageVersions && (
+                            <button type="button" onClick={() => toggleRelease.mutate({ id: v.id, released: !v.released })} className="btn btn-subtle btn-sm">
+                              {v.released ? 'Unrelease' : 'Release'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
             {project.versions.length === 0 && <p className="text-jira-muted mb-3">No versions yet.</p>}
             {canManageVersions && (
@@ -170,18 +180,20 @@ export default function ProjectPage() {
           <section>
             <h2 className="text-base font-semibold mb-3">Components</h2>
             {project.components.length > 0 && (
-              <table className="data-table mb-3">
-                <thead><tr><th>Component</th><th>Type</th><th>Lead</th></tr></thead>
-                <tbody>
-                  {project.components.map((c) => (
-                    <tr key={c.id}>
-                      <td><Link to={searchLink(project.key, `component = ${jqlValue(c.name)}`)} className="link font-medium">{c.name}</Link></td>
-                      <td className="text-jira-subtle">{typeLabel(c.type)}</td>
-                      <td>{c.lead ? <span className="flex items-center gap-2"><Avatar name={c.lead.name} size="xs" />{c.lead.name}</span> : <span className="text-jira-muted">—</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto">
+                <table className="data-table mb-3">
+                  <thead><tr><th>Component</th><th>Type</th><th>Lead</th></tr></thead>
+                  <tbody>
+                    {project.components.map((c) => (
+                      <tr key={c.id}>
+                        <td><Link to={searchLink(project.key, `component = ${jqlValue(c.name)}`)} className="link font-medium">{c.name}</Link></td>
+                        <td className="text-jira-subtle">{typeLabel(c.type)}</td>
+                        <td>{c.lead ? <span className="flex items-center gap-2"><Avatar name={c.lead.name} size="xs" />{c.lead.name}</span> : <span className="text-jira-muted">—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
             {project.components.length === 0 && <p className="text-jira-muted mb-3">No components yet.</p>}
             {canAdmin && (
@@ -204,9 +216,13 @@ export default function ProjectPage() {
             )}
           </section>
 
-          <WorkflowEditor projectKey={project.key} canAdmin={canAdmin} />
+          {project.type === 'SERVICE_DESK' && <ServiceDeskSettings projectKey={project.key} canAdmin={canAdmin} />}
+
+          <WorkflowEditor projectKey={project.key} canAdmin={canAdmin} serviceDesk={project.type === 'SERVICE_DESK'} />
 
           <ProjectPeople projectKey={project.key} canAdmin={canAdmin} />
+
+          <ProjectNotifications projectKey={project.key} canAdmin={canAdmin} />
         </div>
 
         <aside className="space-y-4">
@@ -219,7 +235,7 @@ export default function ProjectPage() {
                 <dd>{project.lead ? <span className="flex items-center gap-2"><Avatar name={project.lead.name} size="xs" />{project.lead.name}</span> : '—'}</dd>
               </div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Issues</dt><dd>{total}</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Rules</dt><dd>{project.strictHierarchy ? 'SPORTS conventions' : 'Standard'}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Type</dt><dd>{project.type === 'SERVICE_DESK' ? 'Service desk' : project.strictHierarchy ? 'Software (SPORTS conventions)' : 'Software'}</dd></div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Access</dt><dd>{ACCESS_INFO[project.defaultAccess].label}</dd></div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Your role</dt><dd>{project.permissions.role === 'NONE' ? '—' : project.permissions.role.charAt(0) + project.permissions.role.slice(1).toLowerCase()}</dd></div>
               <div className="flex justify-between gap-2"><dt className="text-jira-subtle">Created</dt><dd>{new Date(project.createdAt).toLocaleDateString()}</dd></div>

@@ -5,7 +5,7 @@ import { api, type Issue, type SavedFilter } from '../api';
 import { useProject } from '../project';
 import { jqlValue } from '../utils';
 import { PriorityIcon, StatusBadge, TypeBadge, typeLabel } from '../components/Badges';
-import { ChevronDownIcon, DownloadIcon, IssueTypeIcon, SearchIcon, StarIcon, TrashIcon } from '../components/Icons';
+import { ChevronDownIcon, DownloadIcon, FilterIcon, IssueTypeIcon, SearchIcon, StarIcon, TrashIcon } from '../components/Icons';
 import Avatar from '../components/Avatar';
 import BulkActions from '../components/BulkActions';
 import { Dropdown, EmptyState, errorMessage, useDialogs, useToast } from '../components/ui';
@@ -138,13 +138,14 @@ export default function SearchPage() {
   const [mode, setMode] = useState<'basic' | 'jql'>(urlJql && !urlJql.startsWith('project = ') ? 'jql' : 'basic');
   const [draft, setDraft] = useState(jql);
   const [selected, setSelected] = useState<Map<string, Issue>>(new Map());
+  const [showFilters, setShowFilters] = useState(false);
   const [basic, setBasic] = useState<Basic>({
     project: projectKey ?? '', types: [], statuses: [], priorities: [], assignee: '', text: '',
   });
 
   useEffect(() => setDraft(jql), [jql]);
-  // A new search starts with nothing selected.
-  useEffect(() => setSelected(new Map()), [jql]);
+  // A new search starts with nothing selected, and closes the filter list on phones.
+  useEffect(() => { setSelected(new Map()); setShowFilters(false); }, [jql]);
 
   const run = (nextJql: string, extra: Record<string, string> = {}) => {
     const next: Record<string, string> = { jql: nextJql, ...extra };
@@ -239,8 +240,11 @@ export default function SearchPage() {
     }`;
 
   return (
-    <div className="flex gap-8">
-      <aside className="w-56 shrink-0 space-y-6 pt-1">
+    <div className="flex flex-col md:flex-row gap-4 md:gap-8">
+      <button type="button" onClick={() => setShowFilters((s) => !s)} className="btn btn-default self-start md:hidden" aria-expanded={showFilters}>
+        <FilterIcon size={14} /> {showFilters ? 'Hide filters' : 'Filters'}
+      </button>
+      <aside className={`${showFilters ? '' : 'max-md:hidden'} md:w-56 md:shrink-0 space-y-6 pt-1`}>
         <div>
           <h3 className="section-title px-3 mb-2">Filters</h3>
           {builtIns.map((f) => (
@@ -265,7 +269,7 @@ export default function SearchPage() {
                     removeFilter.mutate(f.id);
                   }
                 }}
-                className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 btn btn-subtle btn-sm btn-icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 btn btn-subtle btn-sm btn-icon"
                 aria-label={`Delete filter ${f.name}`}
               >
                 <TrashIcon size={13} />
@@ -286,12 +290,12 @@ export default function SearchPage() {
       </aside>
 
       <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <h1 className="page-title truncate">
             {activeFilter ? activeFilter.name : 'Issues'}
             {dirty && <span className="ml-3 lozenge bg-[#FFFAE6] text-[#974F0C] align-middle">Edited</span>}
           </h1>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
             {activeFilter && activeFilter.ownerId === me?.id && (
               <>
                 {dirty && <button type="button" onClick={() => saveChanges.mutate(activeFilter)} className="btn btn-primary">Save changes</button>}
@@ -310,7 +314,7 @@ export default function SearchPage() {
         <div className="mb-4">
           {mode === 'basic' ? (
             <div className="flex flex-wrap items-center gap-2">
-              <form onSubmit={(e) => { e.preventDefault(); run(basicToJql(basic)); }} className="relative w-60">
+              <form onSubmit={(e) => { e.preventDefault(); run(basicToJql(basic)); }} className="relative w-full sm:w-60">
                 <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-jira-muted pointer-events-none" />
                 <input
                   value={basic.text}

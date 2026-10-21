@@ -45,9 +45,12 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" breadcrumbs={project ? `${project.name} · plan progress` : undefined} />
+      <PageHeader
+        title="Project overview"
+        breadcrumbs={<><Link to="/dashboards" className="link">Dashboards</Link>{project ? ` · ${project.name} · plan progress` : ''}</>}
+      />
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
         {stats.map((s) => (
           <div key={s.label} className="card p-4">
             <p className="text-jira-subtle">{s.label}</p>
@@ -56,7 +59,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         <div className="card">
           <div className="card-header"><h2 className="card-title">Issues by status</h2></div>
           <div className="p-4">
@@ -71,7 +74,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="card">
           <div className="card-header">
             <h2 className="card-title">Blocked</h2>

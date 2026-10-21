@@ -5,8 +5,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
 import { AccessService } from '../access/access.service';
 import { IssuesService } from './issues.service';
+import { MoveService } from './move.service';
+import { resolveProject } from '../common/project.util';
 
-export type BulkAction = 'edit' | 'transition' | 'watch' | 'delete';
+export type BulkAction = 'edit' | 'transition' | 'watch' | 'delete' | 'move';
 
 export interface BulkRequest {
   issueIds: string[];
@@ -22,6 +24,8 @@ export interface BulkRequest {
   // transition
   statusName?: string;
   resolution?: string;
+  // move
+  projectKey?: string;
 }
 
 export interface BulkResult {
@@ -41,6 +45,7 @@ export class BulkService {
     private prisma: PrismaService,
     private access: AccessService,
     private issues: IssuesService,
+    private mover: MoveService,
   ) {}
 
   async run(req: BulkRequest, user: AuthUser): Promise<BulkResult> {
@@ -49,6 +54,7 @@ export class BulkService {
     if (ids.length > MAX_ISSUES) throw new BadRequestException(`You can change at most ${MAX_ISSUES} issues at once`);
     if (req.action === 'edit' && !this.hasEdits(req)) throw new BadRequestException('Choose at least one field to change');
     if (req.action === 'transition' && !req.statusName?.trim()) throw new BadRequestException('Choose a status');
+    if (req.action === 'move' && !req.projectKey?.trim()) throw new BadRequestException('Choose the project to move to');
 
     const issues = await this.prisma.issue.findMany({
       where: { id: { in: ids } },
@@ -63,6 +69,7 @@ export class BulkService {
       result.failed.push({ id, key: '?', error: 'Issue not found' });
     }
     const notify = req.notify !== false;
+    if (req.action === 'move') return this.moveAll(issues, req.projectKey!.trim(), user, notify, result);
 
     for (const issue of issues) {
       try {
@@ -98,9 +105,38 @@ export class BulkService {
         }
         result.succeeded.push({ id: issue.id, key: issue.key });
       } catch (e) {
-        const message = e instanceof HttpException ? (e.getResponse() as { message?: string | string[] }).message ?? e.message : (e as Error).message;
-        result.failed.push({ id: issue.id, key: issue.key, error: Array.isArray(message) ? message.join(', ') : String(message) });
+        result.failed.push({ id: issue.id, key: issue.key, error: errorText(e) });
       }
+    }
+    return result;
+  }
+
+  /**
+   * Sub-tasks move with their parent, so an issue with a parent (at any level) that is also selected isn't moved on
+   * its own: it has moved once that ancestor has.
+   */
+  private async moveAll(issues: { id: string; key: string; parentId: string | null }[], projectKey: string, user: AuthUser, notify: boolean, result: BulkResult) {
+    const target = await resolveProject(this.prisma, projectKey);
+    const selected = new Set(issues.map((i) => i.id));
+    const withAncestor = new Set<string>();
+    for (const issue of issues) {
+      for (let parentId = issue.parentId; parentId;) {
+        if (selected.has(parentId)) { withAncestor.add(issue.id); break; }
+        parentId = (await this.prisma.issue.findUnique({ where: { id: parentId }, select: { parentId: true } }))?.parentId ?? null;
+      }
+    }
+    for (const issue of issues.filter((i) => !withAncestor.has(i.id))) {
+      try {
+        const moved = await this.mover.move(issue.id, { projectKey }, user, { notify });
+        result.succeeded.push({ id: issue.id, key: moved.key });
+      } catch (e) {
+        result.failed.push({ id: issue.id, key: issue.key, error: errorText(e) });
+      }
+    }
+    for (const issue of issues.filter((i) => withAncestor.has(i.id))) {
+      const now = await this.prisma.issue.findUnique({ where: { id: issue.id }, select: { key: true, projectId: true } });
+      if (now?.projectId === target.id) result.succeeded.push({ id: issue.id, key: now.key });
+      else result.failed.push({ id: issue.id, key: issue.key, error: "Not moved: it moves with its parent, which couldn't be moved" });
     }
     return result;
   }
@@ -142,4 +178,9 @@ export class BulkService {
     }
     return dto;
   }
+}
+
+function errorText(e: unknown) {
+  const message = e instanceof HttpException ? (e.getResponse() as { message?: string | string[] }).message ?? e.message : (e as Error).message;
+  return Array.isArray(message) ? message.join(', ') : String(message);
 }

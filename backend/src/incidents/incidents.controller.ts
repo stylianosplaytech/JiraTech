@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { EscalationAction } from '@prisma/client';
+import { ApiBody } from '@nestjs/swagger';
 import { IncidentsService } from './incidents.service';
 import { JwtAuthGuard } from '../auth/guards';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
@@ -10,6 +11,7 @@ export class IncidentsController {
   constructor(private incidentsService: IncidentsService) {}
 
   @Post(':id/escalate')
+  @ApiBody({ schema: { type: 'object', required: ['action'], properties: { action: { type: 'string', enum: Object.values(EscalationAction) }, toTeam: { type: 'string' }, note: { type: 'string' } } } })
   @RequireAccess('edit', { from: 'issueParam', param: 'id' })
   escalate(
     @Param('id') id: string,

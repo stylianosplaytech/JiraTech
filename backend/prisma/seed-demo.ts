@@ -1,6 +1,7 @@
 /**
- * Demo data for trying out JiraTech: extra people, two standard projects (PAY, MOB),
- * more SPORTS work, comments, links, watchers, work logs, history and saved filters.
+ * Demo data for trying out Conductor: extra people, two standard projects (PAY, MOB), two service desks
+ * (HELP, internal IT; CS, one team serving two client companies through their own portals), customers and
+ * their organizations, more SPORTS work, comments, links, watchers, work logs, history and saved filters.
  *
  * Runs on top of the base seed (prisma/seed.ts) and is safe to re-run: anything that
  * already exists is left alone.
@@ -9,10 +10,14 @@
  */
 import {
   ComponentType, IssueResolution, IssueStatus, IssueType, LinkType, Priority, PrismaClient, ProjectAccess, ProjectRole,
-  RagStatus, UserRole,
+  ProjectType, RagStatus, UserRole,
   type Issue, type User,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { seedFeatures } from './seed-features';
+import { setUpServiceDesk } from '../src/service-desk/defaults';
+import { STARTER_TEMPLATES, normalizeContent } from '../src/service-notices/notice-content';
+import { renderNoticeHtml, renderNoticeText } from '../src/service-notices/notice-html';
 
 const prisma = new PrismaClient();
 
@@ -22,13 +27,18 @@ const ago = (days: number, hours = 0) => new Date(NOW - days * 86_400_000 - hour
 // ─── People ──────────────────────────────────────────────────────────────────
 
 const PEOPLE: { email: string; name: string; role: UserRole }[] = [
-  { email: 'elena@jiratech.local', name: 'Elena Christodoulou', role: UserRole.TEAM_LEAD },
-  { email: 'nikos@jiratech.local', name: 'Nikos Georgiou', role: UserRole.DEVELOPER },
-  { email: 'sofia@jiratech.local', name: 'Sofia Ioannou', role: UserRole.QA_SPECIALIST },
-  { email: 'daniel@jiratech.local', name: 'Daniel Cohen', role: UserRole.RELEASE_MANAGER },
-  { email: 'katerina@jiratech.local', name: 'Katerina Antoniou', role: UserRole.PRODUCT_OWNER },
-  { email: 'marcus@jiratech.local', name: 'Marcus Weber', role: UserRole.SCRUM_MASTER },
-  { email: 'lina@jiratech.local', name: 'Lina Haddad', role: UserRole.DEVELOPER },
+  { email: 'elena@conductor.local', name: 'Elena Christodoulou', role: UserRole.TEAM_LEAD },
+  { email: 'nikos@conductor.local', name: 'Nikos Georgiou', role: UserRole.DEVELOPER },
+  { email: 'sofia@conductor.local', name: 'Sofia Ioannou', role: UserRole.QA_SPECIALIST },
+  { email: 'daniel@conductor.local', name: 'Daniel Cohen', role: UserRole.RELEASE_MANAGER },
+  { email: 'katerina@conductor.local', name: 'Katerina Antoniou', role: UserRole.PRODUCT_OWNER },
+  { email: 'marcus@conductor.local', name: 'Marcus Weber', role: UserRole.SCRUM_MASTER },
+  { email: 'lina@conductor.local', name: 'Lina Haddad', role: UserRole.DEVELOPER },
+  // Service desk customers: they only see the help center.
+  { email: 'anna@customer.local', name: 'Anna Petrou', role: UserRole.CUSTOMER },
+  { email: 'george@customer.local', name: 'George Miller', role: UserRole.CUSTOMER },
+  { email: 'peter@customer.local', name: 'Peter Novak', role: UserRole.CUSTOMER },
+  { email: 'stylianos.phedonos@playtech.com', name: 'Stylianos Phedonos', role: UserRole.ADMIN },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -124,7 +134,7 @@ class Builder {
     }
   }
 
-  private async nextKey() {
+  async nextKey() {
     const project = await prisma.project.update({
       where: { id: this.projectId },
       data: { issueCounter: { increment: 1 } },
@@ -291,7 +301,499 @@ async function backfillStatuses(projectId: string) {
   }
 }
 
+// ─── Service desks (HELP, CS) ─────────────────────────────────────────────────────
+
+const minutesAgo = (m: number) => new Date(NOW - m * 60_000);
+
+interface RequestSpec {
+  summary: string;
+  description: string;
+  type: string;
+  reporter: User;
+  priority: Priority;
+  status: string;
+  assignee?: User;
+  createdMinutesAgo: number;
+  /** Minutes after creation of the first public agent reply */
+  respondedAfter?: number;
+  /** In "Waiting for customer" since (minutes ago) */
+  pausedMinutesAgo?: number;
+  resolvedMinutesAgo?: number;
+  fields?: Record<string, string>;
+  participants?: User[];
+  replies?: { author: User; body: string; minutesAgo: number; internal?: boolean }[];
+  /** Organization id the request is shared with */
+  organization?: string;
+  /** Portal (by link name) it was raised through; the desk's first portal when omitted */
+  portal?: string;
+}
+
+const SD_FLOW: Flow = [
+  { name: 'Waiting for support', category: IssueStatus.TO_DO },
+  { name: 'In Progress', category: IssueStatus.DOING },
+  { name: 'Waiting for customer', category: IssueStatus.DOING },
+  { name: 'Resolved', category: IssueStatus.CLOSED },
+];
+const SD_MOVES: [string, string][] = [
+  ['Waiting for support', 'In Progress'], ['Waiting for support', 'Waiting for customer'], ['Waiting for support', 'Resolved'],
+  ['In Progress', 'Waiting for customer'], ['In Progress', 'Waiting for support'], ['In Progress', 'Resolved'],
+  ['Waiting for customer', 'Waiting for support'], ['Waiting for customer', 'In Progress'], ['Waiting for customer', 'Resolved'],
+  ['Resolved', 'Waiting for support'],
+];
+
+interface DeskSpec {
+  key: string;
+  name: string;
+  description: string;
+  lead: User;
+  agents: [User, ProjectRole][];
+  fields: { key: string; name: string; type: 'TEXT' | 'SELECT' | 'NUMBER'; options?: string[]; order: number }[];
+  /** [request type, field key, required] */
+  formFields: [string, string, boolean][];
+  /** The project's customer portals, all feeding this project */
+  portals: PortalSpec[];
+  /** Its email address. No mailbox is connected in the demo: try it with "Send a test email". */
+  email?: { address: string; createCustomers: boolean };
+}
+
+interface PortalSpec {
+  slug: string;
+  name: string;
+  open?: boolean;
+  welcome?: string;
+  color?: string;
+  logo?: string;
+  /** Organizations (by id) whose members may use it */
+  organizations?: string[];
+  /** Request types offered (by name); all when omitted */
+  requestTypes?: string[];
+}
+
+/** A service desk set up the way the API sets up a new one; returns a function that adds requests to it. */
+async function demoDesk(d: DeskSpec) {
+  const desk = await prisma.project.upsert({
+    where: { key: d.key },
+    update: {},
+    create: {
+      key: d.key,
+      name: d.name,
+      description: d.description,
+      type: ProjectType.SERVICE_DESK,
+      leadId: d.lead.id,
+      strictHierarchy: false,
+      defaultAccess: ProjectAccess.NONE,
+    },
+  });
+  for (const [u, role] of d.agents) {
+    await prisma.projectMember.upsert({
+      where: { projectId_userId: { projectId: desk.id, userId: u.id } },
+      update: {},
+      create: { projectId: desk.id, userId: u.id, role },
+    });
+  }
+
+  const flow = await ensureWorkflow(desk.id, SD_FLOW, SD_MOVES);
+  await prisma.workflowStatus.updateMany({ where: { projectId: desk.id, name: 'Waiting for customer' }, data: { pausesSla: true } });
+  if (!(await prisma.requestType.count({ where: { projectId: desk.id } }))) await setUpServiceDesk(prisma, desk.id);
+  const allTypes = await prisma.requestType.findMany({ where: { projectId: desk.id } });
+
+  // Portals: each with its own link, look, organizations and request types.
+  const portalIds = new Map<string, string>();
+  for (const [position, ps] of d.portals.entries()) {
+    const portal = await prisma.portal.upsert({
+      where: { slug: ps.slug },
+      update: {},
+      create: {
+        slug: ps.slug, name: ps.name, projectId: desk.id, position,
+        open: ps.open ?? false, welcome: ps.welcome, color: ps.color, logo: ps.logo,
+        organizations: ps.organizations ? { create: ps.organizations.map((organizationId) => ({ organizationId })) } : undefined,
+        requestTypes: ps.requestTypes
+          ? { create: allTypes.filter((t) => ps.requestTypes!.includes(t.name)).map((t) => ({ requestTypeId: t.id })) }
+          : undefined,
+      },
+    });
+    portalIds.set(ps.slug, portal.id);
+  }
+  if (d.email) {
+    await prisma.emailChannel.upsert({
+      where: { projectId: desk.id },
+      update: {},
+      create: { projectId: desk.id, address: d.email.address, createCustomers: d.email.createCustomers },
+    });
+  }
+
+  // Fields on the portal forms
+  const B = await new Builder(desk.id, d.key).load();
+  await B.fields(d.fields);
+  const fieldIds = new Map((await prisma.customFieldDefinition.findMany({ where: { projectId: desk.id } })).map((f) => [f.key, f.id]));
+  const types = new Map((await prisma.requestType.findMany({ where: { projectId: desk.id } })).map((t) => [t.name, t]));
+  for (const [position, [typeName, key, required]] of d.formFields.entries()) {
+    const type = types.get(typeName);
+    if (!type) continue;
+    await prisma.requestTypeField.upsert({
+      where: { requestTypeId_fieldId: { requestTypeId: type.id, fieldId: fieldIds.get(key)! } },
+      update: {},
+      create: { requestTypeId: type.id, fieldId: fieldIds.get(key)!, required, position },
+    });
+  }
+
+  return async (s: RequestSpec) => {
+    if (await prisma.issue.findFirst({ where: { projectId: desk.id, summary: s.summary } })) return;
+    const status = flow.get(s.status)!;
+    const type = types.get(s.type)!;
+    const created = minutesAgo(s.createdMinutesAgo);
+    const lastActivity = Math.min(s.createdMinutesAgo, ...(s.replies ?? []).map((r) => r.minutesAgo));
+    const stoppedAt = s.pausedMinutesAgo ?? s.resolvedMinutesAgo;
+    const { key, number } = await B.nextKey();
+    const issue = await prisma.issue.create({
+      data: {
+        key,
+        number,
+        projectId: desk.id,
+        type: type.issueType,
+        requestTypeId: type.id,
+        organizationId: s.organization,
+        portalId: portalIds.get(s.portal ?? d.portals[0].slug),
+        summary: s.summary,
+        description: s.description,
+        priority: s.priority,
+        statusId: status.id,
+        status: status.category,
+        resolution: status.category === IssueStatus.CLOSED ? IssueResolution.COMPLETED : null,
+        reporterId: s.reporter.id,
+        assigneeId: s.assignee?.id,
+        createdAt: created,
+        updatedAt: minutesAgo(lastActivity),
+        firstRespondedAt: s.respondedAfter != null ? new Date(created.getTime() + s.respondedAfter * 60_000) : null,
+        slaPausedAt: stoppedAt != null ? minutesAgo(stoppedAt) : null,
+        resolvedAt: s.resolvedMinutesAgo != null ? minutesAgo(s.resolvedMinutesAgo) : null,
+        watchers: {
+          create: [...new Map([s.reporter, ...(s.assignee ? [s.assignee] : []), ...(s.participants ?? [])].map((u) => [u.id, u])).values()]
+            .map((u) => ({ userId: u.id, createdAt: created })),
+        },
+        customFieldValues: s.fields
+          ? { create: Object.entries(s.fields).map(([k, value]) => ({ fieldId: fieldIds.get(k)!, value })) }
+          : undefined,
+      },
+    });
+    const history = [{ field: 'created', fromValue: null as string | null, toValue: key, userId: s.reporter.id, createdAt: created }];
+    if (s.assignee) {
+      history.push({ field: 'assignee', fromValue: null, toValue: s.assignee.name, userId: s.assignee.id, createdAt: minutesAgo(s.createdMinutesAgo - 5) });
+    }
+    if (s.status !== 'Waiting for support') {
+      history.push({
+        field: 'status', fromValue: 'Waiting for support', toValue: s.status, userId: (s.assignee ?? d.lead).id,
+        createdAt: minutesAgo(stoppedAt ?? s.createdMinutesAgo - 10),
+      });
+    }
+    await prisma.issueHistory.createMany({ data: history.map((h) => ({ ...h, issueId: issue.id })) });
+    for (const r of s.replies ?? []) {
+      const at = minutesAgo(r.minutesAgo);
+      await prisma.comment.create({ data: { issueId: issue.id, authorId: r.author.id, body: r.body, internal: !!r.internal, createdAt: at, updatedAt: at } });
+      await prisma.issueWatcher.upsert({
+        where: { issueId_userId: { issueId: issue.id, userId: r.author.id } },
+        update: {},
+        create: { issueId: issue.id, userId: r.author.id },
+      });
+    }
+  };
+}
+
+async function organization(name: string, members: User[]) {
+  const org = await prisma.organization.upsert({ where: { name }, update: {}, create: { name } });
+  for (const u of members) {
+    await prisma.organizationMember.upsert({
+      where: { organizationId_userId: { organizationId: org.id, userId: u.id } },
+      update: {},
+      create: { organizationId: org.id, userId: u.id },
+    });
+  }
+  return org;
+}
+
+// A simple logo for the Acme help center (kept as a data URL, like logos uploaded in the app).
+const ACME_LOGO = `data:image/svg+xml;base64,${Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#00875A"/>'
+  + '<path d="M17 47 32 15l15 32h-8l-7-16-7 16z" fill="#fff"/></svg>',
+).toString('base64')}`;
+const GLOBEX_LOGO = `data:image/svg+xml;base64,${Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#5243AA"/>'
+  + '<circle cx="32" cy="32" r="16" fill="none" stroke="#fff" stroke-width="6"/><path d="M32 32h14" stroke="#fff" stroke-width="6"/></svg>',
+).toString('base64')}`;
+
+async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' | 'nikos' | 'anna' | 'george' | 'peter', User>) {
+  const { anna, george, peter, andreas, sofia, lina, nikos, elena } = p;
+
+  // Customer companies: colleagues see requests shared with their organization.
+  const acme = await organization('Acme Retail', [anna, peter]);
+  const globex = await organization('Globex', [george]);
+
+  const request = await demoDesk({
+    key: 'HELP',
+    name: 'IT Help Desk',
+    description: 'Internal IT support. Customers raise requests in the help center; agents work them from the queues.',
+    lead: elena,
+    agents: [[elena, ProjectRole.ADMIN], [andreas, ProjectRole.MEMBER], [sofia, ProjectRole.MEMBER], [lina, ProjectRole.MEMBER]],
+    fields: [
+      { key: 'os', name: 'Operating system', type: 'SELECT', options: ['Windows', 'macOS', 'Linux', 'iOS', 'Android'], order: 1 },
+      { key: 'manager', name: 'Approving manager', type: 'TEXT', order: 2 },
+      { key: 'affected_url', name: 'Affected page or URL', type: 'TEXT', order: 3 },
+    ],
+    formFields: [
+      ['Get IT help', 'os', false],
+      ['Report a bug', 'os', false], ['Report a bug', 'affected_url', false],
+      ['Request access', 'manager', true],
+    ],
+    // Internal IT: one portal, open to every customer and tied to no client company.
+    portals: [{ slug: 'help', name: 'IT Help Desk', open: true }],
+    email: { address: 'help@conductor.local', createCustomers: true },
+  });
+
+  // One request in each SLA situation: breached, on track, paused, at risk, met, brand new.
+  await request({
+    summary: "Can't connect to the VPN from home",
+    description: "<p>Since this morning the VPN client says <em>Authentication failed</em>. My password works for email. I'm working from home all week.</p>",
+    type: 'Get IT help', reporter: anna, priority: Priority.HIGH, status: 'Waiting for support',
+    createdMinutesAgo: 95, fields: { os: 'Windows' },
+  });
+  await request({
+    summary: 'Laptop battery drains in under two hours',
+    description: "<p>My laptop used to last a full day; now it's empty by lunchtime even with the screen dimmed.</p>",
+    type: 'Get IT help', reporter: george, priority: Priority.MEDIUM, status: 'In Progress', assignee: andreas,
+    createdMinutesAgo: 26 * 60, respondedAfter: 75, fields: { os: 'macOS' },
+    replies: [
+      { author: andreas, body: '<p>Thanks George. Could you open <strong>System Settings → Battery</strong> and tell me which apps use the most energy?</p>', minutesAgo: 26 * 60 - 75 },
+      { author: george, body: '<p>The top one is "Teams Helper" at 40%.</p>', minutesAgo: 24 * 60 },
+      { author: andreas, body: "<p>Known issue with Teams 24.3 on this model; the upgrade is scheduled for Friday. Battery health also reads 71%, so I'll order a replacement.</p>", minutesAgo: 23 * 60, internal: true },
+      { author: andreas, body: "<p>That's a known Teams problem and we'll update it on Friday. Your battery is also worn, so we've ordered a new one and will let you know when it arrives.</p>", minutesAgo: 22 * 60 },
+    ],
+  });
+  await request({
+    summary: 'Access to the Finance shared drive',
+    description: "<p>I've joined the budgeting working group and need read access to the <code>budget-2026</code> folder on the Finance drive.</p>",
+    type: 'Request access', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for customer', assignee: sofia,
+    createdMinutesAgo: 6 * 60, respondedAfter: 50, pausedMinutesAgo: 5 * 60 - 10, fields: { manager: 'Katerina Antoniou' },
+    replies: [
+      { author: sofia, body: '<p>Finance drives need written approval. Could you ask Katerina to reply here confirming the access, please?</p>', minutesAgo: 5 * 60 - 10 },
+      { author: sofia, body: '<p>Checked AD: the group is <code>FIN-Budget-RO</code>. Will add Anna as soon as approval lands.</p>', minutesAgo: 5 * 60 - 12, internal: true },
+    ],
+  });
+  await request({
+    summary: 'Payment page shows a blank screen on Safari',
+    description: '<p>When I click <strong>Pay now</strong> on Safari the page turns white. Chrome works. Customers are calling us about it.</p>',
+    type: 'Report a bug', reporter: george, priority: Priority.HIGHEST, status: 'In Progress', assignee: lina,
+    createdMinutesAgo: 150, respondedAfter: 18, participants: [anna], fields: { os: 'iOS', affected_url: 'https://shop.example.com/checkout' },
+    replies: [
+      { author: lina, body: "<p>We can reproduce it on Safari and are working on a fix now. I'll update you within the hour.</p>", minutesAgo: 132 },
+      { author: lina, body: "<p>Root cause: the new payment SDK uses a regex lookbehind that older Safari doesn't support. Hotfix in review.</p>", minutesAgo: 60, internal: true },
+    ],
+  });
+  await request({
+    summary: 'Password reset email never arrives',
+    description: '<p>I requested a password reset three times but no email came, not even in spam.</p>',
+    type: 'Get IT help', reporter: anna, priority: Priority.HIGH, status: 'Resolved', assignee: andreas,
+    createdMinutesAgo: 3 * 24 * 60, respondedAfter: 40, resolvedMinutesAgo: 2 * 24 * 60,
+    replies: [
+      { author: andreas, body: "<p>Our mail relay was rejecting the reset emails. It's fixed; please try again.</p>", minutesAgo: 3 * 24 * 60 - 40 },
+      { author: anna, body: '<p>It worked, thank you!</p>', minutesAgo: 2 * 24 * 60 + 30 },
+    ],
+  });
+  await request({
+    summary: 'Add dark mode to the customer dashboard',
+    description: '<p>Many of us work late shifts; a dark theme would be easier on the eyes.</p>',
+    type: 'Suggest an improvement', reporter: george, priority: Priority.LOW, status: 'Waiting for support',
+    createdMinutesAgo: 35,
+  });
+  await request({
+    summary: 'New starter needs a laptop and accounts',
+    description: '<p>Maria Lopez starts on Monday in Customer Success. She needs a laptop, email, Slack and CRM accounts.</p>',
+    type: 'Get IT help', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for support', assignee: elena,
+    createdMinutesAgo: 5 * 60 + 20, fields: { os: 'Windows' },
+  });
+  await unlinkCompaniesFromHelp([acme.id, globex.id]);
+
+  await removeLegacyAcmeDesk();
+
+  // ── CS: one team serving several client companies, each through its own portal ──
+  const csRequest = await demoDesk({
+    key: 'CS',
+    name: 'Client Services',
+    description: 'One support team for all our client companies. Each client raises requests through its own portal.',
+    lead: lina,
+    agents: [[lina, ProjectRole.ADMIN], [nikos, ProjectRole.MEMBER], [andreas, ProjectRole.MEMBER]],
+    fields: [{ key: 'store', name: 'Store', type: 'SELECT', options: ['Head office', 'Athens', 'Limassol', 'Thessaloniki'], order: 1 }],
+    formFields: [['Get IT help', 'store', true], ['Report a bug', 'store', false]],
+    portals: [
+      {
+        slug: 'acme',
+        name: 'Acme Support',
+        color: '#00875A',
+        welcome: 'Welcome to Acme Support. Tell us what you need and our team will get back to you, usually within a few hours.',
+        logo: ACME_LOGO,
+        organizations: [acme.id],
+        requestTypes: ['Get IT help', 'Report a bug', 'Request access'],
+      },
+      {
+        slug: 'globex',
+        name: 'Globex Service Center',
+        color: '#5243AA',
+        welcome: 'Globex customers: report a problem or suggest an improvement. We reply within one business day.',
+        logo: GLOBEX_LOGO,
+        organizations: [globex.id],
+        requestTypes: ['Report a bug', 'Suggest an improvement'],
+      },
+    ],
+    // Each client's emails go to its own portal; strangers are turned away rather than joining a client's portal.
+    email: { address: 'support@clientservices.local', createCustomers: false },
+  });
+  await csRequest({
+    portal: 'acme',
+    summary: 'Card terminal in the Limassol store keeps rebooting',
+    description: '<p>Terminal 2 restarts every few minutes since this morning. We are sending customers to terminal 1.</p>',
+    type: 'Get IT help', reporter: peter, priority: Priority.HIGH, status: 'In Progress', assignee: nikos,
+    createdMinutesAgo: 70, respondedAfter: 12, fields: { store: 'Limassol' }, organization: acme.id,
+    replies: [
+      { author: nikos, body: '<p>Thanks Peter, we can see the terminal dropping off the network. A replacement is on its way and should arrive this afternoon.</p>', minutesAgo: 58 },
+      { author: nikos, body: '<p>Courier booked, tracking 77-3310. Firmware rollback did not help.</p>', minutesAgo: 50, internal: true },
+    ],
+  });
+  await csRequest({
+    portal: 'acme',
+    summary: 'Price labels print in the wrong currency',
+    description: '<p>The label printer at head office shows prices in USD instead of EUR.</p>',
+    type: 'Report a bug', reporter: anna, priority: Priority.MEDIUM, status: 'Waiting for support',
+    createdMinutesAgo: 40, fields: { store: 'Head office' }, organization: acme.id,
+  });
+  await csRequest({
+    portal: 'acme',
+    summary: 'Change my store manager permissions',
+    description: '<p>I moved to the Athens store and need manager access there instead of Limassol.</p>',
+    type: 'Request access', reporter: peter, priority: Priority.LOW, status: 'Waiting for support',
+    createdMinutesAgo: 25,
+  });
+  await csRequest({
+    portal: 'globex',
+    summary: 'Invoice PDF shows the wrong VAT number',
+    description: '<p>Since the last update our invoices show the old VAT number in the footer.</p>',
+    type: 'Report a bug', reporter: george, priority: Priority.HIGH, status: 'In Progress', assignee: andreas,
+    createdMinutesAgo: 3 * 60, respondedAfter: 35, organization: globex.id,
+    replies: [
+      { author: andreas, body: '<p>Thanks George, we found the cached template and are regenerating this month\'s invoices.</p>', minutesAgo: 3 * 60 - 35 },
+    ],
+  });
+  await csRequest({
+    portal: 'globex',
+    summary: 'Add CSV export to the order history',
+    description: '<p>Our finance team would like to export the order history to CSV.</p>',
+    type: 'Suggest an improvement', reporter: george, priority: Priority.LOW, status: 'Waiting for support',
+    createdMinutesAgo: 90, organization: globex.id,
+  });
+}
+
+/**
+ * Earlier versions of this seed linked the client companies to the internal IT portal and shared two of its
+ * demo requests with Acme. Client companies belong to the Client Services portals only: undo exactly that.
+ */
+async function unlinkCompaniesFromHelp(organizationIds: string[]) {
+  await prisma.portalOrganization.deleteMany({ where: { portal: { slug: 'help' }, organizationId: { in: organizationIds } } });
+  await prisma.issue.updateMany({
+    where: {
+      project: { key: 'HELP' },
+      organizationId: { in: organizationIds },
+      summary: { in: ['Access to the Finance shared drive', 'New starter needs a laptop and accounts'] },
+    },
+    data: { organizationId: null },
+  });
+}
+
+/**
+ * Earlier versions of this seed made a separate ACME service desk for Acme alone; its requests now live in
+ * Client Services (CS) behind the Acme portal. Remove it, but only while it still holds nothing but that demo data.
+ */
+async function removeLegacyAcmeDesk() {
+  const legacy = await prisma.project.findUnique({ where: { key: 'ACME' }, include: { issues: { select: { id: true, summary: true } } } });
+  const demo = new Set(['Card terminal in the Limassol store keeps rebooting', 'Price labels print in the wrong currency', 'Change my store manager permissions']);
+  if (!legacy || legacy.name !== 'Acme Support' || legacy.issues.some((i) => !demo.has(i.summary))) return;
+  const ids = legacy.issues.map((i) => i.id);
+  await prisma.$transaction([
+    prisma.notification.deleteMany({ where: { OR: [{ issueId: { in: ids } }, { issueKey: { startsWith: 'ACME-' } }] } }),
+    prisma.issueLink.deleteMany({ where: { OR: [{ sourceId: { in: ids } }, { targetId: { in: ids } }] } }),
+    prisma.issueComponent.deleteMany({ where: { issueId: { in: ids } } }),
+    prisma.issueVersion.deleteMany({ where: { issueId: { in: ids } } }),
+    prisma.issue.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.customFieldDefinition.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.label.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.component.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.version.deleteMany({ where: { projectId: legacy.id } }),
+    prisma.project.delete({ where: { id: legacy.id } }),
+  ]);
+  console.log('Replaced the old ACME demo desk with the Client Services (CS) project and its Acme portal.');
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
+
+// ─── Recipient groups & service notices ──────────────────────────────────────
+
+// A new installation gets the starter templates when the app first starts, but only while there are no notices: the demo
+// notice would stop that, so the templates are added here.
+async function seedServiceNotices(sender: User) {
+  for (const t of STARTER_TEMPLATES) {
+    await prisma.noticeTemplate.upsert({
+      where: { name: t.name },
+      update: {},
+      create: { name: t.name, description: t.description, subject: t.subject, content: JSON.stringify(t.content) },
+    });
+  }
+
+  const orgs = await prisma.organization.findMany({ where: { name: { in: ['Acme Retail', 'Globex'] } } });
+  await prisma.recipientGroup.upsert({
+    where: { name: 'All Companies' },
+    update: {},
+    create: {
+      name: 'All Companies',
+      users: { create: [{ userId: sender.id }] },
+      organizations: { create: orgs.map((o) => ({ organizationId: o.id })) },
+    },
+  });
+
+  const subject = 'P1 Service Interruption Notification';
+  if (await prisma.serviceNotice.findFirst({ where: { subject } })) return;
+  const template = await prisma.noticeTemplate.findUnique({ where: { name: 'P1 service interruption' } });
+  const content = normalizeContent({
+    style: 'alert',
+    color: '#b91c1c',
+    eyebrow: 'PRIORITY 1',
+    headline: subject,
+    title: '',
+    sections: [
+      { kind: 'text', value: 'This notification is to inform you of a service interruption currently impacting our services. Our technical teams are already working on resolving this interruption.' },
+      { kind: 'box', label: 'Date & Time', lines: [
+        { label: 'Date', value: 'Wednesday 14th October 2026', input: 'date' },
+        { label: 'Start', value: '18:15', input: 'time' },
+        { label: 'End', value: '', input: 'time' },
+      ] },
+      { kind: 'small', value: 'Next update will be sent in 30 minutes.' },
+      { kind: 'note', label: 'Latest Information', value: '18:15 - Our teams are working with the highest priority to resolve the issue.' },
+      { kind: 'note', label: '', value: '19:30 - Issue has been identified and fix is progress.' },
+    ],
+    footer: '',
+    brand: 'playtech',
+    brandTag: 'SPORTS',
+  });
+  await prisma.serviceNotice.create({
+    data: {
+      templateId: template?.id ?? null,
+      subject,
+      content: JSON.stringify(content),
+      html: renderNoticeHtml(content),
+      text: renderNoticeText(content),
+      to: JSON.stringify([{ email: sender.email, name: sender.name }]),
+      groups: JSON.stringify({ to: [], cc: [], bcc: [] }),
+      sentById: sender.id,
+      createdAt: ago(0, 1),
+    },
+  });
+}
 
 async function main() {
   const passwordHash = await bcrypt.hash('admin123', 10);
@@ -300,11 +802,11 @@ async function main() {
   for (const p of PEOPLE) {
     await prisma.user.upsert({ where: { email: p.email }, update: {}, create: { ...p, passwordHash } });
   }
-  const admin = await byEmail('admin@jiratech.local');
-  const maria = await byEmail('pm@jiratech.local');
-  const andreas = await byEmail('dev@jiratech.local');
-  const alex = await byEmail('qa@jiratech.local');
-  const [elena, nikos, sofia, daniel, katerina, marcus, lina] = await Promise.all(PEOPLE.map((p) => byEmail(p.email)));
+  const admin = await byEmail('admin@conductor.local');
+  const maria = await byEmail('pm@conductor.local');
+  const andreas = await byEmail('dev@conductor.local');
+  const alex = await byEmail('qa@conductor.local');
+  const [elena, nikos, sofia, daniel, katerina, marcus, lina, anna, george, peter, stylianos] = await Promise.all(PEOPLE.map((p) => byEmail(p.email)));
 
   // ── PAY: Payments Platform ────────────────────────────────────────────────
   const pay = await prisma.project.upsert({
@@ -605,19 +1107,19 @@ async function main() {
     type: IssueType.TASK, parent: incidentEpic, summary: 'Grant on-call engineers access to the feed admin console',
     status: 'BACKLOG', priority: Priority.LOW, reporter: maria, assignee: admin, createdDaysAgo: 5, components: ['@DEVOPS'],
   });
-  await comment(adminReview, elena, '@admin@jiratech.local the new fee schedule saves about 0.12% per transaction. Can you approve by Friday?', 2);
+  await comment(adminReview, elena, '@admin@conductor.local the new fee schedule saves about 0.12% per transaction. Can you approve by Friday?', 2);
 
   // ── Conversations ─────────────────────────────────────────────────────────
   await comment(applePay, nikos, 'Button and payment sheet are working on staging. Still need the merchant ID in production before we can test end to end.', 10, 5);
-  await comment(applePay, elena, `Merchant ID is registered (${merchantId.key}). @nikos@jiratech.local you should be unblocked now.`, 9, 2);
-  await comment(applePay, sofia, 'Found an issue: the sheet shows "JiraTech Ltd" instead of the brand name. Is that expected?', 6, 4);
-  await comment(applePay, katerina, 'Not expected — it must show the brand. @nikos@jiratech.local can you take that as part of this story?', 6, 1);
+  await comment(applePay, elena, `Merchant ID is registered (${merchantId.key}). @nikos@conductor.local you should be unblocked now.`, 9, 2);
+  await comment(applePay, sofia, 'Found an issue: the sheet shows "Conductor Ltd" instead of the brand name. Is that expected?', 6, 4);
+  await comment(applePay, katerina, 'Not expected — it must show the brand. @nikos@conductor.local can you take that as part of this story?', 6, 1);
   await comment(applePay, nikos, 'Yes, fixed in the latest build. Display name now comes from the brand config.', 5, 3);
 
   await comment(timeoutBug, daniel, '14 customer complaints since Friday. This needs to go out as a hotfix, not wait for 2.6.0.', 4, 2);
   await comment(timeoutBug, andreas, 'Root cause: the gateway idle timeout is 30s and the 3DS redirect keeps the connection open. Raising it to 120s for the /3ds routes only.', 3, 6);
-  await comment(timeoutBug, elena, '@daniel@jiratech.local agreed — please plan a hotfix release once Andreas has a PR.', 3, 2);
-  await comment(timeoutBug, andreas, 'PR is up. @sofia@jiratech.local could you run the slow-3DS test suite against it?', 1, 5);
+  await comment(timeoutBug, elena, '@daniel@conductor.local agreed — please plan a hotfix release once Andreas has a PR.', 3, 2);
+  await comment(timeoutBug, andreas, 'PR is up. @sofia@conductor.local could you run the slow-3DS test suite against it?', 1, 5);
 
   await comment(walletTokens, lina, 'Waiting on the vault team (their ticket VLT-1182). They expect to enable the token type next Tuesday.', 7);
   await comment(walletTokens, elena, 'Marked as blocked and amber. Let\'s re-check on Tuesday.', 6);
@@ -627,7 +1129,7 @@ async function main() {
 
   await comment(crash, sofia, 'Crash rate is 1.2% of Android sessions on 5.1 — highest in the app. Attaching the Crashlytics trace to the ticket.', 6);
   await comment(crash, lina, 'We inflate every market row up front. Switching the list to paging should fix it.', 4);
-  await comment(crash, katerina, 'This is a release blocker for 5.2. @daniel@jiratech.local please don\'t cut the branch without it.', 3);
+  await comment(crash, katerina, 'This is a release blocker for 5.2. @daniel@conductor.local please don\'t cut the branch without it.', 3);
   await comment(crash, daniel, 'Noted. Holding the branch cut until this is merged.', 2);
 
   await comment(oddsBug, alex, 'Happened again at 20:14 during the derby. Resync fixed it within 2 minutes but we were suspended for 9 minutes before anyone noticed.', 2);
@@ -707,6 +1209,9 @@ async function main() {
     [sofia, ProjectRole.MEMBER], [marcus, ProjectRole.MEMBER], [daniel, ProjectRole.VIEWER], [alex, ProjectRole.VIEWER],
   ]);
 
+  await seedServiceDesk({ elena, andreas, sofia, lina, nikos, anna, george, peter });
+  await seedServiceNotices(stylianos);
+
   // ── Saved filters ─────────────────────────────────────────────────────────
   await filter(admin, 'Release blockers', 'labels = release-blocker OR (priority = Highest AND status != CLOSED) ORDER BY priority DESC', true,
     'Anything that could stop a release, across all projects');
@@ -715,6 +1220,8 @@ async function main() {
   await filter(maria, 'SPORTS defects', 'project = SPORTS AND type = Defect ORDER BY priority DESC', true);
   await filter(elena, 'PAY blocked or at risk', 'project = PAY AND (blocked = true OR priority = Highest) AND status != CLOSED', true);
   await filter(katerina, 'MOB 5.2 scope', 'project = MOB AND fixVersion = 5.2 ORDER BY status ASC', true);
+
+  await seedFeatures(prisma, { admin, maria, elena, andreas, sofia });
 
   const counts = await Promise.all([
     prisma.user.count(), prisma.project.count(), prisma.issue.count(), prisma.comment.count(),

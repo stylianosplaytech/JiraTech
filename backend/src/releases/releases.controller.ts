@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Param, Body, UseGuards, Request } from '@nestjs/common';
+import { ApiBody } from '@nestjs/swagger';
 import { ReleasesService } from './releases.service';
 import { JwtAuthGuard } from '../auth/guards';
 import { AccessGuard, RequireAccess } from '../access/access.guard';
@@ -15,6 +16,7 @@ export class ReleasesController {
   }
 
   @Post(':epicId/candidates')
+  @ApiBody({ schema: { type: 'object', required: ['summary', 'versionIds'], properties: { summary: { type: 'string' }, versionIds: { type: 'array', items: { type: 'string' } } } } })
   @RequireAccess('edit', { from: 'issueParam', param: 'epicId' })
   createCandidate(
     @Param('epicId') epicId: string,

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 
@@ -16,20 +16,59 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      const { accessToken } = await api.login(email, password);
+      const { accessToken, user } = await api.login(email, password);
       localStorage.setItem('token', accessToken);
       queryClient.clear();
+      // We already know who signed in: show their profile menu straight away.
+      queryClient.setQueryData(['me'], user);
       navigate('/');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Login failed';
       setError(msg.includes('fetch')
-        ? 'Can\'t reach the server. Start it with "npm run dev" in the JiraTech folder.'
+        ? 'Can\'t reach the server. Start it with "npm run dev" in the Conductor folder.'
         : msg === 'Invalid credentials' ? 'Incorrect email or password.' : msg);
     } finally {
       setLoading(false);
     }
   }
 
+  return (
+    <AuthShell
+      footer={(
+        <p className="text-xs text-jira-muted mt-6 text-center max-w-[400px]">
+          Development accounts: admin@conductor.local, dev@conductor.local, qa@conductor.local — see backend/prisma/seed.ts for the password.
+        </p>
+      )}
+    >
+      <form onSubmit={handleSubmit} className="bg-white rounded-[3px] shadow-modal px-10 py-8 w-full max-w-[400px]">
+        <h1 className="text-base font-semibold text-center text-jira-subtle mb-6">Log in to continue</h1>
+
+        {error && (
+          <div role="alert" className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2 mb-4">{error}</div>
+        )}
+
+        <label className="block mb-4">
+          <span className="field-label">Email</span>
+          <input type="email" autoComplete="username" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@company.com" />
+        </label>
+        <label className="block mb-6">
+          <span className="flex items-baseline justify-between">
+            <span className="field-label">Password</span>
+            <Link to="/forgot-password" state={{ email }} className="link text-xs">Forgot password?</Link>
+          </span>
+          <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
+        </label>
+
+        <button type="submit" disabled={loading} className="btn btn-primary w-full h-10">
+          {loading ? 'Logging in…' : 'Log in'}
+        </button>
+      </form>
+    </AuthShell>
+  );
+}
+
+/** The logo above a centred card: the login and set-password pages. */
+export function AuthShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#FAFBFC] px-4">
       <div className="flex items-center gap-2 mb-8">
@@ -43,33 +82,10 @@ export default function LoginPage() {
           <path d="M12 2 22 12 12 22 2 12Z" fill="url(#login-g)" />
           <path d="M12 7.5 16.5 12 12 16.5 7.5 12Z" fill="white" />
         </svg>
-        <span className="text-2xl font-semibold text-jira-navy">JiraTech</span>
+        <span className="text-2xl font-semibold text-jira-navy">Conductor</span>
       </div>
-
-      <form onSubmit={handleSubmit} className="bg-white rounded-[3px] shadow-modal px-10 py-8 w-full max-w-[400px]">
-        <h1 className="text-base font-semibold text-center text-jira-subtle mb-6">Log in to continue</h1>
-
-        {error && (
-          <div role="alert" className="rounded-[3px] bg-[#FFEBE6] text-[#BF2600] px-3 py-2 mb-4">{error}</div>
-        )}
-
-        <label className="block mb-4">
-          <span className="field-label">Email</span>
-          <input type="email" autoComplete="username" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@company.com" />
-        </label>
-        <label className="block mb-6">
-          <span className="field-label">Password</span>
-          <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
-        </label>
-
-        <button type="submit" disabled={loading} className="btn btn-primary w-full h-10">
-          {loading ? 'Logging in…' : 'Log in'}
-        </button>
-      </form>
-
-      <p className="text-xs text-jira-muted mt-6 text-center max-w-[400px]">
-        Development accounts: admin@jiratech.local, dev@jiratech.local, qa@jiratech.local — see backend/prisma/seed.ts for the password.
-      </p>
+      {children}
+      {footer}
     </div>
   );
 }

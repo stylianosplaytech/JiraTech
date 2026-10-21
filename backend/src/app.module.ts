@@ -10,6 +10,7 @@ import { SchedulingModule } from './scheduling/scheduling.module';
 import { ReleasesModule } from './releases/releases.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { DashboardsModule } from './dashboards/dashboards.module';
 import { ReportsModule } from './reports/reports.module';
 import { BoardModule } from './board/board.module';
 import { HealthModule } from './health/health.module';
@@ -18,18 +19,32 @@ import { LabelsModule } from './labels/labels.module';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { VersionsModule } from './versions/versions.module';
 import { ProjectsModule } from './projects/projects.module';
+import { ProjectImportModule } from './project-import/project-import.module';
 import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { MailModule } from './mail/mail.module';
+import { ServiceDeskModule } from './service-desk/service-desk.module';
+import { IssueEmailModule } from './issue-email/issue-email.module';
+import { RecipientGroupsModule } from './recipient-groups/recipient-groups.module';
+import { OrganizationsModule } from './organizations/organizations.module';
+import { ServiceNoticesModule } from './service-notices/service-notices.module';
+import { ApiTokensModule } from './api-tokens/api-tokens.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { EventsModule } from './events/events.module';
+import { AutomationModule } from './automation/automation.module';
+import { InboundWebhooksModule } from './inbound-webhooks/inbound-webhooks.module';
 
 @Module({
   imports: [
     PrismaModule,
+    MailModule,
     AccessModule,
     WorkflowModule,
     HealthModule,
     AuthModule,
     UsersModule,
     ProjectsModule,
+    ProjectImportModule,
     SearchModule,
     NotificationsModule,
     IssuesModule,
@@ -42,8 +57,19 @@ import { NotificationsModule } from './notifications/notifications.module';
     ReleasesModule,
     IncidentsModule,
     DashboardModule,
+    DashboardsModule,
     ReportsModule,
     BoardModule,
+    ServiceDeskModule,
+    IssueEmailModule,
+    RecipientGroupsModule,
+    OrganizationsModule,
+    ServiceNoticesModule,
+    EventsModule,
+    ApiTokensModule,
+    WebhooksModule,
+    AutomationModule,
+    InboundWebhooksModule,
   ],
 })
 export class AppModule {}

@@ -1,6 +1,7 @@
 import {
-  createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode,
+  createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertIcon, CheckIcon, XIcon } from './Icons';
 
 // ─── Click-outside / Escape helper ───────────────────────────────────────────
@@ -41,11 +42,73 @@ export function Dropdown({
     <div className="relative inline-block" ref={ref}>
       {trigger({ open, toggle: () => setOpen((o) => !o) })}
       {open && (
-        <div className={`popover absolute top-full mt-1 ${align === 'right' ? 'right-0' : 'left-0'} ${width}`}>
+        <div className={`popover absolute top-full mt-1 ${align === 'right' ? 'right-0' : 'left-0'} ${width} max-w-[calc(100vw-1rem)]`}>
           {children(close)}
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Floating popover ────────────────────────────────────────────────────────
+
+/** Where a floating popover opens: below an element, or at a point (right-click). */
+export type PopoverAnchor = DOMRect | { x: number; y: number };
+
+/**
+ * A popover rendered on document.body at a fixed position, so scrolling or overflow-hidden parents (board
+ * columns) never clip it. Flips above / to the left when it would run off the screen. Events don't leak to
+ * the React parent, so a popover opened from a card doesn't also "click" the card.
+ */
+export function FloatingPopover({
+  anchor, onClose, children, width = 240, align = 'left',
+}: {
+  anchor: PopoverAnchor;
+  onClose: () => void;
+  children: ReactNode;
+  width?: number;
+  align?: 'left' | 'right';
+}) {
+  const ref = useDismiss<HTMLDivElement>(true, onClose);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = 'width' in anchor ? anchor : null;
+    const h = el.offsetHeight;
+    let left = rect ? (align === 'right' ? rect.right - width : rect.left) : (anchor as { x: number }).x;
+    let top = rect ? rect.bottom + 4 : (anchor as { y: number }).y;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, (rect ? rect.top - 4 : top) - h);
+    left = Math.min(Math.max(8, left), window.innerWidth - width - 8);
+    setPos({ left, top });
+  }, [anchor, align, width, ref]);
+
+  // A fixed popover would drift from its anchor when the page scrolls: close it instead.
+  useEffect(() => {
+    const onScroll = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onClose);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onClose);
+    };
+  }, [onClose, ref]);
+
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+  return createPortal(
+    <div
+      ref={ref}
+      className="popover fixed max-w-[calc(100vw-1rem)]"
+      style={{ width, left: pos?.left ?? -9999, top: pos?.top ?? -9999 }}
+      onClick={stop}
+      onMouseDown={stop}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onKeyDown={stop}
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }
 
@@ -67,21 +130,21 @@ export function Modal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[#091E427A] p-4 pt-[10vh] overflow-y-auto" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[#091E427A] p-2 pt-4 sm:p-4 sm:pt-[10vh] overflow-y-auto" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         className={`w-full ${width} bg-white rounded-[3px] shadow-modal`}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 pt-5 pb-3">
+        <div className="flex items-center justify-between gap-2 px-4 sm:px-6 pt-5 pb-3">
           <h2 className="text-xl font-medium text-jira-navy">{title}</h2>
           <button type="button" onClick={onClose} className="btn btn-subtle btn-icon" aria-label="Close">
             <XIcon />
           </button>
         </div>
-        <div className="px-6 pb-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 px-6 py-4 border-t border-jira-border">{footer}</div>}
+        <div className="px-4 sm:px-6 pb-4">{children}</div>
+        {footer && <div className="flex flex-wrap justify-end gap-2 px-4 sm:px-6 py-4 border-t border-jira-border">{footer}</div>}
       </div>
     </div>
   );
@@ -205,9 +268,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={show}>
       {children}
-      <div className="fixed bottom-6 left-6 z-[60] flex flex-col gap-2">
+      <div className="fixed bottom-4 inset-x-4 sm:bottom-6 sm:left-6 sm:right-auto z-[60] flex flex-col gap-2">
         {toasts.map((t) => (
-          <div key={t.id} className="flex items-start gap-2 bg-white shadow-modal rounded-[3px] px-4 py-3 w-80 text-sm">
+          <div key={t.id} className="flex items-start gap-2 bg-white shadow-modal rounded-[3px] px-4 py-3 w-full sm:w-80 text-sm">
             <span className={t.tone === 'error' ? 'text-[#DE350B]' : 'text-[#36B37E]'}>
               {t.tone === 'error' ? <AlertIcon /> : <CheckIcon />}
             </span>
@@ -256,9 +319,9 @@ export function PageHeader({ breadcrumbs, title, actions, children }: {
   return (
     <div className="mb-6">
       {breadcrumbs && <div className="text-sm text-jira-subtle mb-2">{breadcrumbs}</div>}
-      <div className="flex items-start justify-between gap-4">
-        <h1 className="page-title">{title}</h1>
-        {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <h1 className="page-title min-w-0 break-words">{title}</h1>
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
       {children}
     </div>

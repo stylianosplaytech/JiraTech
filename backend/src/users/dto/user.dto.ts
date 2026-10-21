@@ -1,5 +1,6 @@
-import { IsString, IsEmail, IsEnum, IsOptional, MinLength } from 'class-validator';
+import { IsString, IsEmail, IsEnum, IsOptional, MinLength, IsBoolean } from 'class-validator';
 import { UserRole } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateUserDto {
   @IsEmail()
@@ -9,12 +10,20 @@ export class CreateUserDto {
   @MinLength(2)
   name!: string;
 
+  /** Leave out to let them choose their own through the welcome email */
+  @IsOptional()
   @IsString()
   @MinLength(6)
-  password!: string;
+  password?: string;
 
+  @ApiProperty({ enum: UserRole })
   @IsEnum(UserRole)
   role!: UserRole;
+
+  /** Send a welcome email with a link to choose their password (the default, and required without a password) */
+  @IsOptional()
+  @IsBoolean()
+  sendInvite?: boolean;
 }
 
 export class UpdateUserDto {
@@ -33,6 +42,7 @@ export class UpdateUserDto {
   password?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({ enum: UserRole })
   @IsEnum(UserRole)
   role?: UserRole;
 }

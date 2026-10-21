@@ -58,7 +58,7 @@ export default function PlanningPage() {
         <EmptyState title="No program increments yet">This project doesn't have any PIs to plan.</EmptyState>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
             {pis.map((p) => (
               <button
                 key={p.id}
@@ -112,27 +112,29 @@ export default function PlanningPage() {
 
               <section>
                 <h2 className="text-base font-semibold mb-3">Issues in {pi.name} <span className="text-jira-subtle font-normal">({piIssues?.length ?? 0})</span></h2>
-                <table className="data-table">
-                  <thead>
-                    <tr><th className="w-12">Type</th><th>Key</th><th>Summary</th><th>Status</th><th>Estimate</th><th>Scheduled</th></tr>
-                  </thead>
-                  <tbody>
-                    {piIssues?.map((issue) => (
-                      <tr key={issue.id}>
-                        <td><TypeBadge type={issue.type} /></td>
-                        <td className="whitespace-nowrap"><Link to={`/browse/${issue.key}`} className="link">{issue.key}</Link></td>
-                        <td className="max-w-md"><Link to={`/browse/${issue.key}`} className="hover:underline line-clamp-1">{issue.summary}</Link></td>
-                        <td><StatusBadge status={issue.status} name={issue.workflowStatus?.name} /></td>
-                        <td>{issue.estimate ? `${issue.estimate}h` : '—'}</td>
-                        <td className="text-jira-subtle whitespace-nowrap">
-                          {issue.scheduledStart
-                            ? `${new Date(issue.scheduledStart).toLocaleDateString()} – ${issue.scheduledEnd ? new Date(issue.scheduledEnd).toLocaleDateString() : '?'}`
-                            : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr><th className="w-12">Type</th><th>Key</th><th>Summary</th><th>Status</th><th>Estimate</th><th>Scheduled</th></tr>
+                    </thead>
+                    <tbody>
+                      {piIssues?.map((issue) => (
+                        <tr key={issue.id}>
+                          <td><TypeBadge type={issue.type} /></td>
+                          <td className="whitespace-nowrap"><Link to={`/browse/${issue.key}`} className="link">{issue.key}</Link></td>
+                          <td className="max-w-md"><Link to={`/browse/${issue.key}`} className="hover:underline line-clamp-1">{issue.summary}</Link></td>
+                          <td><StatusBadge status={issue.status} name={issue.workflowStatus?.name} /></td>
+                          <td>{issue.estimate ? `${issue.estimate}h` : '—'}</td>
+                          <td className="text-jira-subtle whitespace-nowrap">
+                            {issue.scheduledStart
+                              ? `${new Date(issue.scheduledStart).toLocaleDateString()} – ${issue.scheduledEnd ? new Date(issue.scheduledEnd).toLocaleDateString() : '?'}`
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 {piIssues?.length === 0 && <EmptyState title="No issues in this PI" />}
               </section>
             </>

@@ -12,10 +12,12 @@ interface UserPickerProps {
   /** Adds an "Assign to me" shortcut. */
   currentUserId?: string;
   disabled?: boolean;
+  /** The selected person, shown even when they are not in the staff list (e.g. a service desk customer who reported the issue). */
+  selected?: { id: string; name: string; email?: string } | null;
 }
 
 export default function UserPicker({
-  value, onChange, placeholder = 'Unassigned', allowClear = true, variant = 'field', currentUserId, disabled,
+  value, onChange, placeholder = 'Unassigned', allowClear = true, variant = 'field', currentUserId, disabled, selected,
 }: UserPickerProps) {
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => api.getUsers() });
 
@@ -28,7 +30,7 @@ export default function UserPicker({
       placeholder={placeholder}
       allowClear={allowClear}
       clearLabel={placeholder}
-      options={(users ?? []).map((u) => ({
+      options={[...(users ?? []), ...(selected && selected.id === value && !users?.some((u) => u.id === selected.id) ? [{ ...selected, email: selected.email ?? '' }] : [])].map((u) => ({
         id: u.id,
         label: u.name,
         hint: u.email,
