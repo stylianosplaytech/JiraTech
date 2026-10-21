@@ -75,7 +75,7 @@ export default function PortalRequestPage() {
       </nav>
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2 mb-6">
         <h1 className="page-title min-w-0 break-words flex-1">{request.summary}</h1>
-        {me && !isCustomer(me) && <Link to={`/browse/${request.key}`} className="btn btn-default">Open in JiraTech</Link>}
+        {me && !isCustomer(me) && <Link to={`/browse/${request.key}`} className="btn btn-default">Open in Conductor</Link>}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-6">

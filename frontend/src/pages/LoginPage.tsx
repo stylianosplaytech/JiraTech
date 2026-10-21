@@ -25,7 +25,7 @@ export default function LoginPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Login failed';
       setError(msg.includes('fetch')
-        ? 'Can\'t reach the server. Start it with "npm run dev" in the JiraTech folder.'
+        ? 'Can\'t reach the server. Start it with "npm run dev" in the Conductor folder.'
         : msg === 'Invalid credentials' ? 'Incorrect email or password.' : msg);
     } finally {
       setLoading(false);
@@ -36,7 +36,7 @@ export default function LoginPage() {
     <AuthShell
       footer={(
         <p className="text-xs text-jira-muted mt-6 text-center max-w-[400px]">
-          Development accounts: admin@jiratech.local, dev@jiratech.local, qa@jiratech.local — see backend/prisma/seed.ts for the password.
+          Development accounts: admin@conductor.local, dev@conductor.local, qa@conductor.local — see backend/prisma/seed.ts for the password.
         </p>
       )}
     >
@@ -82,7 +82,7 @@ export function AuthShell({ children, footer }: { children: ReactNode; footer?: 
           <path d="M12 2 22 12 12 22 2 12Z" fill="url(#login-g)" />
           <path d="M12 7.5 16.5 12 12 16.5 7.5 12Z" fill="white" />
         </svg>
-        <span className="text-2xl font-semibold text-jira-navy">JiraTech</span>
+        <span className="text-2xl font-semibold text-jira-navy">Conductor</span>
       </div>
       {children}
       {footer}

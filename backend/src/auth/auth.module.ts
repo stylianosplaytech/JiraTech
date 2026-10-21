@@ -11,7 +11,7 @@ import { UsersModule } from '../users/users.module';
     PassportModule,
     UsersModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'jiratech-dev-secret-change-in-production',
+      secret: process.env.JWT_SECRET ?? 'conductor-dev-secret-change-in-production',
       signOptions: { expiresIn: process.env.JWT_EXPIRES_IN ?? '7d' },
     }),
   ],

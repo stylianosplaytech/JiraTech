@@ -308,7 +308,7 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Project admins may email people who have a JiraTech account, not any address: a rule must not become a way to send
+   * Project admins may email people who have a Conductor account, not any address: a rule must not become a way to send
    * mail to outsiders. (Global admins may.)
    */
   private async requireKnownRecipients(actions: Action[]) {
@@ -319,7 +319,7 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
       const known = await this.prisma.user.findMany({ where: { email: { in: [...external, ...external.map((e) => e.toLowerCase())] } }, select: { email: true } });
       const have = new Set(known.map((u) => u.email.toLowerCase()));
       const unknown = external.find((e) => !have.has(e.toLowerCase()));
-      if (unknown) throw new BadRequestException(`${unknown} has no JiraTech account. Project administrators can email the assignee, reporter, project lead and people with an account; a global administrator can email other addresses.`);
+      if (unknown) throw new BadRequestException(`${unknown} has no Conductor account. Project administrators can email the assignee, reporter, project lead and people with an account; a global administrator can email other addresses.`);
     }
   }
 

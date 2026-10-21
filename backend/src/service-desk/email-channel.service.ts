@@ -160,7 +160,7 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     const address = dto.address?.trim().toLowerCase();
     if (!existing && !address) throw new BadRequestException('Enter the email address customers write to');
     if (address && this.isSystemAddress(address)) {
-      throw new BadRequestException('That is the address JiraTech sends notifications from; use a separate mailbox');
+      throw new BadRequestException('That is the address Conductor sends notifications from; use a separate mailbox');
     }
     const portalId = dto.portalId === undefined ? undefined : dto.portalId || null;
     const requestTypeId = dto.requestTypeId === undefined ? undefined : dto.requestTypeId || null;
@@ -397,12 +397,12 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     const from = mail.fromEmail;
     if (!from) throw new Ignored('The email has no sender address');
     if (mail.automatic) throw new Ignored('Automatic reply, delivery report or mailing list email');
-    if (this.isSystemAddress(from)) throw new Ignored('Sent by JiraTech itself');
+    if (this.isSystemAddress(from)) throw new Ignored('Sent by Conductor itself');
 
     // A reply to an email sent from or received on a request, found by its threading headers.
     const threaded = await this.issueEmails.threadOf(channel.projectId, mail);
     if (threaded) return this.reply(channel, threaded, from, mail);
-    // Or the subject carries the key of one of this desk's requests, e.g. "Re: [JiraTech] (HELP-12) Printer jam".
+    // Or the subject carries the key of one of this desk's requests, e.g. "Re: [Conductor] (HELP-12) Printer jam".
     const match = new RegExp(`(?:^|[^A-Za-z0-9])(${escapeRegExp(channel.project.key)}-\\d+)(?![0-9])`, 'i').exec(mail.subject);
     if (match) {
       const issue = await this.prisma.issue.findFirst({ where: issueRef(match[1]), select: { key: true, projectId: true } });
@@ -511,7 +511,7 @@ export class EmailChannelService implements OnModuleInit, OnModuleDestroy {
     return this.issueEmails.createCustomer(email, name);
   }
 
-  /** Mail from JiraTech's own addresses is never handled, so notifications can't loop back in. */
+  /** Mail from Conductor's own addresses is never handled, so notifications can't loop back in. */
   private isSystemAddress(email: string) {
     return [this.mailer.fromAddress(), process.env.SMTP_USER?.toLowerCase()].includes(email.toLowerCase());
   }

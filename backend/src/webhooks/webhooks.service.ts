@@ -167,7 +167,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       id: randomUUID(),
       event: PING_EVENT,
       createdAt: new Date().toISOString(),
-      message: `Test event from JiraTech for the webhook "${webhook.name}"`,
+      message: `Test event from Conductor for the webhook "${webhook.name}"`,
     });
     const delivery = await this.prisma.webhookDelivery.create({
       data: { webhookId: id, event: PING_EVENT, payload, nextAttemptAt: new Date() },
@@ -414,9 +414,9 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
       let error: string | null = null;
       try {
         const headers: Record<string, string> = {
-          'User-Agent': 'JiraTech-Webhooks/1',
-          'X-JiraTech-Event': delivery.event,
-          'X-JiraTech-Delivery': delivery.id,
+          'User-Agent': 'Conductor-Webhooks/1',
+          'X-Conductor-Event': delivery.event,
+          'X-Conductor-Delivery': delivery.id,
         };
         let body = delivery.payload;
         if (isChatFormat(webhook.format)) {
@@ -426,8 +426,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
           const secret = open(webhook.secret);
           if (!secret) throw new Error('The signing secret cannot be decrypted (the server secret changed): rotate the webhook secret');
           const timestamp = Math.floor(Date.now() / 1000).toString();
-          headers['X-JiraTech-Timestamp'] = timestamp;
-          headers['X-JiraTech-Signature'] = `sha256=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`;
+          headers['X-Conductor-Timestamp'] = timestamp;
+          headers['X-Conductor-Signature'] = `sha256=${createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')}`;
         }
         const result = await postJson(parseWebhookUrl(webhook.url), body, headers);
         responseStatus = result.status;

@@ -8,7 +8,7 @@ import { WebhookDto } from './webhooks.dto';
 type Req = { user: AuthUser };
 
 /**
- * /webhooks — where JiraTech sends signed events. Global administrators manage all of them; project administrators the ones
+ * /webhooks — where Conductor sends signed events. Global administrators manage all of them; project administrators the ones
  * of their own projects (they can't make one for every project). Needs a login: API tokens cannot manage webhooks.
  */
 @Controller('webhooks')

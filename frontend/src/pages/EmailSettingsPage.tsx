@@ -62,7 +62,7 @@ export default function EmailSettingsPage() {
     const outcome = params.get('gmail');
     if (!outcome || reported.current) return;
     reported.current = true;
-    if (outcome === 'connected') toast('Gmail account connected: JiraTech now sends email through it');
+    if (outcome === 'connected') toast('Gmail account connected: Conductor now sends email through it');
     else toast(params.get('message') ?? 'The Gmail account could not be connected', 'error');
     setParams({}, { replace: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -109,7 +109,7 @@ export default function EmailSettingsPage() {
     onError: (e) => toast(errorMessage(e), 'error'),
   });
 
-  if (me && !isAdmin) return <EmptyState title="Administrators only">Only global administrators can change how JiraTech sends email.</EmptyState>;
+  if (me && !isAdmin) return <EmptyState title="Administrators only">Only global administrators can change how Conductor sends email.</EmptyState>;
   if (isLoading || !settings || !d) return <Spinner />;
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => x && ({ ...x, [k]: v }));
   const dirty = JSON.stringify(d) !== JSON.stringify(draftOf(settings));
@@ -129,7 +129,7 @@ export default function EmailSettingsPage() {
     <div className="max-w-3xl">
       <PageHeader title="Email settings">
         <p className="text-jira-subtle mt-2">
-          How JiraTech sends all its email: notifications for every project, replies to service desk customers and the welcome and
+          How Conductor sends all its email: notifications for every project, replies to service desk customers and the welcome and
           password emails people get. Each service desk's own incoming address is set on its project page.
         </p>
       </PageHeader>
@@ -165,10 +165,10 @@ export default function EmailSettingsPage() {
             <details className="card p-3 mb-3 text-sm" open={!clientSaved}>
               <summary className="cursor-pointer font-medium">First time? Set up access in Google Cloud (once, about 10 minutes)</summary>
               <ol className="list-decimal pl-5 mt-2 space-y-1.5 text-jira-subtle">
-                <li>Open <a className="link" href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">console.cloud.google.com</a>, signed in as the Gmail account that should send, and create a project, e.g. <em>JiraTech</em>.</li>
+                <li>Open <a className="link" href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">console.cloud.google.com</a>, signed in as the Gmail account that should send, and create a project, e.g. <em>Conductor</em>.</li>
                 <li><strong>APIs &amp; Services → Library</strong>: find <em>Gmail API</em> and click <strong>Enable</strong>.</li>
                 <li>
-                  <strong>OAuth consent screen</strong> (Google Auth Platform): app name <em>JiraTech</em>, your email as support and developer contact,
+                  <strong>OAuth consent screen</strong> (Google Auth Platform): app name <em>Conductor</em>, your email as support and developer contact,
                   audience <strong>External</strong> (or <strong>Internal</strong> for a Google Workspace account). Then <strong>Publish app</strong> so it is
                   <em> In production</em>: in <em>Testing</em>, Google stops the connection after 7 days.
                 </li>
@@ -179,10 +179,10 @@ export default function EmailSettingsPage() {
                     <code className="font-mono text-xs bg-jira-gray rounded-[3px] px-2 py-1 break-all">{redirectUri}</code>
                     <button type="button" className="btn btn-subtle btn-sm btn-icon" aria-label="Copy the redirect URI" onClick={() => copy(redirectUri)}><CopyIcon size={14} /></button>
                   </span>
-                  <span className="block mt-1 text-xs">Add one for every address you open JiraTech at (e.g. your Render URL and http://localhost:5172 for local use).</span>
+                  <span className="block mt-1 text-xs">Add one for every address you open Conductor at (e.g. your Render URL and http://localhost:5172 for local use).</span>
                 </li>
                 <li>Copy the <strong>Client ID</strong> and <strong>Client secret</strong> into the fields below, <strong>Save</strong>, then click <strong>Connect Gmail account</strong>.</li>
-                <li>Google may warn that it <em>hasn't verified this app</em>: it's your own, so choose <strong>Advanced → Go to JiraTech</strong> and allow sending email.</li>
+                <li>Google may warn that it <em>hasn't verified this app</em>: it's your own, so choose <strong>Advanced → Go to Conductor</strong> and allow sending email.</li>
               </ol>
             </details>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -226,7 +226,7 @@ export default function EmailSettingsPage() {
                   onClick={async () => {
                     if (await confirm({
                       title: `Disconnect ${settings.gmailAccount}?`,
-                      message: 'JiraTech stops sending through it and asks Google to revoke its access. Emails then go through the SMTP settings, if any.',
+                      message: 'Conductor stops sending through it and asks Google to revoke its access. Emails then go through the SMTP settings, if any.',
                       confirmLabel: 'Disconnect',
                       danger: true,
                     })) disconnect.mutate();
@@ -297,23 +297,23 @@ export default function EmailSettingsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <label className="block">
               <span className="field-label">Name</span>
-              <input className="input" value={d.fromName} onChange={(e) => set('fromName', e.target.value)} placeholder="JiraTech" />
+              <input className="input" value={d.fromName} onChange={(e) => set('fromName', e.target.value)} placeholder="Conductor" />
             </label>
             {!gmail && (
               <label className="block">
                 <span className="field-label">Address</span>
-                <input className="input" type="email" value={d.fromAddress} onChange={(e) => set('fromAddress', e.target.value)} placeholder={settings.environment.mailFrom ?? 'no-reply@jiratech.local'} />
+                <input className="input" type="email" value={d.fromAddress} onChange={(e) => set('fromAddress', e.target.value)} placeholder={settings.environment.mailFrom ?? 'no-reply@conductor.local'} />
               </label>
             )}
           </div>
         </fieldset>
 
         <fieldset>
-          <legend className="font-semibold mb-1">Link to JiraTech</legend>
+          <legend className="font-semibold mb-1">Link to Conductor</legend>
           <label className="block">
             <span className="field-label">Web address</span>
             <input className="input" value={d.appUrl} onChange={(e) => set('appUrl', e.target.value)} placeholder={settings.environment.appUrl ?? window.location.origin} />
-            <span className="field-help">Where the links in emails (issues, requests, choosing a password) take people. Usually the address you open JiraTech at: {window.location.origin}</span>
+            <span className="field-help">Where the links in emails (issues, requests, choosing a password) take people. Usually the address you open Conductor at: {window.location.origin}</span>
           </label>
         </fieldset>
 

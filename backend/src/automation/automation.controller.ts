@@ -9,7 +9,7 @@ type Req = { user: AuthUser };
 
 /**
  * /automation — rules that react to issue events. Global administrators manage all of them; project administrators the ones of
- * their own projects (they can't make one for every project, or email addresses without a JiraTech account). Rules run with
+ * their own projects (they can't make one for every project, or email addresses without a Conductor account). Rules run with
  * the access of the person who last saved them. Needs a login: API tokens cannot manage rules.
  */
 @Controller('automation')

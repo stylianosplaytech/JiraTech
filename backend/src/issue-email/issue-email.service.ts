@@ -120,7 +120,7 @@ export class IssueEmailService {
     // The comment is what the portal and SLAs see; agents see the email in its place.
     const comment = await this.issues.addComment(issue.id, user, body || `<p>${escapeHtml(summaryLine)}</p>`, { internal, emailed: recipients });
 
-    const messageId = `${randomUUID()}@${this.mailer.fromAddress().split('@')[1] || 'jiratech.local'}`;
+    const messageId = `${randomUUID()}@${this.mailer.fromAddress().split('@')[1] || 'conductor.local'}`;
     const references = original
       ? [...(original.references?.split(/\s+/).filter(Boolean) ?? []), original.messageId].slice(-MAX_REFERENCES)
       : [];
@@ -271,7 +271,7 @@ export class IssueEmailService {
     }
   }
 
-  /** Addresses that are JiraTech itself: where email is sent from, and every service desk's channel. */
+  /** Addresses that are Conductor itself: where email is sent from, and every service desk's channel. */
   async ownAddresses() {
     const channels = await this.prisma.emailChannel.findMany({ select: { address: true } });
     return [...new Set([this.mailer.fromAddress(), process.env.SMTP_USER, ...channels.map((c) => c.address)]

@@ -33,7 +33,7 @@ export function parseWebhookUrl(raw: string): URL {
   try {
     url = new URL(raw.trim());
   } catch {
-    throw new BadRequestException('Enter a full web address, e.g. https://example.com/hooks/jiratech');
+    throw new BadRequestException('Enter a full web address, e.g. https://example.com/hooks/conductor');
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new BadRequestException('The address must start with https:// (or http://)');
   if (url.username || url.password) throw new BadRequestException('Do not put a username or password in the address: requests are signed with the webhook secret');

@@ -39,7 +39,7 @@ const STATUS_STYLE: Record<WebhookDelivery['status'], string> = {
   PENDING: 'bg-[#FFF0B3] text-[#172B4D]',
 };
 
-/** /settings/webhooks — addresses JiraTech sends signed events to (global admins). */
+/** /settings/webhooks — addresses Conductor sends signed events to (global admins). */
 export default function WebhooksPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -106,10 +106,10 @@ export default function WebhooksPage() {
         )}
       />
       <p className="text-jira-subtle mb-4 max-w-3xl">
-        JiraTech sends a signed POST with the event as JSON to each webhook when something happens to an issue, or, for a Slack or Teams
+        Conductor sends a signed POST with the event as JSON to each webhook when something happens to an issue, or, for a Slack or Teams
         channel, a readable message. Automation rules can also post to a chat webhook. Failed deliveries are retried over several hours.
-        Generic requests carry an <code className="text-xs">X-JiraTech-Signature</code> header (HMAC-SHA256 of{' '}
-        <code className="text-xs">timestamp.body</code> with the webhook&apos;s secret) so the receiver can check it is genuine. To call JiraTech
+        Generic requests carry an <code className="text-xs">X-Conductor-Signature</code> header (HMAC-SHA256 of{' '}
+        <code className="text-xs">timestamp.body</code> with the webhook&apos;s secret) so the receiver can check it is genuine. To call Conductor
         from scripts instead, create an <Link to="/settings/api-tokens" className="link">API token</Link>.
       </p>
       <div className="card p-4">
@@ -207,7 +207,7 @@ export default function WebhooksPage() {
             </div>
             <div>
               <label className="field-label" htmlFor="hook-url">Address</label>
-              <input id="hook-url" className="input" type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder={form.format === 'JSON' ? 'https://example.com/hooks/jiratech' : 'https://hooks…'} />
+              <input id="hook-url" className="input" type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder={form.format === 'JSON' ? 'https://example.com/hooks/conductor' : 'https://hooks…'} />
               <span className="field-help">{ADDRESS_HELP[form.format]}</span>
             </div>
             <div>
@@ -246,7 +246,7 @@ export default function WebhooksPage() {
       {secret && (
         <SecretReveal
           title={secret.title}
-          intro="Use this secret to verify the X-JiraTech-Signature header of each request. Copy it now: it cannot be shown again (you can generate a new one by editing the webhook)."
+          intro="Use this secret to verify the X-Conductor-Signature header of each request. Copy it now: it cannot be shown again (you can generate a new one by editing the webhook)."
           label="Signing secret"
           secret={secret.value}
           onClose={() => setSecret(null)}

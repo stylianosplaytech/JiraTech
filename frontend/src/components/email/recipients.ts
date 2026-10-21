@@ -24,7 +24,7 @@ export function describeAddresses(list: EmailAddress[]) {
   return [...parts, ...[...groups].map(([name, n]) => `${name} (${n})`)].join(', ');
 }
 
-/** Each address once (ignoring case), leaving out JiraTech's own and any in `except`. */
+/** Each address once (ignoring case), leaving out Conductor's own and any in `except`. */
 export function cleanAddresses(list: EmailAddress[], own: string[], except: EmailAddress[] = []): EmailAddress[] {
   const seen = new Set([...own, ...except.map((a) => a.email)].map((e) => e.toLowerCase()));
   const out: EmailAddress[] = [];

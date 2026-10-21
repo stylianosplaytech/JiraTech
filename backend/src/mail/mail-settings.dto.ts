@@ -65,10 +65,10 @@ export class MailSettingsDto {
   @MaxLength(254)
   fromAddress?: string;
 
-  /** e.g. https://jiratech.example.com; '' goes back to APP_URL */
+  /** e.g. https://conductor.example.com; '' goes back to APP_URL */
   @IsOptional()
   @ValidateIf((o: MailSettingsDto) => !!o.appUrl)
-  @Matches(/^https?:\/\/[^\s/]+(\/[^\s]*)?$/, { message: 'Enter the full address, e.g. https://jiratech.example.com' })
+  @Matches(/^https?:\/\/[^\s/]+(\/[^\s]*)?$/, { message: 'Enter the full address, e.g. https://conductor.example.com' })
   @MaxLength(500)
   appUrl?: string;
 }
@@ -79,8 +79,8 @@ export class TestMailDto {
 }
 
 export class GoogleStartDto {
-  /** The address the admin uses JiraTech at; Google sends them back there */
-  @Matches(/^https?:\/\/[^\s/]+$/, { message: 'origin must look like https://jiratech.example.com' })
+  /** The address the admin uses Conductor at; Google sends them back there */
+  @Matches(/^https?:\/\/[^\s/]+$/, { message: 'origin must look like https://conductor.example.com' })
   @MaxLength(300)
   origin!: string;
 }

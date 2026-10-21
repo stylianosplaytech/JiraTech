@@ -6,7 +6,7 @@ import { NoticeContent, NoticeSection } from './notice-content';
  * The browser's preview is this same HTML.
  */
 /** In a sent email the logo is an attachment shown inline (as cid:), which mail clients show where they block data: images. */
-export const LOGO_CID = 'notice-logo@jiratech';
+export const LOGO_CID = 'notice-logo@conductor';
 
 export function renderNoticeHtml(c: NoticeContent, opts: { logoSrc?: string } = {}): string {
   const accent = c.color;

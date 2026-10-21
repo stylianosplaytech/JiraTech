@@ -49,8 +49,8 @@ interface Gmail extends gmail.GmailClient {
  */
 export type MailSource = 'gmail' | 'settings' | 'gmail-environment' | 'environment' | 'outbox';
 
-const DEFAULT_FROM_NAME = 'JiraTech';
-const DEFAULT_FROM_ADDRESS = 'no-reply@jiratech.local';
+const DEFAULT_FROM_NAME = 'Conductor';
+const DEFAULT_FROM_ADDRESS = 'no-reply@conductor.local';
 /** How long an admin has to finish the Google sign-in. */
 const CONNECT_MINUTES = 10;
 
@@ -145,9 +145,9 @@ export class MailerService implements OnModuleInit {
   async sendTest(to: string) {
     const message = {
       to,
-      subject: '[JiraTech] Test email',
-      text: `This is a test email from JiraTech.\n\nIf you can read this, outgoing email works. Links in emails point to ${this.appUrl()}.`,
-      html: `<p>This is a test email from JiraTech.</p><p>If you can read this, outgoing email works. Links in emails point to <a href="${this.appUrl()}">${this.appUrl()}</a>.</p>`,
+      subject: '[Conductor] Test email',
+      text: `This is a test email from Conductor.\n\nIf you can read this, outgoing email works. Links in emails point to ${this.appUrl()}.`,
+      html: `<p>This is a test email from Conductor.</p><p>If you can read this, outgoing email works. Links in emails point to <a href="${this.appUrl()}">${this.appUrl()}</a>.</p>`,
     };
     try {
       await this.deliver(message);
@@ -161,7 +161,7 @@ export class MailerService implements OnModuleInit {
 
   /**
    * Starts "Connect Gmail account": the Google page to send the admin to. `origin` is the address the admin uses
-   * JiraTech at; Google sends them back there, so it must match a redirect URI registered in Google Cloud.
+   * Conductor at; Google sends them back there, so it must match a redirect URI registered in Google Cloud.
    */
   googleStart(origin: string) {
     const client = this.gmailClient();
@@ -204,7 +204,7 @@ export class MailerService implements OnModuleInit {
     }
   }
 
-  /** Stops sending through the Gmail account and asks Google to revoke JiraTech's access to it. */
+  /** Stops sending through the Gmail account and asks Google to revoke Conductor's access to it. */
   async googleDisconnect() {
     await this.forgetGmail();
     await this.prisma.mailSettings.updateMany({ data: { transport: MailTransport.SMTP } });
@@ -237,7 +237,7 @@ export class MailerService implements OnModuleInit {
     }
   }
 
-  /** The address people open JiraTech at, without a trailing slash: for links in emails. */
+  /** The address people open Conductor at, without a trailing slash: for links in emails. */
   appUrl() {
     return (this.settings?.appUrl || process.env.APP_URL || 'http://localhost:5172').replace(/\/+$/, '');
   }

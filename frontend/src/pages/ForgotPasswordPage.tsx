@@ -34,7 +34,7 @@ export default function ForgotPasswordPage() {
         <div className={card}>
           <h1 className="text-base font-semibold text-center mb-3">Check your email</h1>
           <p className="text-jira-subtle text-center mb-2">
-            If <strong className="text-jira-navy break-all">{sentTo}</strong> has a JiraTech account, we've sent it a link to choose a new password.
+            If <strong className="text-jira-navy break-all">{sentTo}</strong> has a Conductor account, we've sent it a link to choose a new password.
           </p>
           <p className="text-jira-muted text-xs text-center mb-6">The link works for 60 minutes. Nothing arrived? Check your spam folder, or ask your administrator.</p>
           <Link to="/login" className="btn btn-default w-full h-10">Back to log in</Link>

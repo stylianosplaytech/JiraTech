@@ -23,7 +23,7 @@ A rule is **when** + **if** + **then**:
 | Add a comment | Optionally an internal note (service desk agents only). |
 | Add a label | A single word; created in the project if new. |
 | Post to chat | A message in a Slack or Teams channel, through one of its [chat webhooks](CHAT-INTEGRATIONS.md) that you may manage. Placeholders work and the message links to the issue. |
-| Send an email | To the assignee, reporter or project lead, and/or any addresses (a project administrator can only use addresses of people with a JiraTech account). A link to the issue is added. Sent the same way as other JiraTech emails (see Email settings). |
+| Send an email | To the assignee, reporter or project lead, and/or any addresses (a project administrator can only use addresses of people with a Conductor account). A link to the issue is added. Sent the same way as other Conductor emails (see Email settings). |
 
 Comments and emails can use placeholders: `{{issue.key}}`, `{{issue.summary}}`, `{{issue.status}}`, `{{issue.priority}}`,
 `{{issue.assignee}}`, `{{issue.reporter}}`, `{{issue.url}}`, `{{project.key}}`, `{{project.name}}`, `{{actor.name}}` (who caused the event).

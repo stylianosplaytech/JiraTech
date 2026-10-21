@@ -35,11 +35,11 @@ export class InvitationsService {
     if (!user) throw new NotFoundException('User not found');
     const { link, expiresAt } = await this.newLink(user.id, WELCOME_DAYS * 24 * 60);
     const customer = user.role === UserRole.CUSTOMER;
-    const what = customer ? 'the JiraTech help center, where you can raise and follow support requests' : 'JiraTech';
+    const what = customer ? 'the Conductor help center, where you can raise and follow support requests' : 'Conductor';
     const expiry = `The link works for ${WELCOME_DAYS} days and only once. If it has expired, ask your administrator to send a new one.`;
     const sent = await this.mailer.send({
       to: user.email,
-      subject: customer ? 'Welcome to the JiraTech help center' : 'Welcome to JiraTech',
+      subject: customer ? 'Welcome to the Conductor help center' : 'Welcome to Conductor',
       text: `Hi ${user.name},\n\n${invitedBy.name} has given you access to ${what}.\n\n`
         + `Choose your password to get started:\n${link}\n\n`
         + `You'll log in with this email address: ${user.email}\n${expiry}`,
@@ -77,12 +77,12 @@ export class InvitationsService {
     const expiry = `The link works for ${RESET_MINUTES} minutes and only once. If you didn't ask for it, ignore this email: your password stays the same.`;
     const sent = await this.mailer.send({
       to: user.email,
-      subject: 'Reset your JiraTech password',
+      subject: 'Reset your Conductor password',
       text: `Hi ${user.name},\n\nSomeone (hopefully you) asked to reset the password for ${user.email}.\n\n`
         + `Choose a new password:\n${link}\n\n${expiry}`,
       html: linkEmail({
         title: 'Reset your password',
-        intro: `Hi ${user.name}, someone (hopefully you) asked to reset the password for your JiraTech account.`,
+        intro: `Hi ${user.name}, someone (hopefully you) asked to reset the password for your Conductor account.`,
         button: 'Choose a new password',
         link,
         email: user.email,
@@ -144,7 +144,7 @@ function linkEmail(p: { title: string; intro: string; button: string; link: stri
   return `<!doctype html><html><body style="margin:0;background:#F4F5F7;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#172B4D">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:3px;border:1px solid #DFE1E6">
-<tr><td style="padding:20px 24px;border-bottom:1px solid #DFE1E6;font-weight:600;color:#0052CC">JiraTech</td></tr>
+<tr><td style="padding:20px 24px;border-bottom:1px solid #DFE1E6;font-weight:600;color:#0052CC">Conductor</td></tr>
 <tr><td style="padding:24px">
 <p style="margin:0 0 12px;font-size:18px;font-weight:600">${esc(p.title)}</p>
 <p style="margin:0 0 16px;font-size:14px;line-height:20px">${esc(p.intro)}</p>

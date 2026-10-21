@@ -1,6 +1,6 @@
 /**
  * Sending through a Gmail account with Google's API, over HTTPS (port 443). For hosts that block SMTP ports, such as
- * Render's free instances. The account is connected once with OAuth ("Connect Gmail account"); JiraTech keeps the
+ * Render's free instances. The account is connected once with OAuth ("Connect Gmail account"); Conductor keeps the
  * refresh token and swaps it for short-lived access tokens. Uses Node's built-in fetch: no extra packages.
  */
 
@@ -8,7 +8,7 @@ const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
-/** Send email as the account, and learn its address. Nothing else: JiraTech can't read the mailbox through this. */
+/** Send email as the account, and learn its address. Nothing else: Conductor can't read the mailbox through this. */
 const SCOPES = ['openid', 'email', 'https://www.googleapis.com/auth/gmail.send'];
 
 export interface GmailClient {
@@ -19,7 +19,7 @@ export interface GmailClient {
 /** A Google error, in words an admin can act on. */
 export class GmailError extends Error {}
 
-/** Where Google sends the admin back after they approve, on the address they use JiraTech at. */
+/** Where Google sends the admin back after they approve, on the address they use Conductor at. */
 export const redirectUri = (origin: string) => `${origin.replace(/\/+$/, '')}/api/mail-settings/google/callback`;
 
 /** The Google page where the admin chooses the account and allows sending. `prompt=consent` makes Google return a refresh token. */

@@ -215,7 +215,7 @@ export class InboundWebhooksService {
       const author = hook.createdBy;
       if (!author) {
         await this.prisma.inboundWebhook.update({ where: { id: hook.id }, data: { enabled: false } });
-        throw new BadRequestException('The person who set this webhook up no longer exists: open and save it in JiraTech to switch it back on');
+        throw new BadRequestException('The person who set this webhook up no longer exists: open and save it in Conductor to switch it back on');
       }
       const config = parseConfigJson(hook.config);
       plan = await this.plan(hook, config, payload);

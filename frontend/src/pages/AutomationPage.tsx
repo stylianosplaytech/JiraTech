@@ -396,7 +396,7 @@ function ActionFields({ action, onChange, users, anyAddress }: { action: Automat
             onChange={(e) => setTo(roles, e.target.value.split(/[,;\s]+/).filter(Boolean))}
             placeholder="Other addresses, separated by commas"
           />
-          {!anyAddress && <span className="field-help">Project administrators can email people who have a JiraTech account; other addresses need a global administrator.</span>}
+          {!anyAddress && <span className="field-help">Project administrators can email people who have a Conductor account; other addresses need a global administrator.</span>}
           <input aria-label="Subject" className="input" value={action.subject} onChange={(e) => onChange({ ...action, subject: e.target.value })} placeholder="Subject, e.g. {{issue.key}} is overdue" />
           <textarea aria-label="Message" className="input" rows={3} value={action.body} onChange={(e) => onChange({ ...action, body: e.target.value })} placeholder="Message. A link to the issue is added." />
         </>

@@ -24,9 +24,9 @@ const NAV = [
   { path: '/users', label: 'People' },
 ];
 
-export function Logo({ to = '/', label = 'JiraTech' }: { to?: string; label?: string }) {
+export function Logo({ to = '/', label = 'Conductor' }: { to?: string; label?: string }) {
   return (
-    <Link to={to} className="flex items-center gap-2 pr-2 shrink-0" aria-label="JiraTech home">
+    <Link to={to} className="flex items-center gap-2 pr-2 shrink-0" aria-label="Conductor home">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
         <defs>
           <linearGradient id="jt-g" x1="0" y1="0" x2="1" y2="1">

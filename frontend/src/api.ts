@@ -512,7 +512,7 @@ export interface MailSettings {
   fromAddress: string | null;
   appUrl: string | null;
   source: MailSource;
-  /** The sender in use, e.g. "JiraTech" <jira@example.com> */
+  /** The sender in use, e.g. "Conductor" <jira@example.com> */
   from: string;
   /** Where links in emails point */
   effectiveAppUrl: string;
@@ -845,7 +845,7 @@ export interface IssueEmail {
 
 export interface IssueEmails {
   emails: IssueEmail[];
-  /** JiraTech's own addresses, left out of Reply all */
+  /** Conductor's own addresses, left out of Reply all */
   ownAddresses: string[];
   /** Set when replies come back to the request (an enabled email channel) */
   channelAddress: string | null;

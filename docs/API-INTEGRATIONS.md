@@ -1,11 +1,11 @@
 # API tokens, webhooks and the API reference
 
-Three ways to connect other systems to JiraTech: **API tokens** let a script call JiraTech, **webhooks** make JiraTech call a
+Three ways to connect other systems to Conductor: **API tokens** let a script call Conductor, **webhooks** make Conductor call a
 script when something happens, and **incoming webhooks** let monitoring tools and CI systems raise issues by POSTing to a secret address.
 
 ## API reference (OpenAPI)
 
-Every endpoint is described in an OpenAPI 3 document, served by JiraTech itself:
+Every endpoint is described in an OpenAPI 3 document, served by Conductor itself:
 
 | | |
 |---|---|
@@ -29,9 +29,9 @@ Create them under your profile menu → **API tokens** (`/settings/api-tokens`).
 owner, so it reaches exactly the projects and actions that person can; customers (service desk portal users) can't use tokens.
 
 ```bash
-curl -H "Authorization: Bearer jt_xxxxxxxx" https://jiratech.example.com/api/issues/HELP-12
+curl -H "Authorization: Bearer jt_xxxxxxxx" https://conductor.example.com/api/issues/HELP-12
 curl -X POST -H "Authorization: Bearer jt_xxxxxxxx" -H "Content-Type: application/json" \
-     -d '{"jql":"project = HELP AND status != Done"}' https://jiratech.example.com/api/search
+     -d '{"jql":"project = HELP AND status != Done"}' https://conductor.example.com/api/search
 ```
 
 | | |
@@ -84,8 +84,8 @@ Events from bulk changes are sent too. Comment deletions and watcher changes are
 }
 ```
 
-Headers: `X-JiraTech-Event`, `X-JiraTech-Delivery` (unique per attempt series), `X-JiraTech-Timestamp` (Unix seconds),
-`X-JiraTech-Signature` (`sha256=<hex>`).
+Headers: `X-Conductor-Event`, `X-Conductor-Delivery` (unique per attempt series), `X-Conductor-Timestamp` (Unix seconds),
+`X-Conductor-Signature` (`sha256=<hex>`).
 
 ### Verifying the signature
 
@@ -96,8 +96,8 @@ more than a few minutes old.
 const crypto = require('crypto');
 function verify(rawBody, headers, secret) {
   const expected = 'sha256=' + crypto.createHmac('sha256', secret)
-    .update(`${headers['x-jiratech-timestamp']}.${rawBody}`).digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(headers['x-jiratech-signature']));
+    .update(`${headers['x-conductor-timestamp']}.${rawBody}`).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(headers['x-conductor-signature']));
 }
 ```
 
@@ -114,7 +114,7 @@ The secret is shown once when the webhook is created. Editing the webhook offers
 
 ### Network safety
 
-JiraTech refuses webhooks that point at localhost, private networks, link-local addresses (e.g. cloud metadata) and names that resolve to
+Conductor refuses webhooks that point at localhost, private networks, link-local addresses (e.g. cloud metadata) and names that resolve to
 them, checked again whenever a connection is made. To call servers on your own network, set `WEBHOOK_ALLOW_PRIVATE=true` in `backend/.env`.
 
 API: `GET|POST /api/webhooks`, `GET|PUT|DELETE /api/webhooks/:id`, `GET /api/webhooks/events`, `POST /api/webhooks/:id/rotate-secret`,
@@ -127,7 +127,7 @@ Add them under profile menu → Integrations → **Incoming webhooks** (`/settin
 secret address, shown once when it is created:
 
 ```bash
-curl -X POST https://jiratech.example.com/api/hooks/jth_xxxxxxxx \
+curl -X POST https://conductor.example.com/api/hooks/jth_xxxxxxxx \
      -H "Content-Type: application/json" \
      -d '{"status":"firing","title":"High CPU on web-1","message":"CPU is at 95%","severity":"critical","alerts":[{"fingerprint":"abc123"}]}'
 ```
@@ -179,7 +179,7 @@ Webhooks, incoming webhooks and [automation rules](AUTOMATION.md) (the **Integra
 
 Everyone else doesn't get the section. Some limits apply to project administrators because their changes reach beyond their own project:
 
-- An automation rule's **email** action can send to the assignee, reporter, project lead and anyone who has a JiraTech account, but not to addresses outside JiraTech
+- An automation rule's **email** action can send to the assignee, reporter, project lead and anyone who has a Conductor account, but not to addresses outside Conductor
   (a global administrator can).
 - A project can have up to 20 webhooks, 50 rules and 20 incoming webhooks (everything that applies to every project has its own, larger limits), so no project can use up the rest.
 - A rule or incoming webhook runs as the person who last saved it, so what it can do is what that person can do in the project. If a project administrator edits a rule

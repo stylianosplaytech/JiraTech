@@ -744,7 +744,7 @@ export default function ReportsPage() {
         const { exportReportPdf } = await import('../reports/pdf');
         await exportReportPdf(root, {
           filename: `${data.project.key}-report-${data.period.from}-to-${data.period.to}.pdf`,
-          footer: `JiraTech · ${data.project.name} (${data.project.key}) · ${fmtDate(data.period.from)} – ${fmtDate(data.period.to)} · generated ${new Date().toLocaleString('en-GB')}`,
+          footer: `Conductor · ${data.project.name} (${data.project.key}) · ${fmtDate(data.period.from)} – ${fmtDate(data.period.to)} · generated ${new Date().toLocaleString('en-GB')}`,
         });
       } catch (e) {
         toast(`Could not create the PDF: ${errorMessage(e)}`, 'error');

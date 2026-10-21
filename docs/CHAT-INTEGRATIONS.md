@@ -1,6 +1,6 @@
 # Slack and Microsoft Teams
 
-JiraTech can post to a Slack or Teams channel in two ways: automatically when something happens to an issue, and from an
+Conductor can post to a Slack or Teams channel in two ways: automatically when something happens to an issue, and from an
 [automation rule](AUTOMATION.md) with a message you write. Both use a **chat webhook**: an ordinary
 [webhook](API-INTEGRATIONS.md#webhooks) whose format is *Slack* or *Teams*.
 
@@ -10,7 +10,7 @@ JiraTech can post to a Slack or Teams channel in two ways: automatically when so
    - **Slack:** create an incoming webhook for the channel (Slack app → *Incoming Webhooks* → *Add New Webhook to Workspace*). The address
      looks like `https://hooks.slack.com/services/T…/B…/…`.
    - **Teams:** in the channel, *••• → Workflows → "Post to a channel when a webhook request is received"*, and copy the address it gives you.
-2. In JiraTech open profile menu → Integrations → **Webhooks** → **Add webhook**. Choose **Sends: Slack channel** (or **Microsoft Teams
+2. In Conductor open profile menu → Integrations → **Webhooks** → **Add webhook**. Choose **Sends: Slack channel** (or **Microsoft Teams
    channel**), paste the address, and name it after the channel (e.g. *#support*).
 3. Choose the project (or all projects, for global administrators), the events the channel should hear about, and optionally a filter
    (below). **Send test** posts a test message to the channel.

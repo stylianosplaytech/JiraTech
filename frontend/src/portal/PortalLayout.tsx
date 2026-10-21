@@ -68,7 +68,7 @@ export default function PortalLayout({ user, children }: { user?: User; children
               <NavLink to="/portal/requests" className={link}>Requests</NavLink>
             </nav>
             <div className="ml-auto flex items-center gap-1 sm:gap-2">
-              {user && !isCustomer(user) && <Link to="/" className="btn btn-subtle hidden sm:inline-flex">Back to JiraTech</Link>}
+              {user && !isCustomer(user) && <Link to="/" className="btn btn-subtle hidden sm:inline-flex">Back to Conductor</Link>}
               <NotificationBell />
               {user && (
                 <Dropdown
@@ -92,7 +92,7 @@ export default function PortalLayout({ user, children }: { user?: User; children
                       <EmailPreference />
                       <div className="border-t border-jira-border mt-1 pt-1">
                         {isCustomer(user) && home !== '/portal' && <Link to="/portal" className="menu-item">All help centers</Link>}
-                        {!isCustomer(user) && <Link to="/" className="menu-item sm:hidden">Back to JiraTech</Link>}
+                        {!isCustomer(user) && <Link to="/" className="menu-item sm:hidden">Back to Conductor</Link>}
                         <button type="button" className="menu-item" onClick={logout}><LogoutIcon size={14} /> Log out</button>
                       </div>
                     </>

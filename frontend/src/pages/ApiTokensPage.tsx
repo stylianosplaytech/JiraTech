@@ -52,7 +52,7 @@ export default function ApiTokensPage() {
         )}
       />
       <p className="text-jira-subtle mb-4 max-w-3xl">
-        Tokens let scripts and tools use the JiraTech API as you, with the same project access you have. Send one as{' '}
+        Tokens let scripts and tools use the Conductor API as you, with the same project access you have. Send one as{' '}
         <code className="text-xs">Authorization: Bearer jt_…</code>. A read-only token can only make GET requests. Treat tokens like
         passwords: each is shown once, when it is created.
       </p>

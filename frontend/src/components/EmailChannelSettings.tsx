@@ -103,7 +103,7 @@ function ChannelForm({ projectKey, channel, requestTypes, onClose }: {
 
         <fieldset>
           <legend className="font-semibold text-sm mb-1">Mailbox (IMAP)</legend>
-          <p className="field-help mt-0 mb-2">Where JiraTech reads that address's emails. Your email provider lists these settings (Gmail needs an app password).</p>
+          <p className="field-help mt-0 mb-2">Where Conductor reads that address's emails. Your email provider lists these settings (Gmail needs an app password).</p>
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_100px_160px] gap-2">
             <label className="block">
               <span className="field-label">Mail server</span>
@@ -410,7 +410,7 @@ export default function EmailChannelSettings({ projectKey, requestTypes, canAdmi
                     onClick={async () => {
                       if (await confirm({
                         title: `Remove ${c.address}?`,
-                        message: 'JiraTech stops reading the mailbox and forgets its settings. Requests raised by email stay.',
+                        message: 'Conductor stops reading the mailbox and forgets its settings. Requests raised by email stay.',
                         confirmLabel: 'Remove',
                         danger: true,
                       })) remove.mutate();

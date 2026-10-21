@@ -55,7 +55,7 @@ function describe(p: EventPayload): Message {
 
   switch (p.event) {
     case 'ping':
-      return { sentence: p.message ?? 'A test message from JiraTech', issue: null, facts: [], quote: null };
+      return { sentence: p.message ?? 'A test message from Conductor', issue: null, facts: [], quote: null };
     case 'automation.message':
       sentence = p.text ?? '';
       add('Project', p.project?.name);

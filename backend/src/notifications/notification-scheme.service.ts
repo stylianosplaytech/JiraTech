@@ -32,7 +32,7 @@ export const APPLICABLE: NotificationScheme = {
   ISSUE_DELETED: ABOUT_ISSUE,
 };
 
-/** What JiraTech did before the scheme could be configured. */
+/** What Conductor did before the scheme could be configured. */
 export const DEFAULT_SCHEME: NotificationScheme = {
   ISSUE_CREATED: ['ASSIGNEE', 'WATCHERS'],
   ISSUE_UPDATED: ['REPORTER', 'ASSIGNEE', 'WATCHERS'],

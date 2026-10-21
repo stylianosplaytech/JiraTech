@@ -126,7 +126,7 @@ export default function InboundWebhooksPage() {
         actions={<button type="button" className="btn btn-primary" onClick={() => setForm({ ...formFor(), projectKey: defaultProjectKey(scope) })}><PlusIcon size={14} /> Add incoming webhook</button>}
       />
       <p className="text-jira-subtle mb-4 max-w-3xl">
-        Give a monitoring tool, CI system or script a secret address to POST JSON to, and JiraTech turns each message into an issue in the project you choose.
+        Give a monitoring tool, CI system or script a secret address to POST JSON to, and Conductor turns each message into an issue in the project you choose.
         Repeated alerts can be added to the open issue instead of raising a new one, and a &ldquo;resolved&rdquo; message can close it. Issues are created as the person who
         last saved the webhook. Rules and outgoing webhooks react to these issues like any other.
       </p>

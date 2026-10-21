@@ -1,5 +1,5 @@
 /**
- * Demo data for trying out JiraTech: extra people, two standard projects (PAY, MOB), two service desks
+ * Demo data for trying out Conductor: extra people, two standard projects (PAY, MOB), two service desks
  * (HELP, internal IT; CS, one team serving two client companies through their own portals), customers and
  * their organizations, more SPORTS work, comments, links, watchers, work logs, history and saved filters.
  *
@@ -26,13 +26,13 @@ const ago = (days: number, hours = 0) => new Date(NOW - days * 86_400_000 - hour
 // ─── People ──────────────────────────────────────────────────────────────────
 
 const PEOPLE: { email: string; name: string; role: UserRole }[] = [
-  { email: 'elena@jiratech.local', name: 'Elena Christodoulou', role: UserRole.TEAM_LEAD },
-  { email: 'nikos@jiratech.local', name: 'Nikos Georgiou', role: UserRole.DEVELOPER },
-  { email: 'sofia@jiratech.local', name: 'Sofia Ioannou', role: UserRole.QA_SPECIALIST },
-  { email: 'daniel@jiratech.local', name: 'Daniel Cohen', role: UserRole.RELEASE_MANAGER },
-  { email: 'katerina@jiratech.local', name: 'Katerina Antoniou', role: UserRole.PRODUCT_OWNER },
-  { email: 'marcus@jiratech.local', name: 'Marcus Weber', role: UserRole.SCRUM_MASTER },
-  { email: 'lina@jiratech.local', name: 'Lina Haddad', role: UserRole.DEVELOPER },
+  { email: 'elena@conductor.local', name: 'Elena Christodoulou', role: UserRole.TEAM_LEAD },
+  { email: 'nikos@conductor.local', name: 'Nikos Georgiou', role: UserRole.DEVELOPER },
+  { email: 'sofia@conductor.local', name: 'Sofia Ioannou', role: UserRole.QA_SPECIALIST },
+  { email: 'daniel@conductor.local', name: 'Daniel Cohen', role: UserRole.RELEASE_MANAGER },
+  { email: 'katerina@conductor.local', name: 'Katerina Antoniou', role: UserRole.PRODUCT_OWNER },
+  { email: 'marcus@conductor.local', name: 'Marcus Weber', role: UserRole.SCRUM_MASTER },
+  { email: 'lina@conductor.local', name: 'Lina Haddad', role: UserRole.DEVELOPER },
   // Service desk customers: they only see the help center.
   { email: 'anna@customer.local', name: 'Anna Petrou', role: UserRole.CUSTOMER },
   { email: 'george@customer.local', name: 'George Miller', role: UserRole.CUSTOMER },
@@ -545,7 +545,7 @@ async function seedServiceDesk(p: Record<'elena' | 'andreas' | 'sofia' | 'lina' 
     ],
     // Internal IT: one portal, open to every customer and tied to no client company.
     portals: [{ slug: 'help', name: 'IT Help Desk', open: true }],
-    email: { address: 'help@jiratech.local', createCustomers: true },
+    email: { address: 'help@conductor.local', createCustomers: true },
   });
 
   // One request in each SLA situation: breached, on track, paused, at risk, met, brand new.
@@ -801,10 +801,10 @@ async function main() {
   for (const p of PEOPLE) {
     await prisma.user.upsert({ where: { email: p.email }, update: {}, create: { ...p, passwordHash } });
   }
-  const admin = await byEmail('admin@jiratech.local');
-  const maria = await byEmail('pm@jiratech.local');
-  const andreas = await byEmail('dev@jiratech.local');
-  const alex = await byEmail('qa@jiratech.local');
+  const admin = await byEmail('admin@conductor.local');
+  const maria = await byEmail('pm@conductor.local');
+  const andreas = await byEmail('dev@conductor.local');
+  const alex = await byEmail('qa@conductor.local');
   const [elena, nikos, sofia, daniel, katerina, marcus, lina, anna, george, peter, stylianos] = await Promise.all(PEOPLE.map((p) => byEmail(p.email)));
 
   // ── PAY: Payments Platform ────────────────────────────────────────────────
@@ -1106,19 +1106,19 @@ async function main() {
     type: IssueType.TASK, parent: incidentEpic, summary: 'Grant on-call engineers access to the feed admin console',
     status: 'BACKLOG', priority: Priority.LOW, reporter: maria, assignee: admin, createdDaysAgo: 5, components: ['@DEVOPS'],
   });
-  await comment(adminReview, elena, '@admin@jiratech.local the new fee schedule saves about 0.12% per transaction. Can you approve by Friday?', 2);
+  await comment(adminReview, elena, '@admin@conductor.local the new fee schedule saves about 0.12% per transaction. Can you approve by Friday?', 2);
 
   // ── Conversations ─────────────────────────────────────────────────────────
   await comment(applePay, nikos, 'Button and payment sheet are working on staging. Still need the merchant ID in production before we can test end to end.', 10, 5);
-  await comment(applePay, elena, `Merchant ID is registered (${merchantId.key}). @nikos@jiratech.local you should be unblocked now.`, 9, 2);
-  await comment(applePay, sofia, 'Found an issue: the sheet shows "JiraTech Ltd" instead of the brand name. Is that expected?', 6, 4);
-  await comment(applePay, katerina, 'Not expected — it must show the brand. @nikos@jiratech.local can you take that as part of this story?', 6, 1);
+  await comment(applePay, elena, `Merchant ID is registered (${merchantId.key}). @nikos@conductor.local you should be unblocked now.`, 9, 2);
+  await comment(applePay, sofia, 'Found an issue: the sheet shows "Conductor Ltd" instead of the brand name. Is that expected?', 6, 4);
+  await comment(applePay, katerina, 'Not expected — it must show the brand. @nikos@conductor.local can you take that as part of this story?', 6, 1);
   await comment(applePay, nikos, 'Yes, fixed in the latest build. Display name now comes from the brand config.', 5, 3);
 
   await comment(timeoutBug, daniel, '14 customer complaints since Friday. This needs to go out as a hotfix, not wait for 2.6.0.', 4, 2);
   await comment(timeoutBug, andreas, 'Root cause: the gateway idle timeout is 30s and the 3DS redirect keeps the connection open. Raising it to 120s for the /3ds routes only.', 3, 6);
-  await comment(timeoutBug, elena, '@daniel@jiratech.local agreed — please plan a hotfix release once Andreas has a PR.', 3, 2);
-  await comment(timeoutBug, andreas, 'PR is up. @sofia@jiratech.local could you run the slow-3DS test suite against it?', 1, 5);
+  await comment(timeoutBug, elena, '@daniel@conductor.local agreed — please plan a hotfix release once Andreas has a PR.', 3, 2);
+  await comment(timeoutBug, andreas, 'PR is up. @sofia@conductor.local could you run the slow-3DS test suite against it?', 1, 5);
 
   await comment(walletTokens, lina, 'Waiting on the vault team (their ticket VLT-1182). They expect to enable the token type next Tuesday.', 7);
   await comment(walletTokens, elena, 'Marked as blocked and amber. Let\'s re-check on Tuesday.', 6);
@@ -1128,7 +1128,7 @@ async function main() {
 
   await comment(crash, sofia, 'Crash rate is 1.2% of Android sessions on 5.1 — highest in the app. Attaching the Crashlytics trace to the ticket.', 6);
   await comment(crash, lina, 'We inflate every market row up front. Switching the list to paging should fix it.', 4);
-  await comment(crash, katerina, 'This is a release blocker for 5.2. @daniel@jiratech.local please don\'t cut the branch without it.', 3);
+  await comment(crash, katerina, 'This is a release blocker for 5.2. @daniel@conductor.local please don\'t cut the branch without it.', 3);
   await comment(crash, daniel, 'Noted. Holding the branch cut until this is merged.', 2);
 
   await comment(oddsBug, alex, 'Happened again at 20:14 during the derby. Resync fixed it within 2 minutes but we were suspended for 9 minutes before anyone noticed.', 2);

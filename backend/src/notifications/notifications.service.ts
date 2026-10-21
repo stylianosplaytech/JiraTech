@@ -401,7 +401,7 @@ export class NotificationsService {
       const line = this.sentence(n.type, who, issue.key);
       const ok = await this.mailer.send({
         to: n.user.email,
-        subject: `[JiraTech] (${issue.key}) ${issue.summary}`,
+        subject: `[Conductor] (${issue.key}) ${issue.summary}`,
         text: `${line}\n\n${issue.key}: ${issue.summary}\n${n.detail ? `\n${n.detail}\n` : ''}\nView the ${noun}: ${url}\n\n`
           + `${replyHint ? `${replyHint}\n\n` : ''}You receive this because ${reason}. Turn off email notifications from your profile menu.`,
         html: this.html(line, issue, n.detail, url, noun, reason, replyHint),
@@ -431,7 +431,7 @@ export class NotificationsService {
     return `<!doctype html><html><body style="margin:0;background:#F4F5F7;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#172B4D">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:3px;border:1px solid #DFE1E6">
-<tr><td style="padding:20px 24px;border-bottom:1px solid #DFE1E6;font-weight:600;color:#0052CC">JiraTech</td></tr>
+<tr><td style="padding:20px 24px;border-bottom:1px solid #DFE1E6;font-weight:600;color:#0052CC">Conductor</td></tr>
 <tr><td style="padding:24px">
 <p style="margin:0 0 16px;font-size:15px">${esc(line)}</p>
 <p style="margin:0 0 8px;font-size:14px"><a href="${esc(url)}" style="color:#0052CC;text-decoration:none;font-weight:600">${esc(issue.key)}</a> ${esc(issue.summary)}</p>
@@ -439,7 +439,7 @@ ${detail ? `<div style="margin:12px 0;padding:12px;background:#F4F5F7;border-rad
 <p style="margin:20px 0 0"><a href="${esc(url)}" style="display:inline-block;background:#0052CC;color:#fff;padding:8px 14px;border-radius:3px;text-decoration:none;font-size:14px;font-weight:500">View ${noun}</a></p>
 ${replyHint ? `<p style="margin:16px 0 0;font-size:13px;color:#6B778C">${esc(replyHint)}</p>` : ''}
 </td></tr>
-<tr><td style="padding:16px 24px;border-top:1px solid #DFE1E6;font-size:12px;color:#6B778C">You receive this because ${esc(reason)}. You can turn off email notifications from your profile menu in JiraTech.</td></tr>
+<tr><td style="padding:16px 24px;border-top:1px solid #DFE1E6;font-size:12px;color:#6B778C">You receive this because ${esc(reason)}. You can turn off email notifications from your profile menu in Conductor.</td></tr>
 </table></td></tr></table></body></html>`;
   }
 

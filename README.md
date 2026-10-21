@@ -1,4 +1,4 @@
-# JiraTech
+# Conductor
 
 A Jira-style ALM platform: multiple projects, issues, comments, links, JQL search and saved filters, a service desk with a customer help center — plus the SPORTS planning, release and incident workflows.
 
@@ -35,7 +35,7 @@ The database is picked from `DATABASE_URL` in `backend/.env`: a `file:` URL uses
 npm run db:up
 
 # In backend/.env, switch DATABASE_URL to the commented-out PostgreSQL line:
-#   DATABASE_URL="postgresql://jiratech:jiratech@localhost:5432/jiratech"
+#   DATABASE_URL="postgresql://conductor:conductor@localhost:5432/conductor"
 
 npm run db:push -w backend
 npm run db:seed
@@ -48,7 +48,7 @@ for PostgreSQL they generate `prisma/postgres/schema.prisma` (git-ignored) with 
 `npm run dev` and `npm run build` regenerate the Prisma client for the current database first.
 After switching databases, run `db:push` (or `db:generate`) once.
 
-Default login: `admin@jiratech.local` / `admin123`
+Default login: `admin@conductor.local` / `admin123`
 
 ### Demo data
 
@@ -63,9 +63,9 @@ the IT Help Desk (**HELP**, one portal open to every customer) and **Client Serv
 through their own branded portals, **Acme Support** (`/portal/acme`) and **Globex Service Center** (`/portal/globex`).
 The new issues cover every status, priority and type, with epics and child issues, blocked and at-risk items,
 comments with @mentions, links (also across projects), watchers, work logs, history and shared saved filters.
-The desks have demo email addresses (`help@jiratech.local`, `support@clientservices.local`) with no mailbox connected: try them with *Send a test email*. It is safe to run more than once. Every demo user logs in with the same password as the admin account, e.g.
-`elena@jiratech.local` (team lead), `nikos@jiratech.local` (developer), `sofia@jiratech.local` (QA),
-`daniel@jiratech.local` (release manager), `katerina@jiratech.local` (product owner). HELP's agents are Elena (admin), Andreas, Sofia and Lina;
+The desks have demo email addresses (`help@conductor.local`, `support@clientservices.local`) with no mailbox connected: try them with *Send a test email*. It is safe to run more than once. Every demo user logs in with the same password as the admin account, e.g.
+`elena@conductor.local` (team lead), `nikos@conductor.local` (developer), `sofia@conductor.local` (QA),
+`daniel@conductor.local` (release manager), `katerina@conductor.local` (product owner). HELP's agents are Elena (admin), Andreas, Sofia and Lina;
 CS's are Lina (admin), Nikos and Andreas. The customers only see the help center at `/portal`: `anna@customer.local` and
 `peter@customer.local` (Acme Retail — they see the Acme portal and each other's shared requests) and `george@customer.local`
 (Globex — he sees the Globex portal). Neither company ever sees the other's tickets, although both land in CS.
@@ -181,7 +181,7 @@ through a **Gmail account** using Google's API over HTTPS (works on hosts that b
    `https://<your address>/api/mail-settings/google/callback` (one per address you use, e.g. your Render URL and
    `http://localhost:5172`). Email settings shows the exact value with a copy button.
 5. In Email settings choose **Gmail account**, paste the Client ID and secret, **Save**, then **Connect Gmail account** and allow
-   *Send email on your behalf* (for your own unverified app: *Advanced → Go to JiraTech*).
+   *Send email on your behalf* (for your own unverified app: *Advanced → Go to Conductor*).
 
 The connection can only send email (scope `gmail.send`); it can't read the mailbox. *Disconnect* revokes it at Google. To keep it through a
 database reset, set `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` and `GMAIL_USER` (the account's address) instead; a
@@ -197,8 +197,8 @@ SMTP_PORT=587
 SMTP_SECURE=false        # true for port 465
 SMTP_USER=...
 SMTP_PASS=...
-MAIL_FROM="JiraTech <jira@example.com>"
-APP_URL=https://jiratech.example.com   # used for links in emails
+MAIL_FROM="Conductor <jira@example.com>"
+APP_URL=https://conductor.example.com   # used for links in emails
 ```
 
 Without either, emails are written as `.eml` files to `backend/mail-outbox/` so you can open them locally.
@@ -255,7 +255,7 @@ Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMo
 
 ## API
 
-The full reference is served at `/api/docs` (Swagger UI) and `/api/openapi.json` (OpenAPI 3). Scripts authenticate with an **API token** (`Authorization: Bearer jt_…`, created under your profile menu), and JiraTech can call out to other systems with signed **webhooks**, and monitoring or CI tools can raise issues through **incoming webhooks**: see [docs/API-INTEGRATIONS.md](docs/API-INTEGRATIONS.md). Issue events and automation rules can post to **Slack** and **Microsoft Teams** channels: see [docs/CHAT-INTEGRATIONS.md](docs/CHAT-INTEGRATIONS.md). Rules that react to issue events (assign, comment, transition, email…) are described in [docs/AUTOMATION.md](docs/AUTOMATION.md).
+The full reference is served at `/api/docs` (Swagger UI) and `/api/openapi.json` (OpenAPI 3). Scripts authenticate with an **API token** (`Authorization: Bearer jt_…`, created under your profile menu), and Conductor can call out to other systems with signed **webhooks**, and monitoring or CI tools can raise issues through **incoming webhooks**: see [docs/API-INTEGRATIONS.md](docs/API-INTEGRATIONS.md). Issue events and automation rules can post to **Slack** and **Microsoft Teams** channels: see [docs/CHAT-INTEGRATIONS.md](docs/CHAT-INTEGRATIONS.md). Rules that react to issue events (assign, comment, transition, email…) are described in [docs/AUTOMATION.md](docs/AUTOMATION.md).
 
 - `POST /api/auth/login` — authenticate
 - `GET /api/issues` — list issues (filterable)

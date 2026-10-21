@@ -2,7 +2,7 @@
 # In Render: New → Blueprint → pick this repo.
 services:
   - type: web
-    name: jiratech
+    name: conductor
     runtime: node
     plan: free
     buildCommand: npm ci --include=dev && npm run build
@@ -13,7 +13,7 @@ services:
         value: "22"
       - key: DATABASE_URL
         fromDatabase:
-          name: jiratech-db
+          name: conductor-db
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
@@ -21,7 +21,7 @@ services:
         value: 7d
 
 databases:
-  - name: jiratech-db
+  - name: conductor-db
     plan: free
-    databaseName: jiratech
-    user: jiratech
+    databaseName: conductor
+    user: conductor

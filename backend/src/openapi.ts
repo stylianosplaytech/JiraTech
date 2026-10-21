@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
 
 const DESCRIPTION = `
-The JiraTech REST API: the same one the web app uses.
+The Conductor REST API: the same one the web app uses.
 
 **Authentication.** Send \`Authorization: Bearer <token>\`, where the token is either an **API token** (\`jt_…\`, created under *API tokens* in
 your profile menu: read-only or read and write) or the \`accessToken\` returned by \`POST /api/auth/login\`. Either way you act as that user, with
@@ -94,7 +94,7 @@ function tidy(document: OpenAPIObject) {
 export function setupOpenApi(app: INestApplication) {
   if (process.env.API_DOCS === 'false') return;
   const config = new DocumentBuilder()
-    .setTitle('JiraTech API')
+    .setTitle('Conductor API')
     .setDescription(DESCRIPTION)
     .setVersion('1.0')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'API token (jt_…) or login JWT', description: 'An API token, or the accessToken from POST /api/auth/login' })
@@ -105,7 +105,7 @@ export function setupOpenApi(app: INestApplication) {
   SwaggerModule.setup('docs', app, document, {
     useGlobalPrefix: true,
     jsonDocumentUrl: 'openapi.json',
-    customSiteTitle: 'JiraTech API',
+    customSiteTitle: 'Conductor API',
     swaggerOptions: { persistAuthorization: true, docExpansion: 'none', tagsSorter: 'alpha', operationsSorter: 'alpha' },
   });
 }
