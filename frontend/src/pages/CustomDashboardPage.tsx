@@ -14,10 +14,15 @@ interface GadgetForm {
   title: string;
   maxRows: number;
   groupBy: BreakdownField;
-  chart: 'bars' | 'donut';
+  chart: 'bars' | 'donut' | 'pie' | 'line';
   days: 7 | 14 | 30 | 90;
   bucket: 'day' | 'week';
   wide: boolean;
+}
+
+/** Starting settings when the kind of gadget changes. */
+function defaultsFor(type: GadgetType): Partial<GadgetForm> {
+  return { type, wide: type === 'FILTER_RESULTS', chart: type === 'CREATED_VS_RESOLVED' ? 'line' : 'bars' };
 }
 
 function GadgetModal({ dashboardId, form, onChange, onClose }: {
@@ -35,7 +40,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
     mutationFn: () => {
       const config = form.type === 'FILTER_RESULTS' ? { maxRows: form.maxRows }
         : form.type === 'BREAKDOWN' ? { groupBy: form.groupBy, chart: form.chart }
-        : form.type === 'TREND' ? { days: form.days, bucket: form.bucket } : {};
+        : form.type === 'TREND' || form.type === 'CREATED_VS_RESOLVED' ? { days: form.days, bucket: form.bucket, chart: form.chart } : {};
       const title = form.title.trim() || undefined;
       return form.id
         ? api.updateGadget(dashboardId, form.id, { title, filterId: form.filterId, config, wide: form.wide })
@@ -70,7 +75,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
         {!form.id && (
           <div>
             <label className="field-label" htmlFor="gadget-type">Show</label>
-            <select id="gadget-type" className="input" value={form.type} onChange={(e) => onChange({ ...form, type: e.target.value as GadgetType, wide: e.target.value === 'FILTER_RESULTS' })}>
+            <select id="gadget-type" className="input" value={form.type} onChange={(e) => onChange({ ...form, ...defaultsFor(e.target.value as GadgetType) })}>
               {GADGET_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
             </select>
             {hint && <p className="text-xs text-jira-muted mt-1">{hint}</p>}
@@ -117,15 +122,23 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
             </div>
             <div>
               <label className="field-label" htmlFor="gadget-chart">Chart</label>
-              <select id="gadget-chart" className="input" value={form.chart} onChange={(e) => onChange({ ...form, chart: e.target.value as 'bars' | 'donut' })}>
+              <select id="gadget-chart" className="input" value={form.chart} onChange={(e) => onChange({ ...form, chart: e.target.value as GadgetForm['chart'] })}>
                 <option value="bars">Bars</option>
                 <option value="donut">Donut</option>
+                <option value="pie">Pie</option>
               </select>
             </div>
           </>
         )}
-        {form.type === 'TREND' && (
-          <div className="grid grid-cols-2 gap-3">
+        {(form.type === 'TREND' || form.type === 'CREATED_VS_RESOLVED') && (
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="field-label" htmlFor="gadget-series-chart">Chart</label>
+              <select id="gadget-series-chart" className="input" value={form.chart} onChange={(e) => onChange({ ...form, chart: e.target.value as GadgetForm['chart'] })}>
+                <option value="bars">Bars</option>
+                <option value="line">Line</option>
+              </select>
+            </div>
             <div>
               <label className="field-label" htmlFor="gadget-days">Period</label>
               <select id="gadget-days" className="input" value={form.days} onChange={(e) => onChange({ ...form, days: Number(e.target.value) as GadgetForm['days'] })}>
@@ -215,7 +228,7 @@ export default function CustomDashboardPage() {
   };
   const editGadget = (g: Gadget) => setGadgetForm({
     id: g.id, type: g.type, filterId: g.filterId ?? '', title: g.title,
-    maxRows: g.config.maxRows ?? 10, groupBy: g.config.groupBy ?? 'status', chart: g.config.chart ?? 'bars',
+    maxRows: g.config.maxRows ?? 10, groupBy: g.config.groupBy ?? 'status', chart: g.config.chart ?? (g.type === 'CREATED_VS_RESOLVED' ? 'line' : 'bars'),
     days: g.config.days ?? 30, bucket: g.config.bucket ?? 'day', wide: g.wide,
   });
 

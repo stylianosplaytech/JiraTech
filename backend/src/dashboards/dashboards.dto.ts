@@ -51,17 +51,17 @@ export class GadgetConfigDto {
   @IsIn(BREAKDOWN_FIELDS)
   groupBy?: (typeof BREAKDOWN_FIELDS)[number];
 
-  /** BREAKDOWN: how to draw it. */
+  /** How to draw it: BREAKDOWN bars, donut or pie; TREND and CREATED_VS_RESOLVED bars or line. */
   @IsOptional()
-  @IsIn(['bars', 'donut'])
-  chart?: 'bars' | 'donut';
+  @IsIn(['bars', 'donut', 'pie', 'line'])
+  chart?: 'bars' | 'donut' | 'pie' | 'line';
 
-  /** TREND: how far back to look. */
+  /** TREND, CREATED_VS_RESOLVED: how far back to look. */
   @IsOptional()
   @IsIn([7, 14, 30, 90])
   days?: 7 | 14 | 30 | 90;
 
-  /** TREND: count per day or per week. */
+  /** TREND, CREATED_VS_RESOLVED: count per day or per week. */
   @IsOptional()
   @IsIn(['day', 'week'])
   bucket?: 'day' | 'week';

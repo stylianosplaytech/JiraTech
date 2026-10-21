@@ -122,6 +122,17 @@ export class SearchService {
     return { total: groups.reduce((n, g) => n + g.count, 0), groups };
   }
 
+  /** Created and resolved dates of the issues a JQL query finds that were created or resolved since `since`. */
+  async createdAndResolvedSince(jql: string, since: Date, user: AuthUser) {
+    const compiled = this.compile(jql, user);
+    const where = await this.visible(user, {
+      AND: [compiled.where, { OR: [{ createdAt: { gte: since } }, { resolvedAt: { gte: since } }, { status: 'CLOSED', updatedAt: { gte: since } }] }],
+    });
+    const rows = await this.prisma.issue.findMany({ where, select: { createdAt: true, resolvedAt: true, updatedAt: true, status: true }, take: MEMORY_SORT_LIMIT * 10 });
+    // Issues closed before resolution dates were recorded count as resolved when last updated.
+    return rows.map((r) => ({ createdAt: r.createdAt, resolvedAt: r.resolvedAt ?? (r.status === 'CLOSED' ? r.updatedAt : null) }));
+  }
+
   /** When the issues a JQL query finds were created, for counting per day or week. */
   async createdSince(jql: string, since: Date, user: AuthUser) {
     const compiled = this.compile(jql, user);

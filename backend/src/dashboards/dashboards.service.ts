@@ -153,12 +153,17 @@ export class DashboardsService {
         return { type: gadget.type, ...base, total: await this.search.count(filter.jql, user) };
       case GadgetType.BREAKDOWN: {
         const groupBy = config.groupBy ?? 'status';
-        return { type: gadget.type, ...base, groupBy, chart: config.chart ?? 'bars', ...(await this.search.countBy(filter.jql, groupBy, user)) };
+        return { type: gadget.type, ...base, groupBy, chart: pick(config.chart, BREAKDOWN_CHARTS), ...(await this.search.countBy(filter.jql, groupBy, user)) };
       }
       case GadgetType.TREND: {
         const days = config.days ?? 30;
         const bucket = config.bucket ?? 'day';
-        return { type: gadget.type, ...base, days, bucket, ...(await this.trend(filter.jql, days, bucket, user)) };
+        return { type: gadget.type, ...base, days, bucket, chart: pick(config.chart, SERIES_CHARTS), ...(await this.trend(filter.jql, days, bucket, user)) };
+      }
+      case GadgetType.CREATED_VS_RESOLVED: {
+        const days = config.days ?? 30;
+        const bucket = config.bucket ?? 'day';
+        return { type: gadget.type, ...base, days, bucket, chart: pick(config.chart, SERIES_CHARTS, 'line'), ...(await this.createdVsResolved(filter.jql, days, bucket, user)) };
       }
       case GadgetType.FILTER_RESULTS: {
         const result = await this.search.search(filter.jql, user, 0, config.maxRows ?? DEFAULT_ROWS);
@@ -169,19 +174,26 @@ export class DashboardsService {
 
   /** Issues created per day (or per week, weeks starting Monday) over the last `days` days, empty buckets included. */
   private async trend(jql: string, days: number, bucket: 'day' | 'week', user: AuthUser) {
-    const today = startOfDay(new Date());
-    const first = addDays(today, -(days - 1));
-    const step = bucket === 'week' ? 7 : 1;
-    const start = bucket === 'week' ? addDays(first, -((first.getDay() + 6) % 7)) : first;
-    const counts = new Map<string, number>();
-    for (let d = start; d <= today; d = addDays(d, step)) counts.set(dayKey(d), 0);
-    for (const created of await this.search.createdSince(jql, first, user)) {
-      const day = startOfDay(created);
-      const key = dayKey(bucket === 'week' ? addDays(day, -((day.getDay() + 6) % 7)) : day);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
+    const { first, counts, bump } = buckets(days, bucket);
+    for (const created of await this.search.createdSince(jql, first, user)) bump(counts, created);
     const points = [...counts].map(([date, count]) => ({ date, count }));
     return { total: points.reduce((n, p) => n + p.count, 0), points };
+  }
+
+  /** Created and resolved counts in each bucket, from the same filter. */
+  private async createdVsResolved(jql: string, days: number, bucket: 'day' | 'week', user: AuthUser) {
+    const { first, counts: created, bump } = buckets(days, bucket);
+    const resolved = new Map([...created].map(([k]) => [k, 0]));
+    for (const row of await this.search.createdAndResolvedSince(jql, first, user)) {
+      if (row.createdAt >= first) bump(created, row.createdAt);
+      if (row.resolvedAt && row.resolvedAt >= first) bump(resolved, row.resolvedAt);
+    }
+    const points = [...created].map(([date, c]) => ({ date, created: c, resolved: resolved.get(date) ?? 0 }));
+    return {
+      createdTotal: points.reduce((n, p) => n + p.created, 0),
+      resolvedTotal: points.reduce((n, p) => n + p.resolved, 0),
+      points,
+    };
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -201,6 +213,29 @@ export class DashboardsService {
   private touch(id: string) {
     return this.prisma.dashboard.update({ where: { id }, data: { updatedAt: new Date() } });
   }
+}
+
+const BREAKDOWN_CHARTS = ['bars', 'donut', 'pie'] as const;
+const SERIES_CHARTS = ['bars', 'line'] as const;
+
+/** The chart if it suits this kind of gadget, else the first (or given) default. */
+function pick<T extends string>(chart: string | undefined, allowed: readonly T[], fallback: T = allowed[0]): T {
+  return allowed.includes(chart as T) ? (chart as T) : fallback;
+}
+
+/** Empty per-day or per-week counters for the last `days` days (weeks start Monday), and how to count a date into them. */
+function buckets(days: number, bucket: 'day' | 'week') {
+  const today = startOfDay(new Date());
+  const first = addDays(today, -(days - 1));
+  const monday = (d: Date) => addDays(d, -((d.getDay() + 6) % 7));
+  const counts = new Map<string, number>();
+  for (let d = bucket === 'week' ? monday(first) : first; d <= today; d = addDays(d, bucket === 'week' ? 7 : 1)) counts.set(dayKey(d), 0);
+  const bump = (into: Map<string, number>, date: Date) => {
+    const day = startOfDay(date);
+    const key = dayKey(bucket === 'week' ? monday(day) : day);
+    if (into.has(key)) into.set(key, into.get(key)! + 1);
+  };
+  return { first, counts, bump };
 }
 
 function startOfDay(d: Date) {
@@ -231,11 +266,15 @@ function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDt
   if (type === GadgetType.BREAKDOWN) {
     const groupBy: BreakdownField = config?.groupBy ?? 'status';
     if (!BREAKDOWN_FIELDS.includes(groupBy)) throw new BadRequestException('Unknown field to count by');
-    return { groupBy, chart: config?.chart ?? 'bars' };
+    return { groupBy, chart: pick(config?.chart, BREAKDOWN_CHARTS) };
   }
-  if (type === GadgetType.TREND) {
+  if (type === GadgetType.TREND || type === GadgetType.CREATED_VS_RESOLVED) {
     const days = config?.days ?? 30;
-    return { days, bucket: config?.bucket ?? (days > 30 ? 'week' : 'day') };
+    return {
+      days,
+      bucket: config?.bucket ?? (days > 30 ? 'week' : 'day'),
+      chart: pick(config?.chart, SERIES_CHARTS, type === GadgetType.TREND ? 'bars' : 'line'),
+    };
   }
   return {};
 }
