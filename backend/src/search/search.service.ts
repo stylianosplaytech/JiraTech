@@ -20,7 +20,10 @@ export const SEARCH_INCLUDE = {
   _count: { select: { comments: true, children: true } },
 } satisfies Prisma.IssueInclude;
 
-const STATUS_ORDER = ['BACKLOG', 'TO_DO', 'DOING', 'CLOSED'];
+export const BREAKDOWN_FIELDS = ['status', 'priority', 'type', 'assignee'] as const;
+export type BreakdownField = (typeof BREAKDOWN_FIELDS)[number];
+
+const STATUS_ORDER =['BACKLOG', 'TO_DO', 'DOING', 'CLOSED'];
 // Above this many matches, priority/status sorting (done in memory) is truncated.
 const MEMORY_SORT_LIMIT = 5000;
 
@@ -87,6 +90,33 @@ export class SearchService {
     const compiled = this.compile(jql, user);
     const where = await this.visible(user, projectId ? { AND: [compiled.where, { projectId }] } : compiled.where);
     return this.prisma.issue.findMany({ where, select: { id: true, key: true, projectId: true }, orderBy: { createdAt: 'asc' }, take });
+  }
+
+  /** How many issues a JQL query finds (the user's browsable projects only). */
+  async count(jql: string, user: AuthUser) {
+    const where = await this.visible(user, this.compile(jql, user).where);
+    return this.prisma.issue.count({ where });
+  }
+
+  /** The issues a JQL query finds, counted by one field, largest group first. */
+  async countBy(jql: string, field: BreakdownField, user: AuthUser) {
+    const where = await this.visible(user, this.compile(jql, user).where);
+    const column = field === 'assignee' ? 'assigneeId' : field;
+    const rows = await this.prisma.issue.groupBy({ by: [column], where, _count: true });
+    const people = field === 'assignee'
+      ? await this.prisma.user.findMany({
+          where: { id: { in: rows.flatMap((r) => (r.assigneeId ? [r.assigneeId] : [])) } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const names = new Map(people.map((p) => [p.id, p.name]));
+    const groups = rows
+      .map((r) => {
+        const value = (r as unknown as Record<string, string | null>)[column];
+        return { key: value ?? '', label: field === 'assignee' ? (value ? names.get(value) ?? 'Unknown' : 'Unassigned') : value ?? 'None', count: r._count };
+      })
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    return { total: groups.reduce((n, g) => n + g.count, 0), groups };
   }
 
   async quickSearch(q: string, user: AuthUser) {

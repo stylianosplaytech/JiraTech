@@ -41,6 +41,7 @@ const TAG_NAMES: Record<string, string> = {
   releases: 'Releases',
   incidents: 'Incidents',
   dashboard: 'Dashboard',
+  dashboards: 'Custom dashboards',
   reports: 'Reports',
   board: 'Board',
   health: 'Health',

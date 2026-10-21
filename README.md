@@ -295,4 +295,6 @@ Project-scoped endpoints (issues list, board, labels, versions, components, cust
 - `POST /api/scheduling/run` — run scheduling algorithm
 - `GET /api/releases/:epicId/candidates` — release candidates
 - `POST /api/incidents/:id/escalate` — escalate incident
-- `GET /api/dashboard` — monitoring dashboard
+- `GET /api/dashboard` — project overview (plan progress, RAG)
+- `GET|POST /api/dashboards`, `GET|PATCH|DELETE /api/dashboards/:id` — dashboards people build from their saved filters (private or shared); `POST /api/dashboards/:id/duplicate` saves a copy
+- `POST /api/dashboards/:id/gadgets`, `PATCH|DELETE .../gadgets/:gadgetId`, `PUT .../gadgets/order`, `GET .../gadgets/:gadgetId/data` — issue list, count and breakdown gadgets, each tied to a saved filter and run as the viewer

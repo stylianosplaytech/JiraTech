@@ -45,7 +45,10 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" breadcrumbs={project ? `${project.name} · plan progress` : undefined} />
+      <PageHeader
+        title="Project overview"
+        breadcrumbs={<><Link to="/dashboards" className="link">Dashboards</Link>{project ? ` · ${project.name} · plan progress` : ''}</>}
+      />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
         {stats.map((s) => (

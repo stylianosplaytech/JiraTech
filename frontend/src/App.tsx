@@ -18,6 +18,8 @@ import BoardPage from './pages/BoardPage';
 import SearchPage from './pages/SearchPage';
 import IssueDetailPage from './pages/IssueDetailPage';
 import DashboardPage from './pages/DashboardPage';
+import DashboardsPage from './pages/DashboardsPage';
+import CustomDashboardPage from './pages/CustomDashboardPage';
 import ReportsPage from './pages/ReportsPage';
 import PlanningPage from './pages/PlanningPage';
 import CreateIssuePage from './pages/CreateIssuePage';
@@ -105,7 +107,10 @@ export default function App() {
                     <Route path="/settings/import-jira" element={<ImportProjectPage />} />
                     <Route path="/projects/:key" element={<ProjectPage />} />
                     <Route path="/queues" element={<QueuesPage />} />
-                    <Route path="/dashboard" element={<DashboardPage />} />
+                    <Route path="/dashboard" element={<Navigate to="/dashboards/overview" replace />} />
+                    <Route path="/dashboards" element={<DashboardsPage />} />
+                    <Route path="/dashboards/overview" element={<DashboardPage />} />
+                    <Route path="/dashboards/:id" element={<CustomDashboardPage />} />
                     <Route path="/reports" element={<ReportsPage />} />
                     <Route path="/planning" element={<PlanningPage />} />
                     <Route path="/users" element={<UsersPage />} />

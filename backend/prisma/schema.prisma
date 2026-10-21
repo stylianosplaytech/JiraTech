@@ -148,6 +148,7 @@ model User {
   comments         Comment[]
   historyEntries   IssueHistory[]
   savedFilters     SavedFilter[]
+  dashboards       Dashboard[]
   notifications    Notification[]    @relation("NotificationRecipient")
   projectMemberships ProjectMember[]
   notificationsSent Notification[]   @relation("NotificationActor")
@@ -638,7 +639,51 @@ model SavedFilter {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  gadgets DashboardGadget[]
+}
+
+// ─── Dashboards ──────────────────────────────────────────────────────────────
+
+enum GadgetType {
+  FILTER_RESULTS // the issues a saved filter finds
+  FILTER_COUNT   // how many issues a saved filter finds
+  BREAKDOWN      // a saved filter's issues counted by status, priority, type or assignee
+}
+
+model Dashboard {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  shared      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner   User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  gadgets DashboardGadget[]
+
+  @@index([ownerId])
+}
+
+model DashboardGadget {
+  id          String     @id @default(cuid())
+  dashboardId String
+  type        GadgetType
+  title       String
+  /// Cleared (not deleted) when the saved filter is deleted, so the gadget can say so
+  filterId    String?
+  /// JSON: { maxRows?: number, groupBy?: 'status' | 'priority' | 'type' | 'assignee' }
+  config      String     @default("{}")
+  position    Int        @default(0)
+  /// Spans both columns
+  wide        Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+
+  dashboard Dashboard    @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  filter    SavedFilter? @relation(fields: [filterId], references: [id], onDelete: SetNull)
+
+  @@index([dashboardId, position])
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────

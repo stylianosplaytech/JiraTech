@@ -254,6 +254,23 @@ export const api = {
   updateFilter: (id: string, data: { name?: string; jql?: string; shared?: boolean }) =>
     request<SavedFilter>(`/filters/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteFilter: (id: string) => request(`/filters/${id}`, { method: 'DELETE' }),
+
+  getDashboards: () => request<DashboardSummary[]>('/dashboards'),
+  getCustomDashboard: (id: string) => request<CustomDashboard>(`/dashboards/${id}`),
+  createDashboard: (data: { name: string; description?: string; shared?: boolean }) =>
+    request<DashboardSummary>('/dashboards', { method: 'POST', body: JSON.stringify(data) }),
+  updateDashboard: (id: string, data: { name?: string; description?: string; shared?: boolean }) =>
+    request<DashboardSummary>(`/dashboards/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteDashboard: (id: string) => request(`/dashboards/${id}`, { method: 'DELETE' }),
+  duplicateDashboard: (id: string) => request<DashboardSummary>(`/dashboards/${id}/duplicate`, { method: 'POST' }),
+  addGadget: (id: string, data: { type: GadgetType; filterId: string; title?: string; config?: GadgetConfig; wide?: boolean }) =>
+    request<Gadget>(`/dashboards/${id}/gadgets`, { method: 'POST', body: JSON.stringify(data) }),
+  updateGadget: (id: string, gadgetId: string, data: { title?: string; filterId?: string; config?: GadgetConfig; wide?: boolean }) =>
+    request<Gadget>(`/dashboards/${id}/gadgets/${gadgetId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  removeGadget: (id: string, gadgetId: string) => request(`/dashboards/${id}/gadgets/${gadgetId}`, { method: 'DELETE' }),
+  reorderGadgets: (id: string, ids: string[]) =>
+    request<CustomDashboard>(`/dashboards/${id}/gadgets/order`, { method: 'PUT', body: JSON.stringify({ ids }) }),
+  getGadgetData: (id: string, gadgetId: string) => request<GadgetData>(`/dashboards/${id}/gadgets/${gadgetId}/data`),
   addWatcher: (id: string, userId?: string) =>
     request<Issue>(`/issues/${id}/watchers`, {
       method: 'POST',
@@ -1101,6 +1118,47 @@ export interface SavedFilter {
   ownerId: string;
   owner: { id: string; name: string };
 }
+
+export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN';
+export type BreakdownField = 'status' | 'priority' | 'type' | 'assignee';
+
+export interface GadgetConfig {
+  maxRows?: number;
+  groupBy?: BreakdownField;
+}
+
+export interface Gadget {
+  id: string;
+  dashboardId: string;
+  type: GadgetType;
+  title: string;
+  filterId: string | null;
+  filter: { id: string; name: string } | null;
+  config: GadgetConfig;
+  position: number;
+  wide: boolean;
+}
+
+export interface DashboardSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  shared: boolean;
+  ownerId: string;
+  owner: { id: string; name: string };
+  updatedAt: string;
+  _count?: { gadgets: number };
+}
+
+export interface CustomDashboard extends DashboardSummary {
+  gadgets: Gadget[];
+}
+
+export type GadgetData =
+  | { filterMissing: true }
+  | { type: 'FILTER_COUNT'; filterId: string; filterName: string; jql: string; total: number }
+  | { type: 'FILTER_RESULTS'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
+  | { type: 'BREAKDOWN'; filterId: string; filterName: string; jql: string; groupBy: BreakdownField; total: number; groups: { key: string; label: string; count: number }[] };
 
 export interface Issue {
   id: string;

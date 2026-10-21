@@ -10,6 +10,7 @@ import { SchedulingModule } from './scheduling/scheduling.module';
 import { ReleasesModule } from './releases/releases.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { DashboardsModule } from './dashboards/dashboards.module';
 import { ReportsModule } from './reports/reports.module';
 import { BoardModule } from './board/board.module';
 import { HealthModule } from './health/health.module';
@@ -56,6 +57,7 @@ import { InboundWebhooksModule } from './inbound-webhooks/inbound-webhooks.modul
     ReleasesModule,
     IncidentsModule,
     DashboardModule,
+    DashboardsModule,
     ReportsModule,
     BoardModule,
     ServiceDeskModule,

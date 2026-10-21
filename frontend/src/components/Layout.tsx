@@ -18,7 +18,7 @@ const NAV = [
   { path: '/search', label: 'Issues' },
   { path: '/projects', label: 'Projects' },
   { path: '/planning', label: 'Planning' },
-  { path: '/dashboard', label: 'Dashboards' },
+  { path: '/dashboards', label: 'Dashboards' },
   { path: '/reports', label: 'Reports' },
   { path: '/notices', label: 'Notices' },
   { path: '/users', label: 'People' },
