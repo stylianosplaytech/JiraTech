@@ -11,6 +11,10 @@ export const GADGET_TYPES: { type: GadgetType; label: string; hint: string }[] =
   { type: 'BREAKDOWN', label: 'Breakdown', hint: 'A filter’s issues counted by status, priority, type, assignee, reporter or project, as bars, a donut or a pie.' },
   { type: 'TREND', label: 'Created over time', hint: 'How many of a filter’s issues were created each day or week, as bars or a line.' },
   { type: 'CREATED_VS_RESOLVED', label: 'Created vs resolved', hint: 'Issues created and issues resolved per day or week, side by side. Use a filter that includes closed issues, or nothing will show as resolved.' },
+  { type: 'PROGRESS', label: 'Progress', hint: 'How much of a filter’s issues are closed, as a percentage bar. Use a filter that includes closed issues.' },
+  { type: 'STACKED', label: 'Stacked breakdown', hint: 'A filter’s issues counted by one field, with each bar split by a second field, such as assignee by status.' },
+  { type: 'RESOLUTION_TIME', label: 'Resolution time', hint: 'How long issues took from creation to resolution: average, median and how the times spread. Use a filter that includes closed issues.' },
+  { type: 'STALE', label: 'Stale issues', hint: 'Unresolved issues nobody has touched for the longest time.' },
 ];
 
 export const BREAKDOWN_LABELS: Record<BreakdownField, string> = {
@@ -171,6 +175,122 @@ function GadgetView({ data }: { data: Exclude<GadgetData, { filterMissing: true 
         <p className="text-5xl font-semibold text-jira-navy">{data.total}</p>
         <p className="text-jira-subtle mt-1">{data.total === 1 ? 'issue' : 'issues'}</p>
       </Link>
+    );
+  }
+
+  if (data.type === 'PROGRESS') {
+    if (!data.total) return <p className="p-4 text-jira-muted">No issues match this filter.</p>;
+    const pct = (n: number) => (n / data.total) * 100;
+    const percent = Math.round(pct(data.done));
+    return (
+      <div className="p-4">
+        <p className="flex items-baseline gap-2">
+          <span className="text-4xl font-semibold text-jira-navy">{percent}%</span>
+          <span className="text-jira-subtle">closed ({data.done} of {data.total})</span>
+        </p>
+        <div className="flex h-3 rounded-full overflow-hidden bg-jira-gray-hover mt-3" role="img" aria-label={`${percent}% closed`}>
+          <div style={{ width: `${pct(data.done)}%`, background: COLORS.CLOSED }} title={`Closed: ${data.done}`} />
+          <div style={{ width: `${pct(data.doing)}%`, background: COLORS.DOING }} title={`In progress: ${data.doing}`} />
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5">
+          {[['Closed', data.done, COLORS.CLOSED], ['In progress', data.doing, COLORS.DOING], ['Not started', data.todo, '#DFE1E6']].map(([name, n, color]) => (
+            <span key={name as string} className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: color as string }} />{name} {n}</span>
+          ))}
+        </div>
+        <p className="text-xs text-jira-muted pt-3"><Link to={searchLink} className="link">Open in search</Link></p>
+      </div>
+    );
+  }
+
+  if (data.type === 'STACKED') {
+    if (!data.groups.length) return <p className="p-4 text-jira-muted">No issues match this filter.</p>;
+    const max = Math.max(...data.groups.map((g) => g.total), 1);
+    const shown = data.groups.slice(0, 12);
+    const stackLabel = (key: string, label: string) => groupLabel(data.stackBy, key, label);
+    const color = (key: string, i: number) => COLORS[key] ?? PALETTE[i % PALETTE.length];
+    return (
+      <div className="p-4 space-y-3">
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {data.stacks.map((s, i) => (
+            <span key={s.key || 'none'} className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: color(s.key, i) }} />{stackLabel(s.key, s.label)}</span>
+          ))}
+        </div>
+        {shown.map((g) => (
+          <div key={g.key || 'none'}>
+            <div className="flex justify-between mb-1">
+              <span className="truncate">{groupLabel(data.groupBy, g.key, g.label)}</span>
+              <span className="font-semibold">{g.total}</span>
+            </div>
+            <div className="flex h-2.5 rounded-full overflow-hidden bg-jira-gray-hover" style={{ width: `${(g.total / max) * 100}%` }}>
+              {g.counts.map((n, i) => n > 0 && (
+                <div key={data.stacks[i].key || 'none'} style={{ width: `${(n / g.total) * 100}%`, background: color(data.stacks[i].key, i) }}
+                  title={`${stackLabel(data.stacks[i].key, data.stacks[i].label)}: ${n}`} />
+              ))}
+            </div>
+          </div>
+        ))}
+        <p className="text-xs text-jira-muted pt-1">
+          {data.total} {data.total === 1 ? 'issue' : 'issues'}{data.groups.length > shown.length && ` · top ${shown.length} of ${data.groups.length} shown`} · <Link to={searchLink} className="link">Open in search</Link>
+        </p>
+      </div>
+    );
+  }
+
+  if (data.type === 'RESOLUTION_TIME') {
+    if (!data.resolved) return <p className="p-4 text-jira-muted">No issues from this filter were resolved in the last {data.days} days.</p>;
+    const max = Math.max(...data.bands.map((b) => b.count), 1);
+    const stat = (label: string, days: number | null) => (
+      <div className="flex-1 text-center">
+        <p className="text-2xl font-semibold text-jira-navy">{days === null ? '–' : days}<span className="text-sm font-normal text-jira-subtle"> days</span></p>
+        <p className="text-xs text-jira-muted">{label}</p>
+      </div>
+    );
+    return (
+      <div className="p-4">
+        <div className="flex gap-2 pb-3">{stat('Average', data.averageDays)}{stat('Median', data.medianDays)}{stat('Slowest', data.slowestDays)}</div>
+        <div className="space-y-1.5">
+          {data.bands.map((b) => (
+            <div key={b.label} className="flex items-center gap-2" title={`${b.label}: ${b.count}`}>
+              <span className="w-20 shrink-0 text-xs text-jira-subtle">{b.label}</span>
+              <div className="flex-1 h-2 rounded-full bg-jira-gray-hover overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${(b.count / max) * 100}%`, background: '#0052CC' }} />
+              </div>
+              <span className="w-6 text-right font-semibold">{b.count}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-jira-muted pt-3">
+          {data.resolved} resolved in the last {data.days} days · <Link to={searchLink} className="link">Open filter in search</Link>
+        </p>
+      </div>
+    );
+  }
+
+  if (data.type === 'STALE') {
+    if (!data.issues.length) return <p className="p-4 text-jira-muted">No unresolved issues match this filter.</p>;
+    const idle = (iso?: string) => {
+      const days = iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000) : 0;
+      return days < 1 ? 'today' : days === 1 ? '1 day' : days < 60 ? `${days} days` : `${Math.round(days / 30)} months`;
+    };
+    return (
+      <>
+        <div className="divide-y divide-jira-border">
+          {data.issues.map((issue) => (
+            <Link key={issue.id} to={`/browse/${issue.key}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-jira-gray">
+              <TypeBadge type={issue.type} />
+              <span className="link shrink-0">{issue.key}</span>
+              <span className="truncate flex-1">{issue.summary}</span>
+              <PriorityIcon priority={issue.priority} />
+              <span className="shrink-0 text-xs text-jira-muted w-20 text-right" title={issue.updatedAt ? `Last updated ${new Date(issue.updatedAt).toLocaleString()}` : undefined}>idle {idle(issue.updatedAt)}</span>
+            </Link>
+          ))}
+        </div>
+        {data.total > data.issues.length && (
+          <div className="px-4 py-2.5 border-t border-jira-border text-xs text-jira-muted">
+            Showing {data.issues.length} of {data.total} unresolved · <Link to={searchLink} className="link">See all in search</Link>
+          </div>
+        )}
+      </>
     );
   }
 

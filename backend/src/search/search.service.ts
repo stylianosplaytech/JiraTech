@@ -122,6 +122,75 @@ export class SearchService {
     return { total: groups.reduce((n, g) => n + g.count, 0), groups };
   }
 
+  /** The issues a JQL query finds counted by two fields at once: rows by `field`, each split by `stack`. Largest row first. */
+  async countByTwo(jql: string, field: BreakdownField, stack: BreakdownField, user: AuthUser) {
+    const where = await this.visible(user, this.compile(jql, user).where);
+    const columnOf = (f: BreakdownField) => ({ assignee: 'assigneeId', reporter: 'reporterId', project: 'projectId' } as const)[f as 'assignee'] ?? f;
+    const rowCol = columnOf(field);
+    const stackCol = columnOf(stack);
+    const found = await this.prisma.issue.groupBy({ by: [rowCol, stackCol] as unknown as 'status'[], where, _count: true });
+    const rows = found as unknown as (Record<string, string | null> & { _count: number })[];
+    const ids = { user: new Set<string>(), project: new Set<string>() };
+    for (const [f, col] of [[field, rowCol], [stack, stackCol]] as const) {
+      for (const r of rows) {
+        const v = r[col];
+        if (v && (f === 'assignee' || f === 'reporter')) ids.user.add(v);
+        else if (v && f === 'project') ids.project.add(v);
+      }
+    }
+    const names = new Map<string, string>();
+    for (const u of await this.prisma.user.findMany({ where: { id: { in: [...ids.user] } }, select: { id: true, name: true } })) names.set(u.id, u.name);
+    for (const p of await this.prisma.project.findMany({ where: { id: { in: [...ids.project] } }, select: { id: true, name: true } })) names.set(p.id, p.name);
+    const labelOf = (f: BreakdownField, value: string | null) => {
+      const named = f === 'assignee' || f === 'reporter' || f === 'project';
+      return named ? (value ? names.get(value) ?? 'Unknown' : f === 'assignee' ? 'Unassigned' : 'None') : value ?? 'None';
+    };
+
+    const stacks = new Map<string, { key: string; label: string; count: number }>();
+    const grouped = new Map<string, { key: string; label: string; total: number; counts: Map<string, number> }>();
+    for (const r of rows) {
+      const rowKey = r[rowCol] ?? '';
+      const stackKey = r[stackCol] ?? '';
+      const s = stacks.get(stackKey) ?? { key: stackKey, label: labelOf(stack, r[stackCol]), count: 0 };
+      s.count += r._count;
+      stacks.set(stackKey, s);
+      const g = grouped.get(rowKey) ?? { key: rowKey, label: labelOf(field, r[rowCol]), total: 0, counts: new Map() };
+      g.total += r._count;
+      g.counts.set(stackKey, (g.counts.get(stackKey) ?? 0) + r._count);
+      grouped.set(rowKey, g);
+    }
+    const stackList = [...stacks.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    const groups = [...grouped.values()]
+      .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label))
+      .map((g) => ({ key: g.key, label: g.label, total: g.total, counts: stackList.map((s) => g.counts.get(s.key) ?? 0) }));
+    return {
+      total: groups.reduce((n, g) => n + g.total, 0),
+      stacks: stackList.map(({ key, label }) => ({ key, label })),
+      groups,
+    };
+  }
+
+  /** When the issues a JQL query finds were created and resolved, for those resolved since `since`. */
+  async resolvedSince(jql: string, since: Date, user: AuthUser) {
+    const compiled = this.compile(jql, user);
+    const where = await this.visible(user, {
+      AND: [compiled.where, { status: 'CLOSED' }, { OR: [{ resolvedAt: { gte: since } }, { resolvedAt: null, updatedAt: { gte: since } }] }],
+    });
+    const rows = await this.prisma.issue.findMany({ where, select: { createdAt: true, resolvedAt: true, updatedAt: true }, take: MEMORY_SORT_LIMIT * 10 });
+    return rows.map((r) => ({ createdAt: r.createdAt, resolvedAt: r.resolvedAt ?? r.updatedAt }));
+  }
+
+  /** Unresolved issues a JQL query finds, the ones untouched for longest first. */
+  async stale(jql: string, user: AuthUser, take: number) {
+    const compiled = this.compile(jql, user);
+    const where = await this.visible(user, { AND: [compiled.where, { status: { not: 'CLOSED' } }] });
+    const [total, issues] = await Promise.all([
+      this.prisma.issue.count({ where }),
+      this.prisma.issue.findMany({ where, include: SEARCH_INCLUDE, orderBy: { updatedAt: 'asc' }, take }),
+    ]);
+    return { total, issues };
+  }
+
   /** Created and resolved dates of the issues a JQL query finds that were created or resolved since `since`. */
   async createdAndResolvedSince(jql: string, since: Date, user: AuthUser) {
     const compiled = this.compile(jql, user);

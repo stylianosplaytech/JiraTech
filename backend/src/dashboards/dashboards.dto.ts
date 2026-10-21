@@ -39,7 +39,7 @@ export class UpdateDashboardDto {
 }
 
 export class GadgetConfigDto {
-  /** FILTER_RESULTS: how many issues to list. */
+  /** FILTER_RESULTS, STALE: how many issues to list. */
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -51,12 +51,17 @@ export class GadgetConfigDto {
   @IsIn(BREAKDOWN_FIELDS)
   groupBy?: (typeof BREAKDOWN_FIELDS)[number];
 
+  /** STACKED: the field each bar is split by. */
+  @IsOptional()
+  @IsIn(BREAKDOWN_FIELDS)
+  stackBy?: (typeof BREAKDOWN_FIELDS)[number];
+
   /** How to draw it: BREAKDOWN bars, donut or pie; TREND and CREATED_VS_RESOLVED bars or line. */
   @IsOptional()
   @IsIn(['bars', 'donut', 'pie', 'line'])
   chart?: 'bars' | 'donut' | 'pie' | 'line';
 
-  /** TREND, CREATED_VS_RESOLVED: how far back to look. */
+  /** TREND, CREATED_VS_RESOLVED, RESOLUTION_TIME: how far back to look. */
   @IsOptional()
   @IsIn([7, 14, 30, 90])
   days?: 7 | 14 | 30 | 90;

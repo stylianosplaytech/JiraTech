@@ -90,7 +90,7 @@ export class DashboardsService {
         title: dto.title?.trim() || filter.name,
         filterId: filter.id,
         config: JSON.stringify(config),
-        wide: dto.wide ?? dto.type === GadgetType.FILTER_RESULTS,
+        wide: dto.wide ?? (dto.type === GadgetType.FILTER_RESULTS || dto.type === GadgetType.STALE),
         position: (last._max.position ?? -1) + 1,
       },
       include: GADGET_INCLUDE,
@@ -169,7 +169,44 @@ export class DashboardsService {
         const result = await this.search.search(filter.jql, user, 0, config.maxRows ?? DEFAULT_ROWS);
         return { type: gadget.type, ...base, total: result.total, issues: result.issues };
       }
+      case GadgetType.PROGRESS: {
+        const { total, groups } = await this.search.countBy(filter.jql, 'status', user);
+        const done = groups.find((g) => g.key === 'CLOSED')?.count ?? 0;
+        const doing = groups.find((g) => g.key === 'DOING')?.count ?? 0;
+        return { type: gadget.type, ...base, total, done, doing, todo: total - done - doing };
+      }
+      case GadgetType.STACKED: {
+        const groupBy = config.groupBy ?? 'status';
+        const stackBy = config.stackBy ?? defaultStack(groupBy);
+        return { type: gadget.type, ...base, groupBy, stackBy, ...(await this.search.countByTwo(filter.jql, groupBy, stackBy, user)) };
+      }
+      case GadgetType.RESOLUTION_TIME: {
+        const days = config.days ?? 30;
+        return { type: gadget.type, ...base, days, ...(await this.resolutionTime(filter.jql, days, user)) };
+      }
+      case GadgetType.STALE: {
+        const result = await this.search.stale(filter.jql, user, config.maxRows ?? DEFAULT_ROWS);
+        return { type: gadget.type, ...base, total: result.total, issues: result.issues };
+      }
     }
+  }
+
+  /** How long the issues resolved in the last `days` days took, from creation to resolution. */
+  private async resolutionTime(jql: string, days: number, user: AuthUser) {
+    const since = addDays(startOfDay(new Date()), -(days - 1));
+    const rows = await this.search.resolvedSince(jql, since, user);
+    const took = rows.map((r) => Math.max(r.resolvedAt.getTime() - r.createdAt.getTime(), 0) / 86_400_000).sort((a, b) => a - b);
+    const round = (n: number) => Math.round(n * 10) / 10;
+    const mid = Math.floor(took.length / 2);
+    const bands = RESOLUTION_BANDS.map((b) => ({ label: b.label, count: 0 }));
+    for (const d of took) bands[RESOLUTION_BANDS.findIndex((b) => d < b.below)].count++;
+    return {
+      resolved: took.length,
+      averageDays: took.length ? round(took.reduce((n, d) => n + d, 0) / took.length) : null,
+      medianDays: took.length ? round(took.length % 2 ? took[mid] : (took[mid - 1] + took[mid]) / 2) : null,
+      slowestDays: took.length ? round(took[took.length - 1]) : null,
+      bands,
+    };
   }
 
   /** Issues created per day (or per week, weeks starting Monday) over the last `days` days, empty buckets included. */
@@ -218,6 +255,20 @@ export class DashboardsService {
 const BREAKDOWN_CHARTS = ['bars', 'donut', 'pie'] as const;
 const SERIES_CHARTS = ['bars', 'line'] as const;
 
+/** Resolution-time histogram: a resolved issue falls in the first band whose limit (days) it is under. */
+const RESOLUTION_BANDS = [
+  { label: '< 1 day', below: 1 },
+  { label: '1–3 days', below: 3 },
+  { label: '3–7 days', below: 7 },
+  { label: '1–2 weeks', below: 14 },
+  { label: '2+ weeks', below: Infinity },
+];
+
+/** A second field to split by that differs from the first. */
+function defaultStack(groupBy: BreakdownField): BreakdownField {
+  return groupBy === 'status' ? 'priority' : 'status';
+}
+
 /** The chart if it suits this kind of gadget, else the first (or given) default. */
 function pick<T extends string>(chart: string | undefined, allowed: readonly T[], fallback: T = allowed[0]): T {
   return allowed.includes(chart as T) ? (chart as T) : fallback;
@@ -262,7 +313,15 @@ function parseConfig(raw: string): GadgetConfigDto {
 
 /** Keep only the settings that mean something for this kind of gadget. */
 function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDto {
-  if (type === GadgetType.FILTER_RESULTS) return { maxRows: config?.maxRows ?? DEFAULT_ROWS };
+  if (type === GadgetType.FILTER_RESULTS || type === GadgetType.STALE) return { maxRows: config?.maxRows ?? DEFAULT_ROWS };
+  if (type === GadgetType.STACKED) {
+    const groupBy: BreakdownField = config?.groupBy ?? 'status';
+    const stackBy: BreakdownField = config?.stackBy ?? defaultStack(groupBy);
+    if (!BREAKDOWN_FIELDS.includes(groupBy) || !BREAKDOWN_FIELDS.includes(stackBy)) throw new BadRequestException('Unknown field to count by');
+    if (groupBy === stackBy) throw new BadRequestException('Split the bars by a different field than the one they count');
+    return { groupBy, stackBy };
+  }
+  if (type === GadgetType.RESOLUTION_TIME) return { days: config?.days ?? 30 };
   if (type === GadgetType.BREAKDOWN) {
     const groupBy: BreakdownField = config?.groupBy ?? 'status';
     if (!BREAKDOWN_FIELDS.includes(groupBy)) throw new BadRequestException('Unknown field to count by');

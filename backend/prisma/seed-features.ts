@@ -47,6 +47,21 @@ export async function seedFeatures(
       },
     });
   }
+  // Newer gadget kinds, added to the overview even if it was seeded before they existed.
+  const overview = await prisma.dashboard.findFirst({ where: { ownerId: admin.id, name: 'Delivery overview' }, include: { gadgets: true } });
+  const everything = await prisma.savedFilter.findFirst({ where: { name: 'Created last 90 days' } });
+  if (overview && everything && !overview.gadgets.some((g) => g.type === GadgetType.PROGRESS)) {
+    const blockers = await filterId('Release blockers');
+    const added: { type: GadgetType; title: string; filterId: string; config: object; wide?: boolean }[] = [
+      { type: GadgetType.PROGRESS, title: 'Delivery progress', filterId: everything.id, config: {} },
+      { type: GadgetType.RESOLUTION_TIME, title: 'Time to resolve', filterId: everything.id, config: { days: 90 } },
+      { type: GadgetType.STACKED, title: 'Issues by assignee and status', filterId: everything.id, config: { groupBy: 'assignee', stackBy: 'status' }, wide: true },
+      { type: GadgetType.STALE, title: 'Going stale', filterId: blockers, config: { maxRows: 5 }, wide: true },
+    ];
+    await prisma.dashboardGadget.createMany({
+      data: added.map((g, i) => ({ ...g, config: JSON.stringify(g.config), position: overview.gadgets.length + i, wide: g.wide ?? false, dashboardId: overview.id })),
+    });
+  }
   if (!(await prisma.dashboard.findFirst({ where: { ownerId: elena.id, name: 'PAY team' } }))) {
     const payFilter = await filterId('PAY blocked or at risk');
     await prisma.dashboard.create({

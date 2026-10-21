@@ -4,7 +4,8 @@ import type { GadgetType } from '../api';
 export type ThumbKind =
   | 'list' | 'count'
   | 'bars' | 'donut' | 'pie' | 'line'
-  | 'created' | 'created-line' | 'cvr' | 'cvr-bars';
+  | 'created' | 'created-line' | 'cvr' | 'cvr-bars'
+  | 'progress' | 'stacked' | 'resolution' | 'stale';
 
 const BLUE = '#0052CC';
 const RED = '#DE350B';
@@ -79,7 +80,38 @@ export function Thumb({ kind, className = 'w-full h-auto' }: { kind: ThumbKind; 
           <rect x={11.8 + i * 11} y={34 - r * 1.6} width="4.5" height={r * 1.6} rx="1" fill={GREEN} />
         </g>
       ))}
-      {(kind === 'line' || kind === 'created' || kind === 'created-line' || kind === 'cvr' || kind === 'cvr-bars') && (
+      {kind === 'progress' && (
+        <>
+          <text x="32" y="20" textAnchor="middle" fontSize="12" fontWeight="600" fill="#172B4D" fontFamily="system-ui, sans-serif">68%</text>
+          <rect x="8" y="26" width="48" height="5" rx="2.5" fill={GRAY} />
+          <rect x="8" y="26" width="33" height="5" rx="2.5" fill={GREEN} />
+          <rect x="41" y="26" width="8" height="5" fill={BLUE} />
+        </>
+      )}
+      {kind === 'stacked' && [[14, 8, 4], [10, 6, 3], [8, 3, 3], [6, 2, 1]].map(([a, b, c], i) => (
+        <g key={i}>
+          <rect x="6" y={7 + i * 8} width="10" height="3" rx="1.5" fill={GRAY} />
+          <rect x="19" y={6.5 + i * 8} width={a * 2.2} height="4" fill={BLUE} />
+          <rect x={19 + a * 2.2} y={6.5 + i * 8} width={b * 2.2} height="4" fill={GREEN} />
+          <rect x={19 + (a + b) * 2.2} y={6.5 + i * 8} width={c * 2.2} height="4" fill={AMBER} />
+        </g>
+      ))}
+      {kind === 'resolution' && (
+        <>
+          <text x="32" y="15" textAnchor="middle" fontSize="9" fontWeight="600" fill="#172B4D" fontFamily="system-ui, sans-serif">3.2d</text>
+          {[6, 12, 9, 5, 2].map((h, i) => (
+            <rect key={i} x={9 + i * 10} y={34 - h * 1.3} width="7" height={h * 1.3} rx="1" fill={BLUE} />
+          ))}
+        </>
+      )}
+      {kind === 'stale' && [0, 1, 2, 3].map((i) => (
+        <g key={i}>
+          <rect x="6" y={7 + i * 8} width="6" height="4" rx="1" fill={[BLUE, GREEN, RED, BLUE][i]} />
+          <rect x="15" y={7.5 + i * 8} width={[28, 22, 32, 18][i]} height="3" rx="1.5" fill={GRAY} />
+          <rect x={[44, 47, 50, 52][i]} y={7.5 + i * 8} width={[14, 11, 8, 6][i]} height="3" rx="1.5" fill={AMBER} />
+        </g>
+      ))}
+      {(kind === 'line' || kind === 'created' || kind === 'created-line' || kind === 'cvr' || kind === 'cvr-bars' || kind === 'resolution') && (
         <line x1="5" y1="34.5" x2="59" y2="34.5" stroke={GRAY} />
       )}
       {(kind === 'donut' || kind === 'pie') && (
@@ -100,6 +132,10 @@ export const TYPE_THUMB: Record<GadgetType, ThumbKind> = {
   BREAKDOWN: 'bars',
   TREND: 'created',
   CREATED_VS_RESOLVED: 'cvr',
+  PROGRESS: 'progress',
+  STACKED: 'stacked',
+  RESOLUTION_TIME: 'resolution',
+  STALE: 'stale',
 };
 
 /** Pick one of several options, each shown as a small picture with a label. */

@@ -1119,12 +1119,13 @@ export interface SavedFilter {
   owner: { id: string; name: string };
 }
 
-export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND' | 'CREATED_VS_RESOLVED';
+export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND' | 'CREATED_VS_RESOLVED' | 'PROGRESS' | 'STACKED' | 'RESOLUTION_TIME' | 'STALE';
 export type BreakdownField = 'status' | 'priority' | 'type' | 'assignee' | 'reporter' | 'project';
 
 export interface GadgetConfig {
   maxRows?: number;
   groupBy?: BreakdownField;
+  stackBy?: BreakdownField;
   chart?: 'bars' | 'donut' | 'pie' | 'line';
   days?: 7 | 14 | 30 | 90;
   bucket?: 'day' | 'week';
@@ -1163,7 +1164,11 @@ export type GadgetData =
   | { type: 'FILTER_RESULTS'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
   | { type: 'BREAKDOWN'; filterId: string; filterName: string; jql: string; groupBy: BreakdownField; chart: 'bars' | 'donut' | 'pie'; total: number; groups: { key: string; label: string; count: number }[] }
   | { type: 'TREND'; filterId: string; filterName: string; jql: string; days: number; bucket: 'day' | 'week'; chart: 'bars' | 'line'; total: number; points: { date: string; count: number }[] }
-  | { type: 'CREATED_VS_RESOLVED'; filterId: string; filterName: string; jql: string; days: number; bucket: 'day' | 'week'; chart: 'bars' | 'line'; createdTotal: number; resolvedTotal: number; points: { date: string; created: number; resolved: number }[] };
+  | { type: 'CREATED_VS_RESOLVED'; filterId: string; filterName: string; jql: string; days: number; bucket: 'day' | 'week'; chart: 'bars' | 'line'; createdTotal: number; resolvedTotal: number; points: { date: string; created: number; resolved: number }[] }
+  | { type: 'PROGRESS'; filterId: string; filterName: string; jql: string; total: number; done: number; doing: number; todo: number }
+  | { type: 'STACKED'; filterId: string; filterName: string; jql: string; groupBy: BreakdownField; stackBy: BreakdownField; total: number; stacks: { key: string; label: string }[]; groups: { key: string; label: string; total: number; counts: number[] }[] }
+  | { type: 'RESOLUTION_TIME'; filterId: string; filterName: string; jql: string; days: number; resolved: number; averageDays: number | null; medianDays: number | null; slowestDays: number | null; bands: { label: string; count: number }[] }
+  | { type: 'STALE'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] };
 
 export interface Issue {
   id: string;

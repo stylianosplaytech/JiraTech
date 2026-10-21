@@ -1217,6 +1217,7 @@ async function main() {
     'Anything that could stop a release, across all projects');
   await filter(admin, 'My open work', 'assignee = currentUser() AND status != CLOSED ORDER BY priority DESC', false);
   await filter(admin, 'Created this week', 'created >= -7d ORDER BY created DESC', false);
+  await filter(admin, 'Created last 90 days', 'created >= -90d ORDER BY created DESC', true, 'Open and closed issues, for progress and resolution-time gadgets');
   await filter(maria, 'SPORTS defects', 'project = SPORTS AND type = Defect ORDER BY priority DESC', true);
   await filter(elena, 'PAY blocked or at risk', 'project = PAY AND (blocked = true OR priority = Highest) AND status != CLOSED', true);
   await filter(katerina, 'MOB 5.2 scope', 'project = MOB AND fixVersion = 5.2 ORDER BY status ASC', true);
