@@ -14,6 +14,7 @@ import {
   type Issue, type User,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { seedFeatures } from './seed-features';
 import { setUpServiceDesk } from '../src/service-desk/defaults';
 import { STARTER_TEMPLATES, normalizeContent } from '../src/service-notices/notice-content';
 import { renderNoticeHtml, renderNoticeText } from '../src/service-notices/notice-html';
@@ -1219,6 +1220,8 @@ async function main() {
   await filter(maria, 'SPORTS defects', 'project = SPORTS AND type = Defect ORDER BY priority DESC', true);
   await filter(elena, 'PAY blocked or at risk', 'project = PAY AND (blocked = true OR priority = Highest) AND status != CLOSED', true);
   await filter(katerina, 'MOB 5.2 scope', 'project = MOB AND fixVersion = 5.2 ORDER BY status ASC', true);
+
+  await seedFeatures(prisma, { admin, maria, elena, andreas, sofia });
 
   const counts = await Promise.all([
     prisma.user.count(), prisma.project.count(), prisma.issue.count(), prisma.comment.count(),
