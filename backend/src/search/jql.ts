@@ -1,5 +1,6 @@
 import { IssueResolution, IssueStatus, IssueType, Priority, Prisma } from '@prisma/client';
 import { contains } from '../common/text-match';
+import { calendarDay } from '../common/due-date';
 
 /**
  * A small JQL (Jira Query Language) implementation.
@@ -475,11 +476,14 @@ class Compiler {
       case 'updated':
       case 'updateddate':
         return this.date(c, 'updatedAt');
+      case 'due':
+      case 'duedate':
+        return this.date(c, 'dueDate');
       default:
         throw new JqlError(
           `Unknown field '${c.field}'. Try: project, key, type, status, priority, resolution, assignee, reporter, ` +
           'statusCategory, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, requestType, organization, portal, summary, ' +
-          'description, comment, text, created, updated, blocked',
+          'description, comment, text, created, updated, due, blocked',
         );
     }
   }
@@ -565,16 +569,24 @@ class Compiler {
     return c.op === '~' ? match(term) : { NOT: match(term) };
   }
 
-  private date(c: ClauseNode, column: 'createdAt' | 'updatedAt'): Prisma.IssueWhereInput {
+  private date(c: ClauseNode, column: 'createdAt' | 'updatedAt' | 'dueDate'): Prisma.IssueWhereInput {
     const opMap: Record<string, 'gt' | 'gte' | 'lt' | 'lte'> = { '>': 'gt', '>=': 'gte', '<': 'lt', '<=': 'lte' };
     const value = c.values[0];
-    if (opMap[c.op]) return { [column]: { [opMap[c.op]]: this.dateValue(c, value) } };
+    const due = column === 'dueDate';
+    // A due date is a calendar day, so compare by day: "due < now()" means overdue, "due = now()" means due today.
+    const when = (v: Value) => (due ? calendarDay(this.dateValue(c, v)) : this.dateValue(c, v));
+    if (due && (c.op === 'IS' || c.op === 'IS NOT')) {
+      if (value.kind !== 'empty') throw new JqlError("'IS' and 'IS NOT' can only be used with EMPTY (field 'due')");
+      return c.op === 'IS' ? { dueDate: null } : { dueDate: { not: null } };
+    }
+    if (opMap[c.op]) return { [column]: { [opMap[c.op]]: when(value) } };
     if (c.op === '=' || c.op === '!=') {
       // Whole-day match for "created = 2026-01-15".
-      const start = this.dateValue(c, value);
+      const start = when(value);
       const end = new Date(start.getTime() + 86_400_000);
       const range = { [column]: { gte: start, lt: end } };
-      return c.op === '=' ? range : { NOT: range };
+      // "due != x" does not match issues without a due date, like other fields.
+      return c.op === '=' ? range : due ? { AND: [{ NOT: range }, { dueDate: { not: null } }] } : { NOT: range };
     }
     throw new JqlError(`Operator '${c.op}' is not supported for date field '${c.field}'`);
   }

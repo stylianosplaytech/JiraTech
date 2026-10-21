@@ -5,7 +5,7 @@ export type ThumbKind =
   | 'list' | 'count'
   | 'bars' | 'donut' | 'pie' | 'line'
   | 'created' | 'created-line' | 'cvr' | 'cvr-bars'
-  | 'progress' | 'stacked' | 'resolution' | 'stale';
+  | 'progress' | 'stacked' | 'resolution' | 'stale' | 'due';
 
 const BLUE = '#0052CC';
 const RED = '#DE350B';
@@ -104,6 +104,13 @@ export function Thumb({ kind, className = 'w-full h-auto' }: { kind: ThumbKind; 
           ))}
         </>
       )}
+      {kind === 'due' && [0, 1, 2, 3].map((i) => (
+        <g key={i}>
+          <rect x="6" y={7 + i * 8} width="6" height="4" rx="1" fill={[RED, RED, AMBER, BLUE][i]} />
+          <rect x="15" y={7.5 + i * 8} width={[28, 22, 32, 18][i]} height="3" rx="1.5" fill={GRAY} />
+          <rect x="46" y={7.5 + i * 8} width="12" height="3" rx="1.5" fill={[RED, RED, AMBER, GRAY][i]} />
+        </g>
+      ))}
       {kind === 'stale' && [0, 1, 2, 3].map((i) => (
         <g key={i}>
           <rect x="6" y={7 + i * 8} width="6" height="4" rx="1" fill={[BLUE, GREEN, RED, BLUE][i]} />
@@ -136,6 +143,7 @@ export const TYPE_THUMB: Record<GadgetType, ThumbKind> = {
   STACKED: 'stacked',
   RESOLUTION_TIME: 'resolution',
   STALE: 'stale',
+  DUE_DATES: 'due',
 };
 
 /** Pick one of several options, each shown as a small picture with a label. */

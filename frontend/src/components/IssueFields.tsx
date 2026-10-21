@@ -10,6 +10,18 @@ import { MultiPicker, SelectPicker } from './Pickers';
 import { InlineText } from './InlineEdit';
 import UserPicker from './UserPicker';
 import CustomFieldRows from './CustomFieldsPanel';
+import { dueStatus, formatDueDate } from '../utils';
+
+/** A due date with how close it is, in red once overdue (unless the issue is closed). */
+function DueDateText({ due, closed }: { due: string; closed: boolean }) {
+  const status = dueStatus(due);
+  return (
+    <span>
+      {formatDueDate(due)}
+      {!closed && <span className={`ml-2 text-xs ${status.overdue ? 'text-[#BF2600] font-semibold' : 'text-jira-muted'}`}>{status.label}</span>}
+    </span>
+  );
+}
 
 export const PRIORITIES = ['HIGHEST', 'HIGH', 'MEDIUM', 'LOW', 'LOWEST'];
 export const priorityLabel = (p: string) => p.charAt(0) + p.slice(1).toLowerCase();
@@ -230,6 +242,17 @@ export function IssueDetailsFields({
           placeholder="None"
           onSave={(v) => v !== '' && onUpdate({ estimate: Number(v) })}
           validate={(v) => (v !== '' && (isNaN(Number(v)) || Number(v) < 0) ? 'Enter hours, e.g. 4 or 1.5' : null)}
+          className="mx-0"
+        />
+      </DetailRow>
+      <DetailRow label="Due date">
+        <InlineText
+          readOnly={!canEdit}
+          type="date"
+          value={issue.dueDate ? issue.dueDate.slice(0, 10) : ''}
+          display={issue.dueDate ? <DueDateText due={issue.dueDate} closed={issue.status === 'CLOSED'} /> : undefined}
+          placeholder="None"
+          onSave={(dueDate) => onUpdate({ dueDate })}
           className="mx-0"
         />
       </DetailRow>

@@ -417,6 +417,8 @@ model Issue {
   blocked           Boolean          @default(false)
   estimate          Float?
   remainingEstimate Float?
+  /// A calendar day, stored as midnight UTC (see common/due-date.ts)
+  dueDate           DateTime?
   scheduledStart    DateTime?
   scheduledEnd      DateTime?
   projectId         String
@@ -655,6 +657,7 @@ enum GadgetType {
   STACKED        // a saved filter's issues counted by one field, each bar split by a second field
   RESOLUTION_TIME // how long a saved filter's issues took to resolve: average, median and spread
   STALE          // a saved filter's unresolved issues, the ones untouched for longest first
+  DUE_DATES      // a saved filter's unresolved issues that are overdue or due soon, soonest first
 }
 
 model Dashboard {

@@ -249,7 +249,7 @@ text ~ "login" AND updated >= -7d
 labels IS EMPTY AND (priority = Highest OR priority = High)
 ```
 
-Fields: project, key, type, status (workflow status name), statusCategory, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, requestType, organization, portal, summary, description, comment, text, created, updated, blocked.
+Fields: project, key, type, status (workflow status name), statusCategory, priority, resolution, assignee, reporter, watcher, labels, component, fixVersion, affectedVersion, sprint, parent, epicName, requestType, organization, portal, summary, description, comment, text, created, updated, due, blocked. Due dates compare by day: `due < now()` finds overdue issues, `due <= 7d` those due within a week, `due is EMPTY` those without one.
 Operators: `= != ~ !~ > >= < <= IN, NOT IN, IS [NOT] EMPTY`, combined with `AND / OR / NOT` and parentheses.
 Functions: `currentUser()`, `now()`, `startOfDay()`, `startOfWeek()`, `startOfMonth()`. Dates: `2026-01-31`, `"2026-01-31 14:00"` or relative `-7d`, `-2w`, `-4h`.
 
@@ -297,4 +297,4 @@ Project-scoped endpoints (issues list, board, labels, versions, components, cust
 - `POST /api/incidents/:id/escalate` — escalate incident
 - `GET /api/dashboard` — project overview (plan progress, RAG)
 - `GET|POST /api/dashboards`, `GET|PATCH|DELETE /api/dashboards/:id` — dashboards people build from their saved filters (private or shared); `POST /api/dashboards/:id/duplicate` saves a copy
-- `POST /api/dashboards/:id/gadgets`, `PATCH|DELETE .../gadgets/:gadgetId`, `PUT .../gadgets/order`, `GET .../gadgets/:gadgetId/data` — issue list, count, breakdown, stacked breakdown, progress, resolution-time, stale-issue and trend gadgets, each tied to a saved filter and run as the viewer
+- `POST /api/dashboards/:id/gadgets`, `PATCH|DELETE .../gadgets/:gadgetId`, `PUT .../gadgets/order`, `GET .../gadgets/:gadgetId/data` — issue list, count, breakdown, stacked breakdown, progress, resolution-time, stale-issue, due-date and trend gadgets, each tied to a saved filter and run as the viewer

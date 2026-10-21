@@ -24,7 +24,7 @@ interface GadgetForm {
 
 /** Starting settings when the kind of gadget changes. */
 function defaultsFor(type: GadgetType): Partial<GadgetForm> {
-  return { type, wide: type === 'FILTER_RESULTS' || type === 'STALE', chart: type === 'CREATED_VS_RESOLVED' ? 'line' : 'bars' };
+  return { type, days: type === 'DUE_DATES' ? 7 : 30, wide: type === 'FILTER_RESULTS' || type === 'STALE' || type === 'DUE_DATES', chart: type === 'CREATED_VS_RESOLVED' ? 'line' : 'bars' };
 }
 
 function GadgetModal({ dashboardId, form, onChange, onClose }: {
@@ -41,6 +41,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
   const save = useMutation({
     mutationFn: () => {
       const config = form.type === 'FILTER_RESULTS' || form.type === 'STALE' ? { maxRows: form.maxRows }
+        : form.type === 'DUE_DATES' ? { maxRows: form.maxRows, days: form.days }
         : form.type === 'STACKED' ? { groupBy: form.groupBy, stackBy: form.stackBy }
         : form.type === 'RESOLUTION_TIME' ? { days: form.days }
         : form.type === 'BREAKDOWN' ? { groupBy: form.groupBy, chart: form.chart }
@@ -113,7 +114,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
           <label className="field-label" htmlFor="gadget-title">Title</label>
           <input id="gadget-title" className="input" maxLength={120} value={form.title} onChange={(e) => onChange({ ...form, title: e.target.value })} placeholder="Defaults to the filter’s name" />
         </div>
-        {(form.type === 'FILTER_RESULTS' || form.type === 'STALE') && (
+        {(form.type === 'FILTER_RESULTS' || form.type === 'STALE' || form.type === 'DUE_DATES') && (
           <div>
             <label className="field-label" htmlFor="gadget-rows">Issues to show</label>
             <select id="gadget-rows" className="input" value={form.maxRows} onChange={(e) => onChange({ ...form, maxRows: Number(e.target.value) })}>
@@ -136,6 +137,14 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
                 {(Object.keys(BREAKDOWN_LABELS) as BreakdownField[]).filter((f) => f !== form.groupBy).map((f) => <option key={f} value={f}>{BREAKDOWN_LABELS[f]}</option>)}
               </select>
             </div>
+          </div>
+        )}
+        {form.type === 'DUE_DATES' && (
+          <div>
+            <label className="field-label" htmlFor="gadget-ahead">Show issues due within</label>
+            <select id="gadget-ahead" className="input" value={form.days} onChange={(e) => onChange({ ...form, days: Number(e.target.value) as GadgetForm['days'] })}>
+              {[7, 14, 30, 90].map((n) => <option key={n} value={n}>The next {n} days</option>)}
+            </select>
           </div>
         )}
         {form.type === 'RESOLUTION_TIME' && (

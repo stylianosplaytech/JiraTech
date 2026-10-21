@@ -1,5 +1,5 @@
 import {
-  IsString, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, MinLength, MaxLength, IsObject, IsIn,
+  IsString, IsOptional, IsEnum, IsArray, IsNumber, IsBoolean, MinLength, MaxLength, IsObject, IsIn, Matches,
 } from 'class-validator';
 import { IssueType, Priority } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -65,6 +65,11 @@ export class CreateIssueDto {
   @IsArray()
   @IsString({ each: true })
   affectsVersionIds?: string[];
+
+  /** yyyy-mm-dd; empty clears it. */
+  @IsOptional()
+  @Matches(/^(\d{4}-\d{2}-\d{2})?$/, { message: 'dueDate must be yyyy-mm-dd' })
+  dueDate?: string;
 
   @IsOptional()
   @IsNumber()
@@ -133,6 +138,11 @@ export class UpdateIssueDto {
   @IsArray()
   @IsString({ each: true })
   affectsVersionIds?: string[];
+
+  /** yyyy-mm-dd; empty clears it. */
+  @IsOptional()
+  @Matches(/^(\d{4}-\d{2}-\d{2})?$/, { message: 'dueDate must be yyyy-mm-dd' })
+  dueDate?: string;
 
   @IsOptional()
   @IsNumber()

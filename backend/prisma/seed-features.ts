@@ -62,6 +62,24 @@ export async function seedFeatures(
       data: added.map((g, i) => ({ ...g, config: JSON.stringify(g.config), position: overview.gadgets.length + i, wide: g.wide ?? false, dashboardId: overview.id })),
     });
   }
+  // Due dates on some open issues (a spread from overdue to weeks away), and a gadget that lists them.
+  const day = 86_400_000;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  if (!(await prisma.issue.findFirst({ where: { dueDate: { not: null } } }))) {
+    const open = await prisma.issue.findMany({ where: { status: { not: 'CLOSED' } }, orderBy: { createdAt: 'asc' }, take: 9, select: { id: true } });
+    const offsets = [-6, -2, -1, 0, 1, 3, 5, 9, 20];
+    for (const [i, issue] of open.entries()) {
+      await prisma.issue.update({ where: { id: issue.id }, data: { dueDate: new Date(todayUtc + offsets[i] * day) } });
+    }
+  }
+  const dueOverview = await prisma.dashboard.findFirst({ where: { ownerId: admin.id, name: 'Delivery overview' }, include: { gadgets: true } });
+  const allOpen = await prisma.savedFilter.findFirst({ where: { name: 'All open issues' } });
+  if (dueOverview && allOpen && !dueOverview.gadgets.some((g) => g.type === GadgetType.DUE_DATES)) {
+    await prisma.dashboardGadget.create({
+      data: { dashboardId: dueOverview.id, type: GadgetType.DUE_DATES, title: 'Due soon', filterId: allOpen.id, config: JSON.stringify({ days: 14, maxRows: 8 }), position: dueOverview.gadgets.length, wide: true },
+    });
+  }
   if (!(await prisma.dashboard.findFirst({ where: { ownerId: elena.id, name: 'PAY team' } }))) {
     const payFilter = await filterId('PAY blocked or at risk');
     await prisma.dashboard.create({

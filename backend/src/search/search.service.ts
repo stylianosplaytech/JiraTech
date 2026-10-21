@@ -8,6 +8,7 @@ import { PRIORITY_ORDER } from '../common/issue-rules';
 import { compileJql, JqlError, JqlSort } from './jql';
 import { AccessService } from '../access/access.service';
 import { contains } from '../common/text-match';
+import { calendarDay } from '../common/due-date';
 
 export const SEARCH_INCLUDE = {
   workflowStatus: { select: { id: true, name: true, category: true } },
@@ -189,6 +190,23 @@ export class SearchService {
       this.prisma.issue.findMany({ where, include: SEARCH_INCLUDE, orderBy: { updatedAt: 'asc' }, take }),
     ]);
     return { total, issues };
+  }
+
+  /**
+   * Unresolved issues a JQL query finds that are overdue or fall due within `days` days (today included),
+   * soonest first, with how many are overdue and how many are due in the window.
+   */
+  async dueSoon(jql: string, days: number, user: AuthUser, take: number) {
+    const compiled = this.compile(jql, user);
+    const today = calendarDay(new Date());
+    const open = await this.visible(user, { AND: [compiled.where, { status: { not: 'CLOSED' } }] });
+    const inWindow: Prisma.IssueWhereInput = { AND: [open, { dueDate: { lt: new Date(today.getTime() + days * 86_400_000) } }] };
+    const [overdue, total, issues] = await Promise.all([
+      this.prisma.issue.count({ where: { AND: [open, { dueDate: { lt: today } }] } }),
+      this.prisma.issue.count({ where: inWindow }),
+      this.prisma.issue.findMany({ where: inWindow, include: SEARCH_INCLUDE, orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }], take }),
+    ]);
+    return { overdue, upcoming: total - overdue, issues };
   }
 
   /** Created and resolved dates of the issues a JQL query finds that were created or resolved since `since`. */

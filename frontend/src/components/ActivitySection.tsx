@@ -14,6 +14,7 @@ const FIELD_LABELS: Record<string, string> = {
   fixVersions: 'Fix versions',
   affectsVersions: 'Affects versions',
   remainingEstimate: 'Remaining estimate',
+  dueDate: 'Due date',
   epicName: 'Epic name',
   key: 'Issue key',
   requestType: 'Request type',

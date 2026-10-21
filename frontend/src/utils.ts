@@ -31,3 +31,22 @@ export function suggestProjectKey(name: string): string {
   const key = words.length === 1 ? words[0].slice(0, 4) : words.map((w) => w[0]).join('').slice(0, 6);
   return /^[A-Z]/.test(key) ? key : `P${key}`.slice(0, 10);
 }
+
+/** How a due date (yyyy-mm-dd, or an ISO timestamp at midnight UTC) stands today: "Overdue by 3 days", "Due today", "Due in 5 days". */
+export function dueStatus(due: string): { label: string; overdue: boolean; soon: boolean } {
+  const day = (y: number, m: number, d: number) => Date.UTC(y, m, d) / 86_400_000;
+  const [y, m, d] = due.slice(0, 10).split('-').map(Number);
+  const now = new Date();
+  const days = day(y, m - 1, d) - day(now.getFullYear(), now.getMonth(), now.getDate());
+  const plural = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+  if (days < 0) return { label: `Overdue by ${plural(-days)}`, overdue: true, soon: false };
+  if (days === 0) return { label: 'Due today', overdue: false, soon: true };
+  if (days === 1) return { label: 'Due tomorrow', overdue: false, soon: true };
+  return { label: `Due in ${plural(days)}`, overdue: false, soon: days <= 7 };
+}
+
+/** A due date for display, such as "Fri, 23 Oct 2026". */
+export function formatDueDate(due: string): string {
+  const [y, m, d] = due.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}

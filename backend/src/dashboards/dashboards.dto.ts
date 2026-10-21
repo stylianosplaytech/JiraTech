@@ -39,7 +39,7 @@ export class UpdateDashboardDto {
 }
 
 export class GadgetConfigDto {
-  /** FILTER_RESULTS, STALE: how many issues to list. */
+  /** FILTER_RESULTS, STALE, DUE_DATES: how many issues to list. */
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -61,7 +61,7 @@ export class GadgetConfigDto {
   @IsIn(['bars', 'donut', 'pie', 'line'])
   chart?: 'bars' | 'donut' | 'pie' | 'line';
 
-  /** TREND, CREATED_VS_RESOLVED, RESOLUTION_TIME: how far back to look. */
+  /** TREND, CREATED_VS_RESOLVED, RESOLUTION_TIME: how far back to look; DUE_DATES: how far ahead. */
   @IsOptional()
   @IsIn([7, 14, 30, 90])
   days?: 7 | 14 | 30 | 90;

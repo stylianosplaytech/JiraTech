@@ -27,7 +27,7 @@ export const DIRECT_TYPES: NotificationType[] = [NotificationType.ASSIGNED, Noti
 
 const FIELD_NAMES: Record<string, string> = {
   summary: 'Summary', description: 'Description', priority: 'Priority', estimate: 'Estimate',
-  remainingEstimate: 'Remaining estimate', blocked: 'Blocked', epicName: 'Epic name', assignee: 'Assignee',
+  remainingEstimate: 'Remaining estimate', dueDate: 'Due date', blocked: 'Blocked', epicName: 'Epic name', assignee: 'Assignee',
   reporter: 'Reporter', sprint: 'Sprint', components: 'Components', labels: 'Labels',
   fixVersions: 'Fix versions', affectsVersions: 'Affects versions', link: 'Links', attachment: 'Attachments',
   project: 'Project (moved)',

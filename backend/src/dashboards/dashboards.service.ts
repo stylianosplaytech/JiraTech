@@ -90,7 +90,7 @@ export class DashboardsService {
         title: dto.title?.trim() || filter.name,
         filterId: filter.id,
         config: JSON.stringify(config),
-        wide: dto.wide ?? (dto.type === GadgetType.FILTER_RESULTS || dto.type === GadgetType.STALE),
+        wide: dto.wide ?? (dto.type === GadgetType.FILTER_RESULTS || dto.type === GadgetType.STALE || dto.type === GadgetType.DUE_DATES),
         position: (last._max.position ?? -1) + 1,
       },
       include: GADGET_INCLUDE,
@@ -183,6 +183,10 @@ export class DashboardsService {
       case GadgetType.RESOLUTION_TIME: {
         const days = config.days ?? 30;
         return { type: gadget.type, ...base, days, ...(await this.resolutionTime(filter.jql, days, user)) };
+      }
+      case GadgetType.DUE_DATES: {
+        const days = config.days ?? 7;
+        return { type: gadget.type, ...base, days, ...(await this.search.dueSoon(filter.jql, days, user, config.maxRows ?? DEFAULT_ROWS)) };
       }
       case GadgetType.STALE: {
         const result = await this.search.stale(filter.jql, user, config.maxRows ?? DEFAULT_ROWS);
@@ -322,6 +326,7 @@ function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDt
     return { groupBy, stackBy };
   }
   if (type === GadgetType.RESOLUTION_TIME) return { days: config?.days ?? 30 };
+  if (type === GadgetType.DUE_DATES) return { maxRows: config?.maxRows ?? DEFAULT_ROWS, days: config?.days ?? 7 };
   if (type === GadgetType.BREAKDOWN) {
     const groupBy: BreakdownField = config?.groupBy ?? 'status';
     if (!BREAKDOWN_FIELDS.includes(groupBy)) throw new BadRequestException('Unknown field to count by');

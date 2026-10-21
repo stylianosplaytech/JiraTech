@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, type BreakdownField, type Gadget, type GadgetData, type GadgetType } from '../api';
 import { PriorityIcon, StatusBadge, TypeBadge, STATUS_LABELS, typeLabel } from './Badges';
 import { errorMessage, Spinner } from './ui';
-import { humanize } from '../utils';
+import { dueStatus, formatDueDate, humanize } from '../utils';
 
 export const GADGET_TYPES: { type: GadgetType; label: string; hint: string }[] = [
   { type: 'FILTER_RESULTS', label: 'Issue list', hint: 'The issues a filter finds, newest first unless the filter sorts them.' },
@@ -14,6 +14,7 @@ export const GADGET_TYPES: { type: GadgetType; label: string; hint: string }[] =
   { type: 'PROGRESS', label: 'Progress', hint: 'How much of a filter’s issues are closed, as a percentage bar. Use a filter that includes closed issues.' },
   { type: 'STACKED', label: 'Stacked breakdown', hint: 'A filter’s issues counted by one field, with each bar split by a second field, such as assignee by status.' },
   { type: 'RESOLUTION_TIME', label: 'Resolution time', hint: 'How long issues took from creation to resolution: average, median and how the times spread. Use a filter that includes closed issues.' },
+  { type: 'DUE_DATES', label: 'Due dates', hint: 'Unresolved issues that are overdue or due soon, soonest first. Issues need a due date to appear.' },
   { type: 'STALE', label: 'Stale issues', hint: 'Unresolved issues nobody has touched for the longest time.' },
 ];
 
@@ -263,6 +264,44 @@ function GadgetView({ data }: { data: Exclude<GadgetData, { filterMissing: true 
           {data.resolved} resolved in the last {data.days} days · <Link to={searchLink} className="link">Open filter in search</Link>
         </p>
       </div>
+    );
+  }
+
+  if (data.type === 'DUE_DATES') {
+    const summary = (
+      <div className="flex gap-6 px-4 pt-3 pb-1">
+        <span><span className={`text-2xl font-semibold ${data.overdue ? 'text-[#BF2600]' : 'text-jira-navy'}`}>{data.overdue}</span> <span className="text-jira-subtle">overdue</span></span>
+        <span><span className="text-2xl font-semibold text-jira-navy">{data.upcoming}</span> <span className="text-jira-subtle">due in the next {data.days} days</span></span>
+      </div>
+    );
+    if (!data.issues.length) {
+      return <>{summary}<p className="px-4 pb-4 pt-2 text-jira-muted">Nothing overdue or due soon.</p></>;
+    }
+    return (
+      <>
+        {summary}
+        <div className="divide-y divide-jira-border mt-2 border-t border-jira-border">
+          {data.issues.map((issue) => {
+            const status = issue.dueDate ? dueStatus(issue.dueDate) : null;
+            return (
+              <Link key={issue.id} to={`/browse/${issue.key}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-jira-gray">
+                <TypeBadge type={issue.type} />
+                <span className="link shrink-0">{issue.key}</span>
+                <span className="truncate flex-1">{issue.summary}</span>
+                <PriorityIcon priority={issue.priority} />
+                {status && issue.dueDate && (
+                  <span className={`shrink-0 text-xs w-36 text-right ${status.overdue ? 'text-[#BF2600] font-semibold' : 'text-jira-muted'}`} title={formatDueDate(issue.dueDate)}>{status.label}</span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+        {data.overdue + data.upcoming > data.issues.length && (
+          <div className="px-4 py-2.5 border-t border-jira-border text-xs text-jira-muted">
+            Showing {data.issues.length} of {data.overdue + data.upcoming} · <Link to={searchLink} className="link">Open filter in search</Link>
+          </div>
+        )}
+      </>
     );
   }
 

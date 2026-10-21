@@ -14,6 +14,7 @@ import { extractMentions, sanitizeRich, toPlainText } from '../common/rich-text'
 import { contains } from '../common/text-match';
 import { slaOnStatusChange } from '../common/sla';
 import { issueRef } from '../common/issue-ref';
+import { dueDateText, parseDueDate } from '../common/due-date';
 import { AccessService } from '../access/access.service';
 import { WorkflowService, CATEGORY_NAMES } from '../workflow/workflow.service';
 import {
@@ -163,6 +164,7 @@ export class IssuesService {
           parentLinkKey: dto.parentLinkKey,
           estimate: dto.estimate,
           remainingEstimate: dto.remainingEstimate ?? dto.estimate,
+          dueDate: parseDueDate(dto.dueDate),
           reporterId: portal ? (portal.reporterId ?? reporterId) : (dto.reporterId ?? reporterId),
           projectId: project.id,
           requestTypeId: portal?.requestTypeId,
@@ -237,7 +239,7 @@ export class IssuesService {
 
       const {
         componentIds: _c, labelIds: _l, fixVersionIds: _f, affectsVersionIds: _a,
-        customFields: _cf, ...data
+        customFields: _cf, dueDate, ...data
       } = dto;
       if (data.description !== undefined) data.description = sanitizeRich(data.description) ?? '';
 
@@ -246,6 +248,10 @@ export class IssuesService {
           const text = (v: unknown) => (field === 'description' ? toPlainText(v as string) || null : str(v));
           changes.push({ field, from: text(before[field]), to: text(data[field]) });
         }
+      }
+      const due = dueDate === undefined ? undefined : parseDueDate(dueDate);
+      if (due !== undefined && dueDateText(due) !== dueDateText(before.dueDate)) {
+        changes.push({ field: 'dueDate', from: dueDateText(before.dueDate), to: dueDateText(due) });
       }
       if (data.assigneeId !== undefined && data.assigneeId !== before.assigneeId) {
         changes.push({ field: 'assignee', from: before.assignee?.name ?? null, to: await this.userName(tx, data.assigneeId) });
@@ -262,7 +268,7 @@ export class IssuesService {
       const clean = Object.fromEntries(
         Object.entries(data).map(([k, v]) => [k, v === '' && k !== 'summary' ? null : v]),
       );
-      await tx.issue.update({ where: { id }, data: clean });
+      await tx.issue.update({ where: { id }, data: { ...clean, ...(due !== undefined && { dueDate: due }) } });
       const real = changes.filter((c) => c.from !== c.to);
       await this.recordHistory(tx, id, userId, real);
       return real;

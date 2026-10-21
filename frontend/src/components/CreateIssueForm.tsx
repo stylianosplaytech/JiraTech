@@ -41,6 +41,7 @@ export default function CreateIssueForm({
     priority: 'MEDIUM',
     epicName: '',
     estimate: '',
+    dueDate: '',
     assigneeId: '',
     labelIds: [] as string[],
     componentIds: [] as string[],
@@ -70,6 +71,7 @@ export default function CreateIssueForm({
         parentId: parent?.id,
         epicName: form.epicName.trim() || undefined,
         estimate: form.estimate ? Number(form.estimate) : undefined,
+        dueDate: form.dueDate || undefined,
         assigneeId: form.assigneeId || undefined,
         labelIds: form.labelIds.length ? form.labelIds : undefined,
         componentIds: form.componentIds.length ? form.componentIds : undefined,
@@ -197,6 +199,10 @@ export default function CreateIssueForm({
         <label className="block">
           <span className="field-label">Original estimate (hours)</span>
           <input type="number" min={0} step={0.5} value={form.estimate} onChange={(e) => setForm({ ...form, estimate: e.target.value })} className="input" />
+        </label>
+        <label className="block">
+          <span className="field-label">Due date</span>
+          <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className="input" />
         </label>
       </div>
 

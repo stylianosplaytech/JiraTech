@@ -12,7 +12,7 @@ export function InlineText({
   placeholder?: string;
   className?: string;
   inputClassName?: string;
-  type?: 'text' | 'number';
+  type?: 'text' | 'number' | 'date';
   validate?: (v: string) => string | null;
   display?: ReactNode;
 }) {

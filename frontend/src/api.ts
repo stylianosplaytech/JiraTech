@@ -1119,7 +1119,7 @@ export interface SavedFilter {
   owner: { id: string; name: string };
 }
 
-export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND' | 'CREATED_VS_RESOLVED' | 'PROGRESS' | 'STACKED' | 'RESOLUTION_TIME' | 'STALE';
+export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND' | 'CREATED_VS_RESOLVED' | 'PROGRESS' | 'STACKED' | 'RESOLUTION_TIME' | 'STALE' | 'DUE_DATES';
 export type BreakdownField = 'status' | 'priority' | 'type' | 'assignee' | 'reporter' | 'project';
 
 export interface GadgetConfig {
@@ -1168,7 +1168,8 @@ export type GadgetData =
   | { type: 'PROGRESS'; filterId: string; filterName: string; jql: string; total: number; done: number; doing: number; todo: number }
   | { type: 'STACKED'; filterId: string; filterName: string; jql: string; groupBy: BreakdownField; stackBy: BreakdownField; total: number; stacks: { key: string; label: string }[]; groups: { key: string; label: string; total: number; counts: number[] }[] }
   | { type: 'RESOLUTION_TIME'; filterId: string; filterName: string; jql: string; days: number; resolved: number; averageDays: number | null; medianDays: number | null; slowestDays: number | null; bands: { label: string; count: number }[] }
-  | { type: 'STALE'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] };
+  | { type: 'STALE'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
+  | { type: 'DUE_DATES'; filterId: string; filterName: string; jql: string; days: number; overdue: number; upcoming: number; issues: Issue[] };
 
 export interface Issue {
   id: string;
@@ -1192,6 +1193,8 @@ export interface Issue {
   ragStatus?: string;
   estimate?: number;
   remainingEstimate?: number;
+  /** yyyy-mm-dd at midnight UTC */
+  dueDate?: string | null;
   createdAt?: string;
   updatedAt?: string;
   assignee?: { id: string; name: string; email?: string };
@@ -1224,6 +1227,8 @@ export interface CreateIssuePayload {
   epicName?: string;
   estimate?: number;
   remainingEstimate?: number;
+  /** yyyy-mm-dd; empty clears it */
+  dueDate?: string;
   assigneeId?: string;
   reporterId?: string;
   componentIds?: string[];
