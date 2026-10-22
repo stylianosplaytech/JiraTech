@@ -315,7 +315,7 @@ function StatusDashboard({ data, pdf }: ReportProps) {
     { label: '% Complete', value: `${data.summary.percentComplete}%` },
   ];
   // The PDF always uses the wide layout, whatever the screen size.
-  const cols3 = pdf ? 'grid-cols-3' : 'grid-cols-1 lg:grid-cols-3';
+  const cols3 = pdf ? 'grid-cols-3' : 'grid-cols-1 md:grid-cols-3';
 
   return (
     <div>
@@ -581,7 +581,7 @@ function SlaPerformance({ data, pdf }: ReportProps) {
     { label: 'Resolution SLA met', value: sla.resolution.metPct == null ? '—' : `${sla.resolution.metPct}%` },
     { label: 'Open & breached', value: String(openBreached) },
   ];
-  const cols3 = pdf ? 'grid-cols-3' : 'grid-cols-1 lg:grid-cols-3';
+  const cols3 = pdf ? 'grid-cols-3' : 'grid-cols-1 md:grid-cols-3';
   // The PDF can't scroll sideways: let the attention table's cells wrap to fit the A4 width.
   const nowrap = pdf ? '' : 'whitespace-nowrap';
   const frSlices = outcomeSlices(sla.firstResponse);

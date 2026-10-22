@@ -50,7 +50,7 @@ export default function DashboardsPage() {
       />
 
       <h2 className="section-title mb-2">Built in</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Link to="/dashboards/overview" className="card p-4 block hover:bg-jira-gray">
           <h3 className="font-semibold text-jira-navy">Project overview</h3>
           <p className="text-jira-subtle mt-1">Plan progress, RAG status, blocked and at-risk issues for the current project.</p>
@@ -70,7 +70,7 @@ export default function DashboardsPage() {
               </EmptyState>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
               {mine.map((d) => <DashboardCard key={d.id} d={d} mine />)}
             </div>
           )}
@@ -78,7 +78,7 @@ export default function DashboardsPage() {
           {shared.length > 0 && (
             <>
               <h2 className="section-title mb-2">Shared with you</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {shared.map((d) => <DashboardCard key={d.id} d={d} mine={false} />)}
               </div>
             </>
