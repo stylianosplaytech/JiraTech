@@ -239,10 +239,20 @@ function ReportBanner({ title, subtitle, pdf }: { title: string; subtitle: strin
   );
 }
 
-function IssueTable({ rows, showStatus = true }: { rows: ReportIssueRow[]; showStatus?: boolean }) {
+/** In the PDF the table can't scroll sideways, so it is laid out to the page width and its cells wrap. */
+function IssueTable({ rows, showStatus = true, pdf }: { rows: ReportIssueRow[]; showStatus?: boolean; pdf?: boolean }) {
+  const nowrap = pdf ? '' : 'whitespace-nowrap';
   return (
-    <div className="overflow-x-auto">
-      <table className="data-table text-xs bg-white">
+    <div className={pdf ? '' : 'overflow-x-auto'}>
+      <table className={`data-table text-xs bg-white ${pdf ? 'table-fixed [&_th]:px-1.5 [&_td]:px-1.5 [&_th]:whitespace-normal' : ''}`}>
+        {pdf && (
+          <colgroup>
+            <col style={{ width: '9%' }} /><col style={{ width: '9%' }} /><col />
+            <col style={{ width: '12%' }} /><col style={{ width: '10%' }} />
+            {showStatus && <col style={{ width: '10%' }} />}
+            <col style={{ width: '10%' }} /><col style={{ width: '12%' }} />
+          </colgroup>
+        )}
         <thead>
           <tr>
             <th>Parent</th>
@@ -260,17 +270,17 @@ function IssueTable({ rows, showStatus = true }: { rows: ReportIssueRow[]; showS
             <tr key={r.key}>
               <td className="whitespace-nowrap">{r.parentKey ? <Link to={`/browse/${r.parentKey}`} className="link">{r.parentKey}</Link> : ''}</td>
               <td className="whitespace-nowrap"><Link to={`/browse/${r.key}`} className="link">{r.key}</Link></td>
-              <td className="min-w-[240px]">{r.summary}</td>
-              <td className="whitespace-nowrap">{typeLabel(r.type)}</td>
-              <td className="whitespace-nowrap">
+              <td className={pdf ? 'break-words' : 'min-w-[240px]'}>{r.summary}</td>
+              <td className={nowrap}>{typeLabel(r.type)}</td>
+              <td className={nowrap}>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full" style={{ background: PRIORITY_COLORS[r.priority] }} />
                   {priorityLabel(r.priority)}
                 </span>
               </td>
-              {showStatus && <td className="whitespace-nowrap">{r.statusName}</td>}
+              {showStatus && <td className={nowrap}>{r.statusName}</td>}
               <td className="whitespace-nowrap">{fmtDate(r.createdAt)}</td>
-              <td className="whitespace-nowrap">{r.assignee ?? <span className="text-jira-muted">Unassigned</span>}</td>
+              <td className={nowrap}>{r.assignee ?? <span className="text-jira-muted">Unassigned</span>}</td>
             </tr>
           ))}
         </tbody>
@@ -429,7 +439,7 @@ function PriorityAnalysis({ data, pdf }: ReportProps) {
         <h3 className="font-semibold text-[#1F4E3D] mt-2">Highest &amp; High Priority — Open Only ({urgent.length})</h3>
         {urgent.length === 0 && <p className="text-sm text-jira-muted mt-2">No open highest or high priority issues.</p>}
       </Block>
-      {urgent.length > 0 && <Block table className={`px-5 pb-5 ${pdf ? '' : 'overflow-x-auto'}`}><IssueTable rows={urgent} /></Block>}
+      {urgent.length > 0 && <Block table className={`px-5 pb-5 ${pdf ? '' : 'overflow-x-auto'}`}><IssueTable rows={urgent} pdf={pdf} /></Block>}
     </Sheet>
   );
 }
@@ -451,7 +461,7 @@ function OpenIssues({ data, pdf }: ReportProps) {
         subtitle={`${data.summary.open} open issues · ${data.period.from} to ${data.period.to} · ${closedPct}% closed overall`}
       />
       {data.openIssues.length === 0 ? <Block className="p-5"><p className="text-sm text-jira-muted">No open issues in the period.</p></Block> : (
-        <Block table className={`p-5 ${pdf ? '' : 'overflow-x-auto'}`}><IssueTable rows={rows} /></Block>
+        <Block table className={`p-5 ${pdf ? '' : 'overflow-x-auto'}`}><IssueTable rows={rows} pdf={pdf} /></Block>
       )}
       {!pdf && pages > 1 && (
         <div className="flex items-center justify-end gap-2 px-5 pb-5 text-sm">
