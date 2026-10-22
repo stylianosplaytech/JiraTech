@@ -111,9 +111,9 @@ function FilterButton({ label, options, value, onChange, render }: {
 }
 
 function toCsv(issues: Issue[]): string {
-  const rows = [['Key', 'Type', 'Summary', 'Status', 'Priority', 'Assignee', 'Reporter', 'Created', 'Updated']];
+  const rows = [['Key', 'Type', 'Summary', 'Status', 'Priority', 'Assignee', 'Reporter', 'Created', 'Updated', 'Due date']];
   for (const i of issues) {
-    rows.push([i.key, i.type, i.summary, i.status, i.priority, i.assignee?.name ?? '', i.reporter?.name ?? '', i.createdAt ?? '', i.updatedAt ?? '']);
+    rows.push([i.key, i.type, i.summary, i.status, i.priority, i.assignee?.name ?? '', i.reporter?.name ?? '', i.createdAt ?? '', i.updatedAt ?? '', i.dueDate?.slice(0, 10) ?? '']);
   }
   return rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
 }
