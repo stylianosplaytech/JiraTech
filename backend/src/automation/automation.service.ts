@@ -17,6 +17,7 @@ import {
   Action, TriggerConfig, TriggerEvent, TRIGGER_EVENTS, describe, fill, parseActions, parseTrigger,
 } from './automation-actions';
 import { describeSchedule, nextRun } from './automation-schedule';
+import { calendarDay, dueDateText } from '../common/due-date';
 
 /** A rule's actions can trigger other rules, but only this many steps deep. */
 const MAX_DEPTH = 3;
@@ -431,7 +432,7 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     const current = await this.prisma.issue.findUniqueOrThrow({
       where: { id: issue.id },
       select: {
-        assigneeId: true, reporterId: true, priority: true, status: true, workflowStatus: { select: { name: true } },
+        assigneeId: true, reporterId: true, priority: true, dueDate: true, status: true, workflowStatus: { select: { name: true } },
         project: { select: { leadId: true } }, labels: { select: { labelId: true } },
       },
     });
@@ -451,6 +452,12 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
         if (current.priority === action.priority) return `Priority is already ${action.priority}`;
         await this.issues.update(issue.id, { priority: action.priority }, author.id);
         return `Priority set to ${action.priority}`;
+      case 'set_due_date': {
+        const due = action.days === null ? null : calendarDay(new Date(Date.now() + action.days * 86_400_000));
+        if (dueDateText(due) === dueDateText(current.dueDate)) return due ? `Due date is already ${dueDateText(due)}` : 'There is no due date to clear';
+        await this.issues.update(issue.id, { dueDate: dueDateText(due) ?? '' }, author.id);
+        return due ? `Due date set to ${dueDateText(due)}` : 'Due date cleared';
+      }
       case 'transition': {
         const want = action.status.toLowerCase();
         if (current.workflowStatus?.name.toLowerCase() === want || current.status.toLowerCase() === want) return `Already in ${action.status}`;
@@ -509,7 +516,7 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
       this.prisma.issue.findUniqueOrThrow({
         where: { id: issueId },
         select: {
-          key: true, summary: true, priority: true, status: true, workflowStatus: { select: { name: true } },
+          key: true, summary: true, priority: true, dueDate: true, status: true, workflowStatus: { select: { name: true } },
           assignee: { select: { name: true } }, reporter: { select: { name: true } }, project: { select: { key: true, name: true } },
         },
       }),
@@ -520,6 +527,7 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
       'issue.summary': toPlainText(issue.summary),
       'issue.status': issue.workflowStatus?.name ?? issue.status,
       'issue.priority': issue.priority,
+      'issue.dueDate': dueDateText(issue.dueDate) ?? 'none',
       'issue.assignee': issue.assignee?.name ?? 'Unassigned',
       'issue.reporter': issue.reporter?.name ?? 'Unknown',
       'issue.url': `${this.mailer.appUrl()}/browse/${issue.key}`,

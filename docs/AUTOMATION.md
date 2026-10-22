@@ -9,7 +9,7 @@ A rule is **when** + **if** + **then**:
 | Part | What it is |
 |---|---|
 | **Project** | One project, or all projects (all projects: global administrators only). |
-| **When** | An issue is created, edited, assigned, moves to another status, gets a comment, or **on a schedule**. Edited can be limited to chosen fields (e.g. only when the priority changes); moved can be limited to one target status. |
+| **When** | An issue is created, edited, assigned, moves to another status, gets a comment, or **on a schedule**. Edited can be limited to chosen fields (e.g. only when the priority or due date changes); moved can be limited to one target status. |
 | **If** (optional) | The issue must match a JQL query, e.g. `priority = Highest AND labels IS EMPTY`. No condition: every issue. (Scheduled rules need one: see below.) |
 | **Then** | Up to 10 actions, run in order. If one fails, the rest are skipped and the run is logged as failed. |
 
@@ -19,13 +19,14 @@ A rule is **when** + **if** + **then**:
 |---|---|
 | Assign the issue | To nobody, the reporter, the project lead or a chosen person. Already assigned that way: nothing happens. |
 | Set the priority | |
+| Set or clear the due date | A number of days from the day the rule runs (0 = today), or clear it. Already that date: nothing happens. |
 | Move to a status | A status name (`In Progress`) or category (`TO_DO`, `DOING`, `CLOSED`). The workflow must allow the move; closing uses the resolution Completed. Already there: nothing happens. |
 | Add a comment | Optionally an internal note (service desk agents only). |
 | Add a label | A single word; created in the project if new. |
 | Post to chat | A message in a Slack or Teams channel, through one of its [chat webhooks](CHAT-INTEGRATIONS.md) that you may manage. Placeholders work and the message links to the issue. |
 | Send an email | To the assignee, reporter or project lead, and/or any addresses (a project administrator can only use addresses of people with a Conductor account). A link to the issue is added. Sent the same way as other Conductor emails (see Email settings). |
 
-Comments and emails can use placeholders: `{{issue.key}}`, `{{issue.summary}}`, `{{issue.status}}`, `{{issue.priority}}`,
+Comments and emails can use placeholders: `{{issue.key}}`, `{{issue.summary}}`, `{{issue.status}}`, `{{issue.priority}}`, `{{issue.dueDate}}` (yyyy-mm-dd, or "none"),
 `{{issue.assignee}}`, `{{issue.reporter}}`, `{{issue.url}}`, `{{project.key}}`, `{{project.name}}`, `{{actor.name}}` (who caused the event).
 
 Examples:
@@ -46,6 +47,7 @@ having an action change what the condition looks at:
 
 - *Daily 09:00, `status != Closed AND updated <= -14d AND labels IS EMPTY`: add the label `stale` and a comment asking for an update.*
 - *Weekly on Monday, `priority = Highest AND assignee IS EMPTY`: email the project lead.* (This one is meant to nag every week.)
+- *Daily 09:00, `due < now() AND status != Closed AND priority != Highest`: raise the priority to Highest and comment that it is overdue.*
 
 **Test** with the issue key left empty lists the issues a scheduled rule would act on right now, and when it runs next. If the server was
 down at the scheduled time, the rule runs once when it is back. Set `AUTOMATION_SCHEDULER=false` on instances that should not run

@@ -942,6 +942,8 @@ export interface InboundTestResult {
 export type AutomationAction =
   | { type: 'assign'; to: string }
   | { type: 'set_priority'; priority: string }
+  /** days from the day the rule runs (0 = today); null clears the due date */
+  | { type: 'set_due_date'; days: number | null }
   | { type: 'transition'; status: string; resolution?: string }
   | { type: 'comment'; body: string; internal?: boolean }
   | { type: 'add_label'; label: string }

@@ -23,7 +23,7 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
 
 /** Fields an "issue is edited" trigger can be limited to (the names issue changes carry). */
 export const EDITABLE_FIELDS = [
-  'summary', 'description', 'priority', 'estimate', 'remainingEstimate', 'blocked', 'epicName', 'assignee',
+  'summary', 'description', 'priority', 'dueDate', 'estimate', 'remainingEstimate', 'blocked', 'epicName', 'assignee',
   'reporter', 'sprint', 'components', 'labels', 'fixVersions', 'affectsVersions', 'project',
 ] as const;
 
@@ -42,6 +42,8 @@ export type Action =
   /** `to`: "unassigned", "reporter", "lead" (the project lead) or a user id */
   | { type: 'assign'; to: string }
   | { type: 'set_priority'; priority: Priority }
+  /** `days`: the due date is this many days from the day the rule runs (0 = today); null clears it */
+  | { type: 'set_due_date'; days: number | null }
   /** `status`: a status name, or a category (TO_DO, DOING, CLOSED) */
   | { type: 'transition'; status: string; resolution?: string }
   | { type: 'comment'; body: string; internal?: boolean }
@@ -51,7 +53,7 @@ export type Action =
   /** A message in a Slack or Teams channel, through one of the chat webhooks (see webhooks/chat-format.ts) */
   | { type: 'chat'; webhookId: string; message: string };
 
-export const ACTION_TYPES = ['assign', 'set_priority', 'transition', 'comment', 'add_label', 'email', 'chat'] as const;
+export const ACTION_TYPES = ['assign', 'set_priority', 'set_due_date', 'transition', 'comment', 'add_label', 'email', 'chat'] as const;
 export const MAX_ACTIONS = 10;
 
 const EMAIL = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
@@ -75,6 +77,14 @@ export function parseActions(raw: unknown): Action[] {
       case 'set_priority':
         if (!Object.values(Priority).includes(input.priority as Priority)) throw new BadRequestException(`Action ${n}: choose a priority`);
         return { type: 'set_priority', priority: input.priority as Priority };
+      case 'set_due_date': {
+        if (input.days === null) return { type: 'set_due_date', days: null };
+        const days = Number(input.days);
+        if (typeof input.days !== 'number' || !Number.isInteger(days) || days < 0 || days > 365) {
+          throw new BadRequestException(`Action ${n}: enter a whole number of days from 0 to 365, or clear the due date`);
+        }
+        return { type: 'set_due_date', days };
+      }
       case 'transition': {
         const status = text(input.status, 80);
         if (!status) throw new BadRequestException(`Action ${n}: choose a status`);
@@ -144,7 +154,7 @@ export function fill(template: string, values: Record<string, string>, escape: (
 }
 
 export const PLACEHOLDER_KEYS = [
-  'issue.key', 'issue.summary', 'issue.status', 'issue.priority', 'issue.assignee', 'issue.reporter', 'issue.url',
+  'issue.key', 'issue.summary', 'issue.status', 'issue.priority', 'issue.dueDate', 'issue.assignee', 'issue.reporter', 'issue.url',
   'project.key', 'project.name', 'actor.name',
 ] as const;
 
@@ -153,6 +163,7 @@ export function describe(action: Action, resolveUser: (id: string) => string): s
     case 'assign':
       return `Assign to ${action.to === 'unassigned' ? 'nobody' : action.to === 'reporter' ? 'the reporter' : action.to === 'lead' ? 'the project lead' : resolveUser(action.to)}`;
     case 'set_priority': return `Set the priority to ${action.priority}`;
+    case 'set_due_date': return action.days === null ? 'Clear the due date' : action.days === 0 ? 'Set the due date to today' : `Set the due date to ${action.days} day${action.days === 1 ? '' : 's'} from now`;
     case 'transition': return `Move to ${action.status}`;
     case 'comment': return `Add ${action.internal ? 'an internal note' : 'a comment'}`;
     case 'add_label': return `Add the label ${action.label}`;

@@ -10,6 +10,7 @@ const PRIORITIES = ['HIGHEST', 'HIGH', 'MEDIUM', 'LOW', 'LOWEST'];
 const ACTION_LABELS: Record<AutomationAction['type'], string> = {
   assign: 'Assign the issue',
   set_priority: 'Set the priority',
+  set_due_date: 'Set or clear the due date',
   transition: 'Move to a status',
   comment: 'Add a comment',
   add_label: 'Add a label',
@@ -63,6 +64,7 @@ const blankAction = (type: AutomationAction['type']): AutomationAction => {
   switch (type) {
     case 'assign': return { type, to: 'unassigned' };
     case 'set_priority': return { type, priority: 'HIGH' };
+    case 'set_due_date': return { type, days: 7 };
     case 'transition': return { type, status: '' };
     case 'comment': return { type, body: '', internal: false };
     case 'add_label': return { type, label: '' };
@@ -205,6 +207,7 @@ function RuleEditor({ form, setForm, meta, scope, saving, onSave }: {
   const valid = form.name.trim() && (scope.global || form.projectKey) && (form.event !== 'schedule' || form.jql.trim()) && form.actions.length && form.actions.every((a) => {
     switch (a.type) {
       case 'transition': return a.status.trim();
+      case 'set_due_date': return a.days === null || (Number.isInteger(a.days) && a.days >= 0 && a.days <= 365);
       case 'comment': return a.body.trim();
       case 'add_label': return a.label.trim() && !/\s/.test(a.label);
       case 'email': return a.to.length && a.subject.trim() && a.body.trim();
@@ -356,6 +359,21 @@ function ActionFields({ action, onChange, users, anyAddress }: { action: Automat
         <select aria-label="Priority" className="input" value={action.priority} onChange={(e) => onChange({ ...action, priority: e.target.value })}>
           {PRIORITIES.map((p) => <option key={p} value={p}>{humanize(p)}</option>)}
         </select>
+      );
+    case 'set_due_date':
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <select aria-label="Due date action" className="input w-48" value={action.days === null ? 'clear' : 'in'} onChange={(e) => onChange({ ...action, days: e.target.value === 'clear' ? null : 7 })}>
+            <option value="in">Set it to…</option>
+            <option value="clear">Clear it</option>
+          </select>
+          {action.days !== null && (
+            <>
+              <input aria-label="Days from now" type="number" min={0} max={365} className="input w-24" value={action.days} onChange={(e) => onChange({ ...action, days: e.target.value === '' ? NaN : Number(e.target.value) })} />
+              <span className="text-jira-subtle">days from the day the rule runs (0 = today)</span>
+            </>
+          )}
+        </div>
       );
     case 'transition':
       return (
