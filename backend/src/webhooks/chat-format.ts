@@ -25,7 +25,7 @@ interface EventPayload {
   actor?: Person | null;
   project?: { key?: string; name?: string } | null;
   issue?: {
-    key?: string; url?: string; summary?: string; type?: string; status?: string; priority?: string; resolution?: string | null;
+    key?: string; url?: string; summary?: string; type?: string; status?: string; priority?: string; resolution?: string | null; dueDate?: string | null;
     assignee?: Person | null; reporter?: Person | null;
   } | null;
   changes?: { field: string; from: string | null; to: string | null }[];
@@ -33,7 +33,7 @@ interface EventPayload {
 }
 
 const FIELD_NAMES: Record<string, string> = {
-  summary: 'Summary', description: 'Description', priority: 'Priority', estimate: 'Estimate', remainingEstimate: 'Remaining estimate',
+  summary: 'Summary', description: 'Description', priority: 'Priority', estimate: 'Estimate', remainingEstimate: 'Remaining estimate', dueDate: 'Due date',
   blocked: 'Blocked', epicName: 'Epic name', assignee: 'Assignee', reporter: 'Reporter', sprint: 'Sprint', components: 'Components',
   labels: 'Labels', fixVersions: 'Fix versions', affectsVersions: 'Affects versions', project: 'Project', status: 'Status',
   resolution: 'Resolution', key: 'Key', parent: 'Parent', requestType: 'Request type',
@@ -70,6 +70,7 @@ function describe(p: EventPayload): Message {
       add('Status', i?.status);
       add('Assignee', i?.assignee?.name);
       add('Reporter', i?.reporter?.name);
+      add('Due date', i?.dueDate);
       break;
     case 'issue.assigned': {
       const to = change('assignee')?.to;

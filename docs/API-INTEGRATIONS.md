@@ -78,7 +78,7 @@ Events from bulk changes are sent too. Comment deletions and watcher changes are
   "actor": { "id": "…", "name": "Ada Admin", "email": "ada@example.com" },
   "project": { "id": "…", "key": "HELP", "name": "Help desk" },
   "issue": { "key": "HELP-12", "url": "https://…/browse/HELP-12", "summary": "…", "status": "In Progress",
-             "priority": "HIGH", "assignee": { … }, "reporter": { … }, "labels": [], "components": [] },
+             "priority": "HIGH", "dueDate": "2026-10-30", "assignee": { … }, "reporter": { … }, "labels": [], "components": [] },
   "changes": [{ "field": "status", "from": "Waiting for support", "to": "In Progress" }],
   "comment": { … }                     // comment events only
 }

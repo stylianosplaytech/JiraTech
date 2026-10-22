@@ -13,6 +13,7 @@ import { IssueChange, IssueEventsService } from '../events/issue-events.service'
 import { WEBHOOK_FORMATS, WebhookFormat, chatBody, isChatFormat } from './chat-format';
 import { PING_EVENT, WEBHOOK_EVENTS, WebhookEvent } from './webhook-events';
 import { parseWebhookUrl, postJson } from './webhook-network';
+import { dueDateText } from '../common/due-date';
 
 /** Waits before the 2nd, 3rd… attempt: a delivery is tried 6 times over about 8 hours. */
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 30 * 60_000, 2 * 3_600_000, 6 * 3_600_000];
@@ -350,6 +351,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
         statusCategory: issue.workflowStatus?.category ?? issue.status,
         resolution: issue.resolution,
         priority: issue.priority,
+        dueDate: dueDateText(issue.dueDate),
         blocked: issue.blocked,
         assignee: issue.assignee,
         reporter: issue.reporter,
