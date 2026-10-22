@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, type BreakdownField, type Gadget, type GadgetData, type GadgetType } from '../api';
 import { PriorityIcon, StatusBadge, TypeBadge, STATUS_LABELS, typeLabel } from './Badges';
 import { errorMessage, Spinner } from './ui';
-import { dueStatus, formatDueDate, humanize } from '../utils';
+import { dueStatus, formatDueDate, humanize, timeAgo } from '../utils';
 
 export const GADGET_TYPES: { type: GadgetType; label: string; hint: string }[] = [
   { type: 'FILTER_RESULTS', label: 'Issue list', hint: 'The issues a filter finds, newest first unless the filter sorts them.' },
@@ -15,6 +15,9 @@ export const GADGET_TYPES: { type: GadgetType; label: string; hint: string }[] =
   { type: 'STACKED', label: 'Stacked breakdown', hint: 'A filter’s issues counted by one field, with each bar split by a second field, such as assignee by status.' },
   { type: 'RESOLUTION_TIME', label: 'Resolution time', hint: 'How long issues took from creation to resolution: average, median and how the times spread. Use a filter that includes closed issues.' },
   { type: 'DUE_DATES', label: 'Due dates', hint: 'Unresolved issues that are overdue or due soon, soonest first. Issues need a due date to appear.' },
+  { type: 'RECENTLY_UPDATED', label: 'Recently updated', hint: 'The issues a filter finds, the most recently changed first, with how long ago.' },
+  { type: 'ISSUE_AGE', label: 'Issue age', hint: 'How long unresolved issues have been open: average, median, oldest and how the ages spread.' },
+  { type: 'BACKLOG_TREND', label: 'Backlog trend', hint: 'How many of a filter’s issues were unresolved at the end of each day or week, so you can see the backlog grow or shrink. Use a filter that includes closed issues.' },
   { type: 'STALE', label: 'Stale issues', hint: 'Unresolved issues nobody has touched for the longest time.' },
 ];
 
@@ -90,7 +93,7 @@ function groupLabel(field: BreakdownField, key: string, label: string) {
 interface Series { name: string; color: string; values: number[] }
 
 /** Per-day or per-week counts as bars (grouped when there are several series) or lines, with a legend for several series. */
-function SeriesChart({ dates, series, kind, bucket }: { dates: string[]; series: Series[]; kind: 'bars' | 'line'; bucket: 'day' | 'week' }) {
+function SeriesChart({ dates, series, kind, bucket, peak }: { dates: string[]; series: Series[]; kind: 'bars' | 'line'; bucket: 'day' | 'week'; peak?: (max: number) => string }) {
   const max = Math.max(...series.flatMap((s) => s.values), 1);
   const fmt = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const tip = (i: number) => `${bucket === 'week' ? 'Week of ' : ''}${fmt(dates[i])}${series.map((s) => ` · ${s.name}: ${s.values[i]}`).join('')}`;
@@ -143,7 +146,7 @@ function SeriesChart({ dates, series, kind, bucket }: { dates: string[]; series:
       </div>
       <div className="flex justify-between text-xs text-jira-muted mt-1.5">
         <span>{fmt(dates[0])}</span>
-        <span>peak {max} per {bucket}</span>
+        <span>{peak ? peak(max) : `peak ${max} per ${bucket}`}</span>
         <span>{fmt(dates[n - 1])}</span>
       </div>
     </div>
@@ -262,6 +265,79 @@ function GadgetView({ data }: { data: Exclude<GadgetData, { filterMissing: true 
         </div>
         <p className="text-xs text-jira-muted pt-3">
           {data.resolved} resolved in the last {data.days} days · <Link to={searchLink} className="link">Open filter in search</Link>
+        </p>
+      </div>
+    );
+  }
+
+  if (data.type === 'RECENTLY_UPDATED') {
+    if (!data.issues.length) return <p className="p-4 text-jira-muted">No issues match this filter.</p>;
+    return (
+      <>
+        <div className="divide-y divide-jira-border">
+          {data.issues.map((issue) => (
+            <Link key={issue.id} to={`/browse/${issue.key}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-jira-gray">
+              <TypeBadge type={issue.type} />
+              <span className={`link shrink-0 ${issue.status === 'CLOSED' ? 'line-through' : ''}`}>{issue.key}</span>
+              <span className="truncate flex-1">{issue.summary}</span>
+              <span className="hidden sm:block shrink-0"><StatusBadge status={issue.status} name={issue.workflowStatus?.name} /></span>
+              <span className="shrink-0 text-xs text-jira-muted w-24 text-right" title={issue.updatedAt ? new Date(issue.updatedAt).toLocaleString() : undefined}>{issue.updatedAt ? timeAgo(issue.updatedAt) : ''}</span>
+            </Link>
+          ))}
+        </div>
+        {data.total > data.issues.length && (
+          <div className="px-4 py-2.5 border-t border-jira-border text-xs text-jira-muted">
+            Showing {data.issues.length} of {data.total} · <Link to={searchLink} className="link">See all in search</Link>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  if (data.type === 'ISSUE_AGE') {
+    if (!data.open) return <p className="p-4 text-jira-muted">No unresolved issues match this filter.</p>;
+    const max = Math.max(...data.bands.map((b) => b.count), 1);
+    const stat = (label: string, days: number | null) => (
+      <div className="flex-1 text-center">
+        <p className="text-2xl font-semibold text-jira-navy">{days === null ? '–' : Math.round(days)}<span className="text-sm font-normal text-jira-subtle"> days</span></p>
+        <p className="text-xs text-jira-muted">{label}</p>
+      </div>
+    );
+    return (
+      <div className="p-4">
+        <div className="flex gap-2 pb-3">{stat('Average age', data.averageDays)}{stat('Median', data.medianDays)}{stat('Oldest', data.oldestDays)}</div>
+        <div className="space-y-1.5">
+          {data.bands.map((b, i) => (
+            <div key={b.label} className="flex items-center gap-2" title={`${b.label}: ${b.count}`}>
+              <span className="w-20 shrink-0 text-xs text-jira-subtle">{b.label}</span>
+              <div className="flex-1 h-2 rounded-full bg-jira-gray-hover overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${(b.count / max) * 100}%`, background: ['#36B37E', '#36B37E', '#FFAB00', '#FF8B00', '#DE350B'][i] }} />
+              </div>
+              <span className="w-6 text-right font-semibold">{b.count}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-jira-muted pt-3">
+          {data.open} unresolved {data.open === 1 ? 'issue' : 'issues'} · <Link to={searchLink} className="link">Open filter in search</Link>
+        </p>
+      </div>
+    );
+  }
+
+  if (data.type === 'BACKLOG_TREND') {
+    return (
+      <div className="p-4">
+        <SeriesChart
+          kind={data.chart}
+          bucket={data.bucket}
+          dates={data.points.map((p) => p.date)}
+          series={[{ name: 'Unresolved', color: '#6554C0', values: data.points.map((p) => p.count) }]}
+          peak={(max) => `peak ${max} unresolved`}
+        />
+        <p className="text-xs text-jira-muted pt-3">
+          {data.current} unresolved now (
+          {data.change > 0 ? `up ${data.change}` : data.change < 0 ? `down ${-data.change}` : 'no change'} over {data.days} days) ·{' '}
+          <Link to={searchLink} className="link">Open filter in search</Link>
         </p>
       </div>
     );

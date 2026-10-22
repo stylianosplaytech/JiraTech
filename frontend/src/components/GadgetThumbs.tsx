@@ -5,7 +5,7 @@ export type ThumbKind =
   | 'list' | 'count'
   | 'bars' | 'donut' | 'pie' | 'line'
   | 'created' | 'created-line' | 'cvr' | 'cvr-bars'
-  | 'progress' | 'stacked' | 'resolution' | 'stale' | 'due';
+  | 'progress' | 'stacked' | 'resolution' | 'stale' | 'due' | 'recent' | 'age' | 'backlog';
 
 const BLUE = '#0052CC';
 const RED = '#DE350B';
@@ -104,6 +104,27 @@ export function Thumb({ kind, className = 'w-full h-auto' }: { kind: ThumbKind; 
           ))}
         </>
       )}
+      {kind === 'recent' && [0, 1, 2, 3].map((i) => (
+        <g key={i}>
+          <rect x="6" y={7 + i * 8} width="6" height="4" rx="1" fill={[BLUE, GREEN, RED, BLUE][i]} />
+          <rect x="15" y={7.5 + i * 8} width={[30, 24, 32, 20][i]} height="3" rx="1.5" fill={GRAY} />
+          <circle cx="53" cy={9 + i * 8} r="2.2" fill={[GREEN, GREEN, AMBER, GRAY][i]} />
+        </g>
+      ))}
+      {kind === 'age' && (
+        <>
+          <text x="32" y="15" textAnchor="middle" fontSize="9" fontWeight="600" fill="#172B4D" fontFamily="system-ui, sans-serif">41d</text>
+          {[[12, GREEN], [9, GREEN], [7, AMBER], [5, '#FF8B00'], [3, RED]].map(([h, c], i) => (
+            <rect key={i} x={9 + i * 10} y={34 - (h as number) * 1.3} width="7" height={(h as number) * 1.3} rx="1" fill={c as string} />
+          ))}
+        </>
+      )}
+      {kind === 'backlog' && (
+        <>
+          <polygon points="6,34 6,26 16,24 26,19 36,21 46,14 58,12 58,34" fill="#EAE6FF" />
+          <polyline points="6,26 16,24 26,19 36,21 46,14 58,12" fill="none" stroke="#6554C0" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        </>
+      )}
       {kind === 'due' && [0, 1, 2, 3].map((i) => (
         <g key={i}>
           <rect x="6" y={7 + i * 8} width="6" height="4" rx="1" fill={[RED, RED, AMBER, BLUE][i]} />
@@ -118,7 +139,7 @@ export function Thumb({ kind, className = 'w-full h-auto' }: { kind: ThumbKind; 
           <rect x={[44, 47, 50, 52][i]} y={7.5 + i * 8} width={[14, 11, 8, 6][i]} height="3" rx="1.5" fill={AMBER} />
         </g>
       ))}
-      {(kind === 'line' || kind === 'created' || kind === 'created-line' || kind === 'cvr' || kind === 'cvr-bars' || kind === 'resolution') && (
+      {(kind === 'line' || kind === 'created' || kind === 'created-line' || kind === 'cvr' || kind === 'cvr-bars' || kind === 'resolution' || kind === 'age' || kind === 'backlog') && (
         <line x1="5" y1="34.5" x2="59" y2="34.5" stroke={GRAY} />
       )}
       {(kind === 'donut' || kind === 'pie') && (
@@ -144,6 +165,9 @@ export const TYPE_THUMB: Record<GadgetType, ThumbKind> = {
   RESOLUTION_TIME: 'resolution',
   STALE: 'stale',
   DUE_DATES: 'due',
+  RECENTLY_UPDATED: 'recent',
+  ISSUE_AGE: 'age',
+  BACKLOG_TREND: 'backlog',
 };
 
 /** Pick one of several options, each shown as a small picture with a label. */

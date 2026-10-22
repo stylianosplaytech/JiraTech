@@ -80,6 +80,19 @@ export async function seedFeatures(
       data: { dashboardId: dueOverview.id, type: GadgetType.DUE_DATES, title: 'Due soon', filterId: allOpen.id, config: JSON.stringify({ days: 14, maxRows: 8 }), position: dueOverview.gadgets.length, wide: true },
     });
   }
+  // Activity and ageing gadgets, added the same way.
+  const activity = await prisma.dashboard.findFirst({ where: { ownerId: admin.id, name: 'Delivery overview' }, include: { gadgets: true } });
+  const ninety = await prisma.savedFilter.findFirst({ where: { name: 'Created last 90 days' } });
+  if (activity && ninety && !activity.gadgets.some((g) => g.type === GadgetType.ISSUE_AGE)) {
+    const more: { type: GadgetType; title: string; config: object; wide?: boolean }[] = [
+      { type: GadgetType.ISSUE_AGE, title: 'How old is the open work?', config: {} },
+      { type: GadgetType.BACKLOG_TREND, title: 'Open issues over time', config: { days: 90, bucket: 'week', chart: 'line' } },
+      { type: GadgetType.RECENTLY_UPDATED, title: 'Latest activity', config: { maxRows: 6 }, wide: true },
+    ];
+    await prisma.dashboardGadget.createMany({
+      data: more.map((g, i) => ({ ...g, filterId: ninety.id, config: JSON.stringify(g.config), position: activity.gadgets.length + i, wide: g.wide ?? false, dashboardId: activity.id })),
+    });
+  }
   if (!(await prisma.dashboard.findFirst({ where: { ownerId: elena.id, name: 'PAY team' } }))) {
     const payFilter = await filterId('PAY blocked or at risk');
     await prisma.dashboard.create({

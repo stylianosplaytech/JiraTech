@@ -209,6 +209,31 @@ export class SearchService {
     return { overdue, upcoming: total - overdue, issues };
   }
 
+  /** The issues a JQL query finds, the most recently changed first. */
+  async recentlyUpdated(jql: string, user: AuthUser, take: number) {
+    const where = await this.visible(user, this.compile(jql, user).where);
+    const [total, issues] = await Promise.all([
+      this.prisma.issue.count({ where }),
+      this.prisma.issue.findMany({ where, include: SEARCH_INCLUDE, orderBy: { updatedAt: 'desc' }, take }),
+    ]);
+    return { total, issues };
+  }
+
+  /** When the unresolved issues a JQL query finds were created. */
+  async openCreated(jql: string, user: AuthUser) {
+    const where = await this.visible(user, { AND: [this.compile(jql, user).where, { status: { not: 'CLOSED' } }] });
+    const rows = await this.prisma.issue.findMany({ where, select: { createdAt: true }, take: MEMORY_SORT_LIMIT * 10 });
+    return rows.map((r) => r.createdAt);
+  }
+
+  /** Created and resolved dates of every issue a JQL query finds, to work out how many were open at a point in time. */
+  async lifetimes(jql: string, user: AuthUser) {
+    const where = await this.visible(user, this.compile(jql, user).where);
+    const rows = await this.prisma.issue.findMany({ where, select: { createdAt: true, resolvedAt: true, updatedAt: true, status: true }, take: MEMORY_SORT_LIMIT * 10 });
+    // Issues closed before resolution dates were recorded count as resolved when last updated.
+    return rows.map((r) => ({ createdAt: r.createdAt, resolvedAt: r.resolvedAt ?? (r.status === 'CLOSED' ? r.updatedAt : null) }));
+  }
+
   /** Created and resolved dates of the issues a JQL query finds that were created or resolved since `since`. */
   async createdAndResolvedSince(jql: string, since: Date, user: AuthUser) {
     const compiled = this.compile(jql, user);

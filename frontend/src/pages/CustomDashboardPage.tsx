@@ -24,7 +24,7 @@ interface GadgetForm {
 
 /** Starting settings when the kind of gadget changes. */
 function defaultsFor(type: GadgetType): Partial<GadgetForm> {
-  return { type, days: type === 'DUE_DATES' ? 7 : 30, wide: type === 'FILTER_RESULTS' || type === 'STALE' || type === 'DUE_DATES', chart: type === 'CREATED_VS_RESOLVED' ? 'line' : 'bars' };
+  return { type, days: type === 'DUE_DATES' ? 7 : 30, wide: type === 'FILTER_RESULTS' || type === 'STALE' || type === 'DUE_DATES' || type === 'RECENTLY_UPDATED', chart: type === 'CREATED_VS_RESOLVED' || type === 'BACKLOG_TREND' ? 'line' : 'bars' };
 }
 
 function GadgetModal({ dashboardId, form, onChange, onClose }: {
@@ -40,12 +40,12 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
 
   const save = useMutation({
     mutationFn: () => {
-      const config = form.type === 'FILTER_RESULTS' || form.type === 'STALE' ? { maxRows: form.maxRows }
+      const config = form.type === 'FILTER_RESULTS' || form.type === 'STALE' || form.type === 'RECENTLY_UPDATED' ? { maxRows: form.maxRows }
         : form.type === 'DUE_DATES' ? { maxRows: form.maxRows, days: form.days }
         : form.type === 'STACKED' ? { groupBy: form.groupBy, stackBy: form.stackBy }
         : form.type === 'RESOLUTION_TIME' ? { days: form.days }
         : form.type === 'BREAKDOWN' ? { groupBy: form.groupBy, chart: form.chart }
-        : form.type === 'TREND' || form.type === 'CREATED_VS_RESOLVED' ? { days: form.days, bucket: form.bucket, chart: form.chart } : {};
+        : form.type === 'TREND' || form.type === 'CREATED_VS_RESOLVED' || form.type === 'BACKLOG_TREND' ? { days: form.days, bucket: form.bucket, chart: form.chart } : {};
       const title = form.title.trim() || undefined;
       return form.id
         ? api.updateGadget(dashboardId, form.id, { title, filterId: form.filterId, config, wide: form.wide })
@@ -114,7 +114,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
           <label className="field-label" htmlFor="gadget-title">Title</label>
           <input id="gadget-title" className="input" maxLength={120} value={form.title} onChange={(e) => onChange({ ...form, title: e.target.value })} placeholder="Defaults to the filter’s name" />
         </div>
-        {(form.type === 'FILTER_RESULTS' || form.type === 'STALE' || form.type === 'DUE_DATES') && (
+        {(form.type === 'FILTER_RESULTS' || form.type === 'STALE' || form.type === 'DUE_DATES' || form.type === 'RECENTLY_UPDATED') && (
           <div>
             <label className="field-label" htmlFor="gadget-rows">Issues to show</label>
             <select id="gadget-rows" className="input" value={form.maxRows} onChange={(e) => onChange({ ...form, maxRows: Number(e.target.value) })}>
@@ -178,7 +178,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
             </div>
           </>
         )}
-        {(form.type === 'TREND' || form.type === 'CREATED_VS_RESOLVED') && (
+        {(form.type === 'TREND' || form.type === 'CREATED_VS_RESOLVED' || form.type === 'BACKLOG_TREND') && (
           <>
           <div>
             <span className="field-label">Chart</span>
@@ -187,7 +187,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
               columns={3}
               value={form.chart}
               onChange={(chart) => onChange({ ...form, chart })}
-              options={form.type === 'TREND'
+              options={form.type === 'TREND' || form.type === 'BACKLOG_TREND'
                 ? [{ value: 'bars', label: 'Bars', thumb: 'created' }, { value: 'line', label: 'Line', thumb: 'created-line' }]
                 : [{ value: 'line', label: 'Lines', thumb: 'cvr' }, { value: 'bars', label: 'Bars', thumb: 'cvr-bars' }]}
             />
@@ -283,7 +283,7 @@ export default function CustomDashboardPage() {
   };
   const editGadget = (g: Gadget) => setGadgetForm({
     id: g.id, type: g.type, filterId: g.filterId ?? '', title: g.title,
-    maxRows: g.config.maxRows ?? 10, groupBy: g.config.groupBy ?? 'status', stackBy: g.config.stackBy ?? 'priority', chart: g.config.chart ?? (g.type === 'CREATED_VS_RESOLVED' ? 'line' : 'bars'),
+    maxRows: g.config.maxRows ?? 10, groupBy: g.config.groupBy ?? 'status', stackBy: g.config.stackBy ?? 'priority', chart: g.config.chart ?? (g.type === 'CREATED_VS_RESOLVED' || g.type === 'BACKLOG_TREND' ? 'line' : 'bars'),
     days: g.config.days ?? 30, bucket: g.config.bucket ?? 'day', wide: g.wide,
   });
 

@@ -90,7 +90,7 @@ export class DashboardsService {
         title: dto.title?.trim() || filter.name,
         filterId: filter.id,
         config: JSON.stringify(config),
-        wide: dto.wide ?? (dto.type === GadgetType.FILTER_RESULTS || dto.type === GadgetType.STALE || dto.type === GadgetType.DUE_DATES),
+        wide: dto.wide ?? (dto.type === GadgetType.FILTER_RESULTS || dto.type === GadgetType.STALE || dto.type === GadgetType.DUE_DATES || dto.type === GadgetType.RECENTLY_UPDATED),
         position: (last._max.position ?? -1) + 1,
       },
       include: GADGET_INCLUDE,
@@ -184,6 +184,17 @@ export class DashboardsService {
         const days = config.days ?? 30;
         return { type: gadget.type, ...base, days, ...(await this.resolutionTime(filter.jql, days, user)) };
       }
+      case GadgetType.RECENTLY_UPDATED: {
+        const result = await this.search.recentlyUpdated(filter.jql, user, config.maxRows ?? DEFAULT_ROWS);
+        return { type: gadget.type, ...base, total: result.total, issues: result.issues };
+      }
+      case GadgetType.ISSUE_AGE:
+        return { type: gadget.type, ...base, ...(await this.issueAge(filter.jql, user)) };
+      case GadgetType.BACKLOG_TREND: {
+        const days = config.days ?? 30;
+        const bucket = config.bucket ?? 'day';
+        return { type: gadget.type, ...base, days, bucket, chart: pick(config.chart, SERIES_CHARTS, 'line'), ...(await this.backlogTrend(filter.jql, days, bucket, user)) };
+      }
       case GadgetType.DUE_DATES: {
         const days = config.days ?? 7;
         return { type: gadget.type, ...base, days, ...(await this.search.dueSoon(filter.jql, days, user, config.maxRows ?? DEFAULT_ROWS)) };
@@ -193,6 +204,39 @@ export class DashboardsService {
         return { type: gadget.type, ...base, total: result.total, issues: result.issues };
       }
     }
+  }
+
+  /** How old the unresolved issues are, from creation to now. */
+  private async issueAge(jql: string, user: AuthUser) {
+    const now = Date.now();
+    const ages = (await this.search.openCreated(jql, user)).map((c) => Math.max(now - c.getTime(), 0) / 86_400_000).sort((a, b) => a - b);
+    const round = (n: number) => Math.round(n * 10) / 10;
+    const mid = Math.floor(ages.length / 2);
+    const bands = AGE_BANDS.map((b) => ({ label: b.label, count: 0 }));
+    for (const d of ages) bands[AGE_BANDS.findIndex((b) => d < b.below)].count++;
+    return {
+      open: ages.length,
+      averageDays: ages.length ? round(ages.reduce((n, d) => n + d, 0) / ages.length) : null,
+      medianDays: ages.length ? round(ages.length % 2 ? ages[mid] : (ages[mid - 1] + ages[mid]) / 2) : null,
+      oldestDays: ages.length ? round(ages[ages.length - 1]) : null,
+      bands,
+    };
+  }
+
+  /** How many issues were unresolved at the end of each day (or week, ending Sunday or today), over the last `days` days. */
+  private async backlogTrend(jql: string, days: number, bucket: 'day' | 'week', user: AuthUser) {
+    const { counts } = buckets(days, bucket);
+    const rows = await this.search.lifetimes(jql, user);
+    const tomorrow = addDays(startOfDay(new Date()), 1).getTime();
+    const points = [...counts.keys()].map((key) => {
+      const [y, m, d] = key.split('-').map(Number);
+      const start = new Date(y, m - 1, d);
+      const end = Math.min(addDays(start, bucket === 'week' ? 7 : 1).getTime(), tomorrow);
+      let count = 0;
+      for (const r of rows) if (r.createdAt.getTime() < end && !(r.resolvedAt && r.resolvedAt.getTime() < end)) count++;
+      return { date: key, count };
+    });
+    return { current: points[points.length - 1]?.count ?? 0, change: points.length ? points[points.length - 1].count - points[0].count : 0, points };
   }
 
   /** How long the issues resolved in the last `days` days took, from creation to resolution. */
@@ -268,6 +312,15 @@ const RESOLUTION_BANDS = [
   { label: '2+ weeks', below: Infinity },
 ];
 
+/** Open-issue age histogram: an issue falls in the first band whose limit (days) it is under. */
+const AGE_BANDS = [
+  { label: '< 1 week', below: 7 },
+  { label: '1–2 weeks', below: 14 },
+  { label: '2–4 weeks', below: 28 },
+  { label: '1–3 months', below: 91 },
+  { label: '3+ months', below: Infinity },
+];
+
 /** A second field to split by that differs from the first. */
 function defaultStack(groupBy: BreakdownField): BreakdownField {
   return groupBy === 'status' ? 'priority' : 'status';
@@ -317,7 +370,7 @@ function parseConfig(raw: string): GadgetConfigDto {
 
 /** Keep only the settings that mean something for this kind of gadget. */
 function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDto {
-  if (type === GadgetType.FILTER_RESULTS || type === GadgetType.STALE) return { maxRows: config?.maxRows ?? DEFAULT_ROWS };
+  if (type === GadgetType.FILTER_RESULTS || type === GadgetType.STALE || type === GadgetType.RECENTLY_UPDATED) return { maxRows: config?.maxRows ?? DEFAULT_ROWS };
   if (type === GadgetType.STACKED) {
     const groupBy: BreakdownField = config?.groupBy ?? 'status';
     const stackBy: BreakdownField = config?.stackBy ?? defaultStack(groupBy);
@@ -332,7 +385,7 @@ function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDt
     if (!BREAKDOWN_FIELDS.includes(groupBy)) throw new BadRequestException('Unknown field to count by');
     return { groupBy, chart: pick(config?.chart, BREAKDOWN_CHARTS) };
   }
-  if (type === GadgetType.TREND || type === GadgetType.CREATED_VS_RESOLVED) {
+  if (type === GadgetType.TREND || type === GadgetType.CREATED_VS_RESOLVED || type === GadgetType.BACKLOG_TREND) {
     const days = config?.days ?? 30;
     return {
       days,

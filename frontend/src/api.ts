@@ -1119,7 +1119,7 @@ export interface SavedFilter {
   owner: { id: string; name: string };
 }
 
-export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND' | 'CREATED_VS_RESOLVED' | 'PROGRESS' | 'STACKED' | 'RESOLUTION_TIME' | 'STALE' | 'DUE_DATES';
+export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND' | 'CREATED_VS_RESOLVED' | 'PROGRESS' | 'STACKED' | 'RESOLUTION_TIME' | 'STALE' | 'DUE_DATES' | 'RECENTLY_UPDATED' | 'ISSUE_AGE' | 'BACKLOG_TREND';
 export type BreakdownField = 'status' | 'priority' | 'type' | 'assignee' | 'reporter' | 'project';
 
 export interface GadgetConfig {
@@ -1169,6 +1169,9 @@ export type GadgetData =
   | { type: 'STACKED'; filterId: string; filterName: string; jql: string; groupBy: BreakdownField; stackBy: BreakdownField; total: number; stacks: { key: string; label: string }[]; groups: { key: string; label: string; total: number; counts: number[] }[] }
   | { type: 'RESOLUTION_TIME'; filterId: string; filterName: string; jql: string; days: number; resolved: number; averageDays: number | null; medianDays: number | null; slowestDays: number | null; bands: { label: string; count: number }[] }
   | { type: 'STALE'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
+  | { type: 'RECENTLY_UPDATED'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
+  | { type: 'ISSUE_AGE'; filterId: string; filterName: string; jql: string; open: number; averageDays: number | null; medianDays: number | null; oldestDays: number | null; bands: { label: string; count: number }[] }
+  | { type: 'BACKLOG_TREND'; filterId: string; filterName: string; jql: string; days: number; bucket: 'day' | 'week'; chart: 'bars' | 'line'; current: number; change: number; points: { date: string; count: number }[] }
   | { type: 'DUE_DATES'; filterId: string; filterName: string; jql: string; days: number; overdue: number; upcoming: number; issues: Issue[] };
 
 export interface Issue {

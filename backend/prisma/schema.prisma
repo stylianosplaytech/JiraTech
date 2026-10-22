@@ -657,6 +657,9 @@ enum GadgetType {
   STACKED        // a saved filter's issues counted by one field, each bar split by a second field
   RESOLUTION_TIME // how long a saved filter's issues took to resolve: average, median and spread
   STALE          // a saved filter's unresolved issues, the ones untouched for longest first
+  RECENTLY_UPDATED // a saved filter's issues, the most recently changed first
+  ISSUE_AGE      // how long a saved filter's unresolved issues have been open: average, median, oldest and spread
+  BACKLOG_TREND  // how many of a saved filter's issues were unresolved at the end of each day or week
   DUE_DATES      // a saved filter's unresolved issues that are overdue or due soon, soonest first
 }
 
