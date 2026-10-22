@@ -33,10 +33,14 @@ function BarList({ entries, colors, labels }: { entries: [string, number][]; col
 
 type Overview = NonNullable<Awaited<ReturnType<typeof api.getDashboard>>>;
 
-/** The overview's content. In the PDF it uses the wide layout and every row is a block placed whole. */
+/** A row of the overview's three-column grid; in the PDF it is placed whole on a page. */
+function Row({ children, className = '', pdf }: { children: ReactNode; className?: string; pdf?: boolean }) {
+  return <PdfBlock className={`grid ${pdf ? 'grid-cols-3' : 'grid-cols-1 md:grid-cols-3'} gap-4 items-start ${className}`}>{children}</PdfBlock>;
+}
+
+/** The overview's content: the same three-column layout on screen and in the PDF. */
 function OverviewBody({ data, pdf }: { data: Overview; pdf?: boolean }) {
-  const Row = ({ children, className = '' }: { children: ReactNode; className?: string }) => <PdfBlock className={className}>{children}</PdfBlock>;
-  const cols2 = pdf ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2';
+  const full = pdf ? 'col-span-3' : 'md:col-span-3';
   const stats = [
     { label: 'Total issues', value: data.summary.total },
     { label: 'In progress', value: data.summary.inProgress },
@@ -45,17 +49,17 @@ function OverviewBody({ data, pdf }: { data: Overview; pdf?: boolean }) {
   ];
 
   return (
-    <div className={pdf ? 'space-y-4' : ''}>
-      <Row className={`grid ${pdf ? 'grid-cols-4' : 'grid-cols-2 sm:grid-cols-4'} gap-3 sm:gap-4 mb-6`}>
+    <div className="space-y-4">
+      <PdfBlock className={`grid ${pdf ? 'grid-cols-4' : 'grid-cols-2 sm:grid-cols-4'} gap-4`}>
         {stats.map((s) => (
           <div key={s.label} className="card p-4">
             <p className="text-jira-subtle">{s.label}</p>
             <p className="text-3xl font-semibold mt-1">{s.value}</p>
           </div>
         ))}
-      </Row>
+      </PdfBlock>
 
-      <Row className={`grid ${cols2} gap-6 mb-6`}>
+      <Row pdf={pdf}>
         <div className="card">
           <div className="card-header"><h2 className="card-title">Issues by status</h2></div>
           <div className="p-4">
@@ -68,9 +72,6 @@ function OverviewBody({ data, pdf }: { data: Overview; pdf?: boolean }) {
             <BarList entries={Object.entries(data.byRag)} colors={RAG_COLORS} />
           </div>
         </div>
-      </Row>
-
-      <Row className={`grid ${cols2} gap-6`}>
         <div className="card">
           <div className="card-header">
             <h2 className="card-title">Blocked</h2>
@@ -88,7 +89,10 @@ function OverviewBody({ data, pdf }: { data: Overview; pdf?: boolean }) {
             </div>
           )}
         </div>
-        <div className="card">
+      </Row>
+
+      <Row pdf={pdf}>
+        <div className={`card ${full}`}>
           <div className="card-header">
             <h2 className="card-title">At risk or delayed</h2>
             <span className="lozenge bg-[#FFFAE6] text-[#974F0C]">{data.atRisk.length}</span>
@@ -108,7 +112,7 @@ function OverviewBody({ data, pdf }: { data: Overview; pdf?: boolean }) {
       </Row>
 
       {data.recentEscalations.length > 0 && (
-        <Row className="card mt-6">
+        <PdfBlock className="card">
           <div className="card-header"><h2 className="card-title">Recent escalations</h2></div>
           <div className="divide-y divide-jira-border">
             {data.recentEscalations.map((e, i) => (
@@ -120,7 +124,7 @@ function OverviewBody({ data, pdf }: { data: Overview; pdf?: boolean }) {
               </div>
             ))}
           </div>
-        </Row>
+        </PdfBlock>
       )}
     </div>
   );
