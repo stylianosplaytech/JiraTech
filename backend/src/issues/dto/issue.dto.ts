@@ -237,6 +237,11 @@ export class BulkDto {
   @IsEnum(Priority)
   priority?: Priority;
 
+  /** yyyy-mm-dd to set; null or '' clears the due date; omit to keep */
+  @IsOptional()
+  @Matches(/^(\d{4}-\d{2}-\d{2})?$/, { message: 'dueDate must be yyyy-mm-dd' })
+  dueDate?: string | null;
+
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

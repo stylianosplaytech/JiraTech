@@ -144,7 +144,7 @@ they're notified and start watching. Content is sanitised on the server and agai
 
 ### Bulk changes
 
-On the Issues page, tick issues (or the header box for the whole page) to edit assignee, priority, labels, components and fix
+On the Issues page, tick issues (or the header box for the whole page) to edit assignee, priority, due date, labels, components and fix
 versions, change status, watch or delete them in one go. Every issue is checked individually; anything that can't be changed is listed
 afterwards with the reason. Untick *Send notifications* for quiet clean-ups.
 

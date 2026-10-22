@@ -293,7 +293,7 @@ Tick issues (or the header checkbox for the whole page) to get the bulk toolbar.
 
 | Action | What it does |
 |---|---|
-| **Edit** | Set assignee, priority, labels, components or fix versions |
+| **Edit** | Set assignee, priority, due date (or clear it), labels, components or fix versions |
 | **Change status** | Move to a status (asks for a resolution when moving to Done) |
 | **Watch** | Start watching all selected issues |
 | **Move** | Move the selected issues to another project ([section 9](#moving-an-issue-to-another-project)); statuses are matched automatically |

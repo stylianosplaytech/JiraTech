@@ -1248,6 +1248,8 @@ export interface BulkRequest {
   notify?: boolean;
   assigneeId?: string | null;
   priority?: string;
+  /** yyyy-mm-dd to set; null clears it */
+  dueDate?: string | null;
   addLabelIds?: string[];
   removeLabelIds?: string[];
   addComponentIds?: string[];

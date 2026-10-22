@@ -33,6 +33,8 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
   const [assignee, setAssignee] = useState<'keep' | 'unassign' | 'set'>('keep');
   const [assigneeId, setAssigneeId] = useState<string | undefined>();
   const [priority, setPriority] = useState<string | null>(null);
+  const [dueMode, setDueMode] = useState<'keep' | 'set' | 'clear'>('keep');
+  const [dueDate, setDueDate] = useState('');
   const [addLabels, setAddLabels] = useState<string[]>([]);
   const [removeLabels, setRemoveLabels] = useState<string[]>([]);
   const [addComponents, setAddComponents] = useState<string[]>([]);
@@ -93,7 +95,7 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
   });
 
   const openEdit = () => {
-    setAssignee('keep'); setAssigneeId(undefined); setPriority(null);
+    setAssignee('keep'); setAssigneeId(undefined); setPriority(null); setDueMode('keep'); setDueDate('');
     setAddLabels([]); setRemoveLabels([]); setAddComponents([]); setAddVersions([]);
     setNotify(true); setDialog('edit');
   };
@@ -106,6 +108,7 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
     notify,
     ...(assignee === 'unassign' ? { assigneeId: null } : assignee === 'set' && assigneeId ? { assigneeId } : {}),
     ...(priority ? { priority } : {}),
+    ...(dueMode === 'clear' ? { dueDate: null } : dueMode === 'set' && dueDate ? { dueDate } : {}),
     ...(addLabels.length ? { addLabelIds: addLabels } : {}),
     ...(removeLabels.length ? { removeLabelIds: removeLabels } : {}),
     ...(addComponents.length ? { addComponentIds: addComponents } : {}),
@@ -190,6 +193,21 @@ export default function BulkActions({ selected, onClear }: { selected: Issue[]; 
                   onChange={setPriority}
                   options={PRIORITIES.map((p) => ({ id: p, label: p.charAt(0) + p.slice(1).toLowerCase(), icon: <PriorityIcon priority={p} /> }))}
                 />
+              </div>
+            </div>
+            <div>
+              <span className="field-label">Due date</span>
+              <div className="flex gap-2">
+                <div className="w-40">
+                  <SelectPicker
+                    variant="field"
+                    searchable={false}
+                    value={dueMode}
+                    onChange={(v) => v && setDueMode(v as typeof dueMode)}
+                    options={[{ id: 'keep', label: 'Keep current' }, { id: 'set', label: 'Change to…' }, { id: 'clear', label: 'Clear' }]}
+                  />
+                </div>
+                {dueMode === 'set' && <input type="date" className="input w-44" aria-label="New due date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />}
               </div>
             </div>
             {singleProject ? (

@@ -17,6 +17,7 @@ export interface BulkRequest {
   // edit
   assigneeId?: string | null; // null / '' = unassign; undefined = keep
   priority?: Priority;
+  dueDate?: string | null; // yyyy-mm-dd to set; null / '' = clear; undefined = keep
   addLabelIds?: string[];
   removeLabelIds?: string[];
   addComponentIds?: string[];
@@ -142,7 +143,7 @@ export class BulkService {
   }
 
   private hasEdits(r: BulkRequest) {
-    return r.assigneeId !== undefined || !!r.priority || !!r.addLabelIds?.length || !!r.removeLabelIds?.length
+    return r.assigneeId !== undefined || !!r.priority || r.dueDate !== undefined || !!r.addLabelIds?.length || !!r.removeLabelIds?.length
       || !!r.addComponentIds?.length || !!r.addFixVersionIds?.length;
   }
 
@@ -164,6 +165,7 @@ export class BulkService {
     const dto: Record<string, unknown> = {};
     if (r.assigneeId !== undefined) dto.assigneeId = r.assigneeId ?? '';
     if (r.priority) dto.priority = r.priority;
+    if (r.dueDate !== undefined) dto.dueDate = r.dueDate ?? '';
     if (r.addLabelIds?.length || r.removeLabelIds?.length) {
       const labels = new Set(issue.labels.map((l) => l.labelId));
       r.addLabelIds?.forEach((id) => labels.add(id));
