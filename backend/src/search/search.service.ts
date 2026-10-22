@@ -259,6 +259,27 @@ export class SearchService {
     return { total, issues };
   }
 
+  /** The closed issues a JQL query finds, the most recently resolved first. */
+  async recentlyResolved(jql: string, user: AuthUser, take: number) {
+    const where = await this.visible(user, { AND: [this.compile(jql, user).where, { status: 'CLOSED' }] });
+    const [total, issues] = await Promise.all([
+      this.prisma.issue.count({ where }),
+      // Issues closed before resolution dates were recorded have none; they sort last, by when they were last updated.
+      this.prisma.issue.findMany({ where, include: SEARCH_INCLUDE, orderBy: [{ resolvedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }], take }),
+    ]);
+    return { total, issues };
+  }
+
+  /** Unresolved issues a JQL query finds that have no assignee, the ones waiting longest first. */
+  async unassigned(jql: string, user: AuthUser, take: number) {
+    const where = await this.visible(user, { AND: [this.compile(jql, user).where, { status: { not: 'CLOSED' } }, { assigneeId: null }] });
+    const [total, issues] = await Promise.all([
+      this.prisma.issue.count({ where }),
+      this.prisma.issue.findMany({ where, include: SEARCH_INCLUDE, orderBy: { createdAt: 'asc' }, take }),
+    ]);
+    return { total, issues };
+  }
+
   /** When the unresolved issues a JQL query finds were created. */
   async openCreated(jql: string, user: AuthUser) {
     const where = await this.visible(user, { AND: [this.compile(jql, user).where, { status: { not: 'CLOSED' } }] });

@@ -660,6 +660,9 @@ enum GadgetType {
   RECENTLY_UPDATED // a saved filter's issues, the most recently changed first
   ISSUE_AGE      // how long a saved filter's unresolved issues have been open: average, median, oldest and spread
   BACKLOG_TREND  // how many of a saved filter's issues were unresolved at the end of each day or week
+  RECENTLY_RESOLVED // a saved filter's closed issues, the most recently resolved first
+  UNASSIGNED     // a saved filter's unresolved issues nobody is assigned to, the oldest first
+  PERIOD_COMPARISON // issues created and resolved in the last N days against the N days before
   DUE_DATES      // a saved filter's unresolved issues that are overdue or due soon, soonest first
 }
 

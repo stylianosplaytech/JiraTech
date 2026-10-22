@@ -297,4 +297,4 @@ Project-scoped endpoints (issues list, board, labels, versions, components, cust
 - `POST /api/incidents/:id/escalate` — escalate incident
 - `GET /api/dashboard` — project overview (plan progress, RAG)
 - `GET|POST /api/dashboards`, `GET|PATCH|DELETE /api/dashboards/:id` — dashboards people build from their saved filters (private or shared); `POST /api/dashboards/:id/duplicate` saves a copy
-- `POST /api/dashboards/:id/gadgets`, `PATCH|DELETE .../gadgets/:gadgetId`, `PUT .../gadgets/order`, `GET .../gadgets/:gadgetId/data` — issue list, count, breakdown, stacked breakdown, progress, resolution-time, stale-issue, due-date, issue-age, backlog-trend, recently-updated and trend gadgets, each tied to a saved filter and run as the viewer
+- `POST /api/dashboards/:id/gadgets`, `PATCH|DELETE .../gadgets/:gadgetId`, `PUT .../gadgets/order`, `GET .../gadgets/:gadgetId/data` — issue list, count, breakdown, stacked breakdown, progress, resolution-time, stale-issue, due-date, issue-age, backlog-trend, recently-updated, recently-resolved, unassigned, period-comparison and trend gadgets, each tied to a saved filter and run as the viewer

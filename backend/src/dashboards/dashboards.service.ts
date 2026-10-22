@@ -90,7 +90,7 @@ export class DashboardsService {
         title: dto.title?.trim() || filter.name,
         filterId: filter.id,
         config: JSON.stringify(config),
-        wide: dto.wide ?? (dto.type === GadgetType.FILTER_RESULTS || dto.type === GadgetType.STALE || dto.type === GadgetType.DUE_DATES || dto.type === GadgetType.RECENTLY_UPDATED),
+        wide: dto.wide ?? (dto.type === GadgetType.FILTER_RESULTS || dto.type === GadgetType.STALE || dto.type === GadgetType.DUE_DATES || dto.type === GadgetType.RECENTLY_UPDATED || dto.type === GadgetType.RECENTLY_RESOLVED || dto.type === GadgetType.UNASSIGNED),
         position: (last._max.position ?? -1) + 1,
       },
       include: GADGET_INCLUDE,
@@ -189,6 +189,18 @@ export class DashboardsService {
         const result = await this.search.recentlyUpdated(filter.jql, user, config.maxRows ?? DEFAULT_ROWS);
         return { type: gadget.type, ...base, total: result.total, issues: result.issues };
       }
+      case GadgetType.RECENTLY_RESOLVED: {
+        const result = await this.search.recentlyResolved(filter.jql, user, config.maxRows ?? DEFAULT_ROWS);
+        return { type: gadget.type, ...base, total: result.total, issues: result.issues };
+      }
+      case GadgetType.UNASSIGNED: {
+        const result = await this.search.unassigned(filter.jql, user, config.maxRows ?? DEFAULT_ROWS);
+        return { type: gadget.type, ...base, total: result.total, issues: result.issues };
+      }
+      case GadgetType.PERIOD_COMPARISON: {
+        const days = config.days ?? 7;
+        return { type: gadget.type, ...base, days, ...(await this.periodComparison(filter.jql, days, user)) };
+      }
       case GadgetType.ISSUE_AGE:
         return { type: gadget.type, ...base, ...(await this.issueAge(filter.jql, user)) };
       case GadgetType.BACKLOG_TREND: {
@@ -205,6 +217,23 @@ export class DashboardsService {
         return { type: gadget.type, ...base, total: result.total, issues: result.issues };
       }
     }
+  }
+
+  /** Issues created and resolved in the last `days` days (today included), against the same number of days before that. */
+  private async periodComparison(jql: string, days: number, user: AuthUser) {
+    const start = addDays(startOfDay(new Date()), -(days - 1));
+    const previousStart = addDays(start, -days);
+    // Index 0 is the last `days` days, 1 the period before; -1 is outside both.
+    const period = (d: Date) => (d >= start ? 0 : d >= previousStart ? 1 : -1);
+    const created = [0, 0];
+    const resolved = [0, 0];
+    for (const r of await this.search.createdAndResolvedSince(jql, previousStart, user)) {
+      const c = period(r.createdAt);
+      if (c >= 0) created[c]++;
+      const x = r.resolvedAt ? period(r.resolvedAt) : -1;
+      if (x >= 0) resolved[x]++;
+    }
+    return { created: { current: created[0], previous: created[1] }, resolved: { current: resolved[0], previous: resolved[1] } };
   }
 
   /** How old the unresolved issues are, from creation to now. */
@@ -371,7 +400,7 @@ function parseConfig(raw: string): GadgetConfigDto {
 
 /** Keep only the settings that mean something for this kind of gadget. */
 function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDto {
-  if (type === GadgetType.FILTER_RESULTS || type === GadgetType.STALE || type === GadgetType.RECENTLY_UPDATED) return { maxRows: config?.maxRows ?? DEFAULT_ROWS };
+  if (type === GadgetType.FILTER_RESULTS || type === GadgetType.STALE || type === GadgetType.RECENTLY_UPDATED || type === GadgetType.RECENTLY_RESOLVED || type === GadgetType.UNASSIGNED) return { maxRows: config?.maxRows ?? DEFAULT_ROWS };
   if (type === GadgetType.STACKED) {
     const groupBy: BreakdownField = config?.groupBy ?? 'status';
     const stackBy: SingleField = config?.stackBy ?? defaultStack(groupBy);
@@ -380,6 +409,7 @@ function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDt
     return { groupBy, stackBy };
   }
   if (type === GadgetType.RESOLUTION_TIME) return { days: config?.days ?? 30 };
+  if (type === GadgetType.PERIOD_COMPARISON) return { days: config?.days ?? 7 };
   if (type === GadgetType.DUE_DATES) return { maxRows: config?.maxRows ?? DEFAULT_ROWS, days: config?.days ?? 7 };
   if (type === GadgetType.BREAKDOWN) {
     const groupBy: BreakdownField = config?.groupBy ?? 'status';

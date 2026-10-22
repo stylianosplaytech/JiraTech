@@ -93,6 +93,18 @@ export async function seedFeatures(
       data: more.map((g, i) => ({ ...g, filterId: ninety.id, config: JSON.stringify(g.config), position: activity.gadgets.length + i, wide: g.wide ?? false, dashboardId: activity.id })),
     });
   }
+  // Period comparison, recently resolved and unassigned gadgets.
+  const flow = await prisma.dashboard.findFirst({ where: { ownerId: admin.id, name: 'Delivery overview' }, include: { gadgets: true } });
+  if (flow && ninety && !flow.gadgets.some((g) => g.type === GadgetType.PERIOD_COMPARISON)) {
+    const more: { type: GadgetType; title: string; config: object; wide?: boolean }[] = [
+      { type: GadgetType.PERIOD_COMPARISON, title: 'This week vs last week', config: { days: 7 } },
+      { type: GadgetType.RECENTLY_RESOLVED, title: 'Recently resolved', config: { maxRows: 6 }, wide: true },
+      { type: GadgetType.UNASSIGNED, title: 'Waiting for an owner', config: { maxRows: 6 }, wide: true },
+    ];
+    await prisma.dashboardGadget.createMany({
+      data: more.map((g, i) => ({ ...g, filterId: ninety.id, config: JSON.stringify(g.config), position: flow.gadgets.length + i, wide: g.wide ?? false, dashboardId: flow.id })),
+    });
+  }
   // Breakdowns by the multi-valued fields.
   const tagged = await prisma.dashboard.findFirst({ where: { ownerId: admin.id, name: 'Delivery overview' }, include: { gadgets: true } });
   const openFilter = await prisma.savedFilter.findFirst({ where: { name: 'All open issues' } });

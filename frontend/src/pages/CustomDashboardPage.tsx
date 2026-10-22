@@ -24,7 +24,7 @@ interface GadgetForm {
 
 /** Starting settings when the kind of gadget changes. */
 function defaultsFor(type: GadgetType): Partial<GadgetForm> {
-  return { type, days: type === 'DUE_DATES' ? 7 : 30, wide: type === 'FILTER_RESULTS' || type === 'STALE' || type === 'DUE_DATES' || type === 'RECENTLY_UPDATED', chart: type === 'CREATED_VS_RESOLVED' || type === 'BACKLOG_TREND' ? 'line' : 'bars' };
+  return { type, days: type === 'DUE_DATES' || type === 'PERIOD_COMPARISON' ? 7 : 30, wide: type === 'FILTER_RESULTS' || type === 'STALE' || type === 'DUE_DATES' || type === 'RECENTLY_UPDATED' || type === 'RECENTLY_RESOLVED' || type === 'UNASSIGNED', chart: type === 'CREATED_VS_RESOLVED' || type === 'BACKLOG_TREND' ? 'line' : 'bars' };
 }
 
 function GadgetModal({ dashboardId, form, onChange, onClose }: {
@@ -40,10 +40,10 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
 
   const save = useMutation({
     mutationFn: () => {
-      const config = form.type === 'FILTER_RESULTS' || form.type === 'STALE' || form.type === 'RECENTLY_UPDATED' ? { maxRows: form.maxRows }
+      const config = form.type === 'FILTER_RESULTS' || form.type === 'STALE' || form.type === 'RECENTLY_UPDATED' || form.type === 'RECENTLY_RESOLVED' || form.type === 'UNASSIGNED' ? { maxRows: form.maxRows }
         : form.type === 'DUE_DATES' ? { maxRows: form.maxRows, days: form.days }
         : form.type === 'STACKED' ? { groupBy: form.groupBy, stackBy: form.stackBy }
-        : form.type === 'RESOLUTION_TIME' ? { days: form.days }
+        : form.type === 'RESOLUTION_TIME' || form.type === 'PERIOD_COMPARISON' ? { days: form.days }
         : form.type === 'BREAKDOWN' ? { groupBy: form.groupBy, chart: form.chart }
         : form.type === 'TREND' || form.type === 'CREATED_VS_RESOLVED' || form.type === 'BACKLOG_TREND' ? { days: form.days, bucket: form.bucket, chart: form.chart } : {};
       const title = form.title.trim() || undefined;
@@ -119,7 +119,7 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
           <label className="field-label" htmlFor="gadget-title">Title</label>
           <input id="gadget-title" className="input" maxLength={120} value={form.title} onChange={(e) => onChange({ ...form, title: e.target.value })} placeholder="Defaults to the filter’s name" />
         </div>
-        {(form.type === 'FILTER_RESULTS' || form.type === 'STALE' || form.type === 'DUE_DATES' || form.type === 'RECENTLY_UPDATED') && (
+        {(form.type === 'FILTER_RESULTS' || form.type === 'STALE' || form.type === 'DUE_DATES' || form.type === 'RECENTLY_UPDATED' || form.type === 'RECENTLY_RESOLVED' || form.type === 'UNASSIGNED') && (
           <div>
             <label className="field-label" htmlFor="gadget-rows">Issues to show</label>
             <select id="gadget-rows" className="input" value={form.maxRows} onChange={(e) => onChange({ ...form, maxRows: Number(e.target.value) })}>
@@ -152,11 +152,11 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
             </select>
           </div>
         )}
-        {form.type === 'RESOLUTION_TIME' && (
+        {(form.type === 'RESOLUTION_TIME' || form.type === 'PERIOD_COMPARISON') && (
           <div>
-            <label className="field-label" htmlFor="gadget-days">Issues resolved in</label>
+            <label className="field-label" htmlFor="gadget-days">{form.type === 'PERIOD_COMPARISON' ? 'Compare the last' : 'Issues resolved in'}</label>
             <select id="gadget-days" className="input" value={form.days} onChange={(e) => onChange({ ...form, days: Number(e.target.value) as GadgetForm['days'] })}>
-              {[7, 14, 30, 90].map((n) => <option key={n} value={n}>The last {n} days</option>)}
+              {[7, 14, 30, 90].map((n) => <option key={n} value={n}>{form.type === 'PERIOD_COMPARISON' ? `${n} days with the ${n} before` : `The last ${n} days`}</option>)}
             </select>
           </div>
         )}

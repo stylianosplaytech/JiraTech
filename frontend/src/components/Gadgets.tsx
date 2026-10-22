@@ -18,6 +18,9 @@ export const GADGET_TYPES: { type: GadgetType; label: string; hint: string }[] =
   { type: 'RECENTLY_UPDATED', label: 'Recently updated', hint: 'The issues a filter finds, the most recently changed first, with how long ago.' },
   { type: 'ISSUE_AGE', label: 'Issue age', hint: 'How long unresolved issues have been open: average, median, oldest and how the ages spread.' },
   { type: 'BACKLOG_TREND', label: 'Backlog trend', hint: 'How many of a filter’s issues were unresolved at the end of each day or week, so you can see the backlog grow or shrink. Use a filter that includes closed issues.' },
+  { type: 'RECENTLY_RESOLVED', label: 'Recently resolved', hint: 'The closed issues a filter finds, the most recently resolved first, with how long ago. Use a filter that includes closed issues.' },
+  { type: 'UNASSIGNED', label: 'Unassigned issues', hint: 'Unresolved issues nobody is assigned to, the ones that have waited longest first.' },
+  { type: 'PERIOD_COMPARISON', label: 'Period comparison', hint: 'Issues created and resolved in the last few days, against the same number of days before, with the change. Use a filter that includes closed issues.' },
   { type: 'STALE', label: 'Stale issues', hint: 'Unresolved issues nobody has touched for the longest time.' },
 ];
 
@@ -295,6 +298,81 @@ function GadgetView({ data }: { data: Exclude<GadgetData, { filterMissing: true 
           </div>
         )}
       </>
+    );
+  }
+
+  if (data.type === 'RECENTLY_RESOLVED') {
+    if (!data.issues.length) return <p className="p-4 text-jira-muted">No closed issues match this filter.</p>;
+    return (
+      <>
+        <div className="divide-y divide-jira-border">
+          {data.issues.map((issue) => {
+            const when = issue.resolvedAt ?? issue.updatedAt;
+            return (
+              <Link key={issue.id} to={`/browse/${issue.key}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-jira-gray">
+                <TypeBadge type={issue.type} />
+                <span className="link shrink-0 line-through">{issue.key}</span>
+                <span className="truncate flex-1">{issue.summary}</span>
+                <PriorityIcon priority={issue.priority} />
+                <span className="shrink-0 text-xs text-jira-muted w-24 text-right" title={when ? new Date(when).toLocaleString() : undefined}>{when ? timeAgo(when) : ''}</span>
+              </Link>
+            );
+          })}
+        </div>
+        {data.total > data.issues.length && (
+          <div className="px-4 py-2.5 border-t border-jira-border text-xs text-jira-muted">
+            Showing {data.issues.length} of {data.total} closed · <Link to={searchLink} className="link">See all in search</Link>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  if (data.type === 'UNASSIGNED') {
+    if (!data.issues.length) return <p className="p-4 text-jira-muted">Every unresolved issue has an assignee.</p>;
+    return (
+      <>
+        <div className="divide-y divide-jira-border">
+          {data.issues.map((issue) => (
+            <Link key={issue.id} to={`/browse/${issue.key}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-jira-gray">
+              <TypeBadge type={issue.type} />
+              <span className="link shrink-0">{issue.key}</span>
+              <span className="truncate flex-1">{issue.summary}</span>
+              <PriorityIcon priority={issue.priority} />
+              <span className="hidden sm:block shrink-0"><StatusBadge status={issue.status} name={issue.workflowStatus?.name} /></span>
+              <span className="shrink-0 text-xs text-jira-muted w-24 text-right" title={issue.createdAt ? `Created ${new Date(issue.createdAt).toLocaleString()}` : undefined}>{issue.createdAt ? timeAgo(issue.createdAt) : ''}</span>
+            </Link>
+          ))}
+        </div>
+        <div className="px-4 py-2.5 border-t border-jira-border text-xs text-jira-muted">
+          {data.total} unassigned · <Link to={searchLink} className="link">Open filter in search</Link>
+        </div>
+      </>
+    );
+  }
+
+  if (data.type === 'PERIOD_COMPARISON') {
+    // For created, more is bad news; for resolved, more is good.
+    const stat = (label: string, s: { current: number; previous: number }, upIsGood: boolean) => {
+      const change = s.current - s.previous;
+      const color = change === 0 ? 'text-jira-muted' : change > 0 === upIsGood ? 'text-[#006644]' : 'text-[#BF2600]';
+      return (
+        <div className="flex-1 text-center">
+          <p className="text-4xl font-semibold text-jira-navy">{s.current}</p>
+          <p className="text-jira-subtle">{label}</p>
+          <p className={`text-xs mt-1 ${color}`}>
+            {change === 0 ? 'no change' : `${change > 0 ? '▲' : '▼'} ${Math.abs(change)}`} <span className="text-jira-muted">(was {s.previous})</span>
+          </p>
+        </div>
+      );
+    };
+    return (
+      <div className="p-4">
+        <div className="flex gap-2">{stat('created', data.created, false)}{stat('resolved', data.resolved, true)}</div>
+        <p className="text-xs text-jira-muted pt-3">
+          Last {data.days} days, against the {data.days} days before · <Link to={searchLink} className="link">Open filter in search</Link>
+        </p>
+      </div>
     );
   }
 

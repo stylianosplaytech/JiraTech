@@ -5,7 +5,7 @@ export type ThumbKind =
   | 'list' | 'count'
   | 'bars' | 'donut' | 'pie' | 'line'
   | 'created' | 'created-line' | 'cvr' | 'cvr-bars'
-  | 'progress' | 'stacked' | 'resolution' | 'stale' | 'due' | 'recent' | 'age' | 'backlog';
+  | 'progress' | 'stacked' | 'resolution' | 'stale' | 'due' | 'recent' | 'age' | 'backlog' | 'resolved' | 'unassigned' | 'compare';
 
 const BLUE = '#0052CC';
 const RED = '#DE350B';
@@ -125,7 +125,29 @@ export function Thumb({ kind, className = 'w-full h-auto' }: { kind: ThumbKind; 
           <polyline points="6,26 16,24 26,19 36,21 46,14 58,12" fill="none" stroke="#6554C0" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         </>
       )}
-      {kind === 'due' && [0, 1, 2, 3].map((i) => (
+      {kind === 'resolved' && [0, 1, 2, 3].map((i) => (
+        <g key={i}>
+          <rect x="6" y={7 + i * 8} width="6" height="4" rx="1" fill={GREEN} />
+          <rect x="15" y={7.5 + i * 8} width={[28, 22, 32, 18][i]} height="3" rx="1.5" fill={GRAY} />
+          <rect x={[44, 47, 50, 52][i]} y={7.5 + i * 8} width={[14, 11, 8, 6][i]} height="3" rx="1.5" fill={GREEN} />
+        </g>
+      ))}
+      {kind === 'unassigned' && [0, 1, 2, 3].map((i) => (
+        <g key={i}>
+          <circle cx="9" cy={9 + i * 8} r="2.5" fill="none" stroke="#97A0AF" strokeDasharray="1.5 1.5" />
+          <rect x="15" y={7.5 + i * 8} width={[28, 22, 32, 18][i]} height="3" rx="1.5" fill={GRAY} />
+          <rect x="46" y={7.5 + i * 8} width="12" height="3" rx="1.5" fill={AMBER} />
+        </g>
+      ))}
+      {kind === 'compare' && (
+        <>
+          <rect x="8" y="10" width="20" height="9" rx="1.5" fill={GRAY} />
+          <rect x="8" y="22" width="20" height="9" rx="1.5" fill={RED} />
+          <rect x="36" y="10" width="20" height="9" rx="1.5" fill={GRAY} />
+          <rect x="36" y="22" width="20" height="9" rx="1.5" fill={GREEN} />
+        </>
+      )}
+      {kind === 'due' &&[0, 1, 2, 3].map((i) => (
         <g key={i}>
           <rect x="6" y={7 + i * 8} width="6" height="4" rx="1" fill={[RED, RED, AMBER, BLUE][i]} />
           <rect x="15" y={7.5 + i * 8} width={[28, 22, 32, 18][i]} height="3" rx="1.5" fill={GRAY} />
@@ -168,6 +190,9 @@ export const TYPE_THUMB: Record<GadgetType, ThumbKind> = {
   RECENTLY_UPDATED: 'recent',
   ISSUE_AGE: 'age',
   BACKLOG_TREND: 'backlog',
+  RECENTLY_RESOLVED: 'resolved',
+  UNASSIGNED: 'unassigned',
+  PERIOD_COMPARISON: 'compare',
 };
 
 /** Pick one of several options, each shown as a small picture with a label. */

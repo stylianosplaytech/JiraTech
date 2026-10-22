@@ -1121,7 +1121,7 @@ export interface SavedFilter {
   owner: { id: string; name: string };
 }
 
-export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND' | 'CREATED_VS_RESOLVED' | 'PROGRESS' | 'STACKED' | 'RESOLUTION_TIME' | 'STALE' | 'DUE_DATES' | 'RECENTLY_UPDATED' | 'ISSUE_AGE' | 'BACKLOG_TREND';
+export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND' | 'CREATED_VS_RESOLVED' | 'PROGRESS' | 'STACKED' | 'RESOLUTION_TIME' | 'STALE' | 'DUE_DATES' | 'RECENTLY_UPDATED' | 'ISSUE_AGE' | 'BACKLOG_TREND' | 'RECENTLY_RESOLVED' | 'UNASSIGNED' | 'PERIOD_COMPARISON';
 export type SingleField = 'status' | 'priority' | 'type' | 'assignee' | 'reporter' | 'project';
 /** Fields an issue can have several values of; only simple breakdowns can count by these. */
 export type MultiField = 'label' | 'component' | 'fixVersion';
@@ -1175,6 +1175,9 @@ export type GadgetData =
   | { type: 'RESOLUTION_TIME'; filterId: string; filterName: string; jql: string; days: number; resolved: number; averageDays: number | null; medianDays: number | null; slowestDays: number | null; bands: { label: string; count: number }[] }
   | { type: 'STALE'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
   | { type: 'RECENTLY_UPDATED'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
+  | { type: 'RECENTLY_RESOLVED'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
+  | { type: 'UNASSIGNED'; filterId: string; filterName: string; jql: string; total: number; issues: Issue[] }
+  | { type: 'PERIOD_COMPARISON'; filterId: string; filterName: string; jql: string; days: number; created: { current: number; previous: number }; resolved: { current: number; previous: number } }
   | { type: 'ISSUE_AGE'; filterId: string; filterName: string; jql: string; open: number; averageDays: number | null; medianDays: number | null; oldestDays: number | null; bands: { label: string; count: number }[] }
   | { type: 'BACKLOG_TREND'; filterId: string; filterName: string; jql: string; days: number; bucket: 'day' | 'week'; chart: 'bars' | 'line'; current: number; change: number; points: { date: string; count: number }[] }
   | { type: 'DUE_DATES'; filterId: string; filterName: string; jql: string; days: number; overdue: number; upcoming: number; issues: Issue[] };
@@ -1205,6 +1208,7 @@ export interface Issue {
   dueDate?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  resolvedAt?: string | null;
   assignee?: { id: string; name: string; email?: string };
   reporter?: { id: string; name: string; email?: string };
   parent?: { id: string; key: string; summary: string; type?: string; epicName?: string };
