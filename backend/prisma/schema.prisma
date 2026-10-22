@@ -691,8 +691,10 @@ model DashboardGadget {
   /// JSON: { maxRows?, groupBy?, stackBy?, chart?: 'bars' | 'donut' | 'pie' | 'line', days?: number, bucket?: 'day' | 'week' }
   config      String     @default("{}")
   position    Int        @default(0)
-  /// Spans both columns
+  /// Legacy full-width flag; kept so existing gadgets still map onto `span`
   wide        Boolean    @default(false)
+  /// Columns taken of three: 1, 2 or 3 (full width). 0 = not set, derived from `wide`
+  span        Int        @default(0)
   createdAt   DateTime   @default(now())
 
   dashboard Dashboard    @relation(fields: [dashboardId], references: [id], onDelete: Cascade)

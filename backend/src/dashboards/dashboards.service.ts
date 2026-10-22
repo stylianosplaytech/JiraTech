@@ -68,7 +68,7 @@ export class DashboardsService {
         ownerId: user.id,
         gadgets: {
           create: source.gadgets.map((g) => ({
-            type: g.type, title: g.title, filterId: g.filterId, config: JSON.stringify(g.config), position: g.position, wide: g.wide,
+            type: g.type, title: g.title, filterId: g.filterId, config: JSON.stringify(g.config), position: g.position, wide: g.span === 3, span: g.span,
           })),
         },
       },
@@ -90,7 +90,7 @@ export class DashboardsService {
         title: dto.title?.trim() || filter.name,
         filterId: filter.id,
         config: JSON.stringify(config),
-        wide: dto.wide ?? (dto.type === GadgetType.FILTER_RESULTS || dto.type === GadgetType.STALE || dto.type === GadgetType.DUE_DATES || dto.type === GadgetType.RECENTLY_UPDATED || dto.type === GadgetType.RECENTLY_RESOLVED || dto.type === GadgetType.UNASSIGNED),
+        ...widthData(dto, dto.type === GadgetType.FILTER_RESULTS || dto.type === GadgetType.STALE || dto.type === GadgetType.DUE_DATES || dto.type === GadgetType.RECENTLY_UPDATED || dto.type === GadgetType.RECENTLY_RESOLVED || dto.type === GadgetType.UNASSIGNED ? 3 : 1),
         position: (last._max.position ?? -1) + 1,
       },
       include: GADGET_INCLUDE,
@@ -108,7 +108,7 @@ export class DashboardsService {
       data: {
         ...(dto.title !== undefined && { title: dto.title.trim() }),
         ...(dto.filterId !== undefined && { filterId: dto.filterId }),
-        ...(dto.wide !== undefined && { wide: dto.wide }),
+        ...((dto.span !== undefined || dto.wide !== undefined) && widthData(dto, 1)),
         ...(dto.config !== undefined && { config: JSON.stringify(cleanConfig(gadget.type, dto.config)) }),
       },
       include: GADGET_INCLUDE,
@@ -427,6 +427,17 @@ function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDt
   return {};
 }
 
+/** The columns (of three) a gadget takes. Gadgets saved before `span` existed were half or full width. */
+function spanOf(g: { span: number; wide: boolean }) {
+  return g.span || (g.wide ? 3 : 1);
+}
+
+/** Width columns to store for a request; `fallback` applies when it names no width. */
+function widthData(dto: { span?: number; wide?: boolean }, fallback: 1 | 2 | 3) {
+  const span = dto.span ?? (dto.wide === undefined ? fallback : dto.wide ? 3 : 1);
+  return { span, wide: span === 3 };
+}
+
 function withConfig<T extends DashboardGadget>(gadget: T) {
-  return { ...gadget, config: parseConfig(gadget.config) };
+  return { ...gadget, span: spanOf(gadget), config: parseConfig(gadget.config) };
 }

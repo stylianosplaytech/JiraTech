@@ -94,6 +94,12 @@ export class CreateGadgetDto {
   @IsOptional()
   @IsBoolean()
   wide?: boolean;
+
+  /** Width in thirds of the dashboard: 1, 2 or 3 (full width). Takes precedence over `wide`. */
+  @IsOptional()
+  @IsInt()
+  @IsIn([1, 2, 3])
+  span?: number;
 }
 
 export class UpdateGadgetDto {
@@ -115,6 +121,12 @@ export class UpdateGadgetDto {
   @IsOptional()
   @IsBoolean()
   wide?: boolean;
+
+  /** Width in thirds of the dashboard: 1, 2 or 3 (full width). Takes precedence over `wide`. */
+  @IsOptional()
+  @IsInt()
+  @IsIn([1, 2, 3])
+  span?: number;
 }
 
 export class ReorderGadgetsDto {

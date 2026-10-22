@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type BreakdownField, type CustomDashboard, type Gadget, type GadgetType, type SingleField } from '../api';
+import { api, type BreakdownField, type CustomDashboard, type Gadget, type GadgetSpan, type GadgetType, type SingleField } from '../api';
 import { BREAKDOWN_LABELS, GADGET_TYPES, GadgetBody, SINGLE_FIELD_KEYS } from '../components/Gadgets';
 import { TYPE_THUMB, ThumbChoice } from '../components/GadgetThumbs';
 import { EmptyState, errorMessage, Modal, PageHeader, Spinner, useDialogs, useToast } from '../components/ui';
@@ -20,12 +20,12 @@ interface GadgetForm {
   chart: 'bars' | 'donut' | 'pie' | 'line';
   days: 7 | 14 | 30 | 90;
   bucket: 'day' | 'week';
-  wide: boolean;
+  span: GadgetSpan;
 }
 
 /** Starting settings when the kind of gadget changes. */
 function defaultsFor(type: GadgetType): Partial<GadgetForm> {
-  return { type, days: type === 'DUE_DATES' || type === 'PERIOD_COMPARISON' ? 7 : 30, wide: type === 'FILTER_RESULTS' || type === 'STALE' || type === 'DUE_DATES' || type === 'RECENTLY_UPDATED' || type === 'RECENTLY_RESOLVED' || type === 'UNASSIGNED', chart: type === 'CREATED_VS_RESOLVED' || type === 'BACKLOG_TREND' ? 'line' : 'bars' };
+  return { type, days: type === 'DUE_DATES' || type === 'PERIOD_COMPARISON' ? 7 : 30, span: (type === 'FILTER_RESULTS' || type === 'STALE' || type === 'DUE_DATES' || type === 'RECENTLY_UPDATED' || type === 'RECENTLY_RESOLVED' || type === 'UNASSIGNED') ? 3 : 1, chart: type === 'CREATED_VS_RESOLVED' || type === 'BACKLOG_TREND' ? 'line' : 'bars' };
 }
 
 function GadgetModal({ dashboardId, form, onChange, onClose }: {
@@ -49,8 +49,8 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
         : form.type === 'TREND' || form.type === 'CREATED_VS_RESOLVED' || form.type === 'BACKLOG_TREND' ? { days: form.days, bucket: form.bucket, chart: form.chart } : {};
       const title = form.title.trim() || undefined;
       return form.id
-        ? api.updateGadget(dashboardId, form.id, { title, filterId: form.filterId, config, wide: form.wide })
-        : api.addGadget(dashboardId, { type: form.type, filterId: form.filterId, title, config, wide: form.wide });
+        ? api.updateGadget(dashboardId, form.id, { title, filterId: form.filterId, config, span: form.span })
+        : api.addGadget(dashboardId, { type: form.type, filterId: form.filterId, title, config, span: form.span });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard', dashboardId] });
@@ -215,10 +215,20 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
           </div>
           </>
         )}
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={form.wide} onChange={(e) => onChange({ ...form, wide: e.target.checked })} />
-          Full width
-        </label>
+        <div>
+          <span className="field-label">Width</span>
+          <div className="flex gap-2" role="radiogroup" aria-label="Gadget width">
+            {([[1, '1/3'], [2, '2/3'], [3, 'Full width']] as [GadgetSpan, string][]).map(([n, label]) => (
+              <label key={n} className={`flex-1 cursor-pointer rounded border px-3 py-2 text-center ${form.span === n ? 'border-jira-blue bg-jira-blue-light text-jira-blue font-medium' : 'border-jira-border hover:bg-jira-gray'}`}>
+                <input type="radio" name="gadget-span" className="sr-only" checked={form.span === n} onChange={() => onChange({ ...form, span: n })} />
+                <span className="flex gap-0.5 h-2 mb-1.5" aria-hidden="true">
+                  {[1, 2, 3].map((i) => <span key={i} className={`flex-1 rounded-sm ${i <= n ? 'bg-current opacity-70' : 'bg-jira-gray-hover'}`} />)}
+                </span>
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
         <p className="text-xs text-jira-muted">
           The filter runs as whoever is viewing, so “currentUser()” means them, and they only see issues from projects they can browse.
         </p>
@@ -227,14 +237,17 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
   );
 }
 
-/** Groups gadgets into PDF rows: a full-width gadget has its own row, narrow ones pair up. */
+const COL_SPAN: Record<GadgetSpan, string> = { 1: 'md:col-span-1', 2: 'md:col-span-2', 3: 'md:col-span-3' };
+const PDF_COL_SPAN: Record<GadgetSpan, string> = { 1: 'col-span-1', 2: 'col-span-2', 3: 'col-span-3' };
+
+/** Groups gadgets into rows of three columns, the way the dashboard grid flows them. */
 function pdfRows(gadgets: Gadget[]): Gadget[][] {
   const rows: Gadget[][] = [];
-  let open: Gadget[] | null = null;
+  let used = 3;
   for (const g of gadgets) {
-    if (g.wide) { rows.push([g]); open = null; }
-    else if (open) { open.push(g); open = null; }
-    else { open = [g]; rows.push(open); }
+    if (used + g.span > 3) { rows.push([]); used = 0; }
+    rows[rows.length - 1].push(g);
+    used += g.span;
   }
   return rows;
 }
@@ -302,7 +315,7 @@ export default function CustomDashboardPage() {
   const editGadget = (g: Gadget) => setGadgetForm({
     id: g.id, type: g.type, filterId: g.filterId ?? '', title: g.title,
     maxRows: g.config.maxRows ?? 10, groupBy: g.config.groupBy ?? 'status', stackBy: g.config.stackBy ?? 'priority', chart: g.config.chart ?? (g.type === 'CREATED_VS_RESOLVED' || g.type === 'BACKLOG_TREND' ? 'line' : 'bars'),
-    days: g.config.days ?? 30, bucket: g.config.bucket ?? 'day', wide: g.wide,
+    days: g.config.days ?? 30, bucket: g.config.bucket ?? 'day', span: g.span,
   });
 
   return (
@@ -322,9 +335,9 @@ export default function CustomDashboardPage() {
                 <PdfBanner title={dashboard.name} subtitle={dashboard.description || `Dashboard by ${dashboard.owner.name}`} />
                 <div className="h-3" />
                 {pdfRows(dashboard.gadgets).map((row) => (
-                  <PdfBlock key={row[0].id} className="grid grid-cols-2 gap-4 items-start">
+                  <PdfBlock key={row[0].id} className="grid grid-cols-3 gap-4 items-start">
                     {row.map((g) => (
-                      <div key={g.id} className={`card ${row.length === 1 ? 'col-span-2' : ''}`}>
+                      <div key={g.id} className={`card ${PDF_COL_SPAN[g.span]}`}>
                         <div className="card-header"><h2 className="card-title">{g.title}</h2></div>
                         <GadgetBody dashboardId={dashboard.id} gadget={g} />
                       </div>
@@ -335,7 +348,7 @@ export default function CustomDashboardPage() {
             </PdfExport>
             {isOwner ? (
           <>
-            <button type="button" className="btn btn-primary" onClick={() => setGadgetForm({ type: 'FILTER_RESULTS', filterId: '', title: '', maxRows: 10, groupBy: 'status', stackBy: 'priority', chart: 'bars', days: 30, bucket: 'day', wide: true })}>
+            <button type="button" className="btn btn-primary" onClick={() => setGadgetForm({ type: 'FILTER_RESULTS', filterId: '', title: '', maxRows: 10, groupBy: 'status', stackBy: 'priority', chart: 'bars', days: 30, bucket: 'day', span: 3 })}>
               <PlusIcon size={14} /> Add gadget
             </button>
             <button type="button" className="btn btn-default" onClick={() => update.mutate({ shared: !dashboard.shared })}>
@@ -376,16 +389,16 @@ export default function CustomDashboardPage() {
           <EmptyState
             title="This dashboard is empty"
             action={isOwner && (
-              <button type="button" className="btn btn-default" onClick={() => setGadgetForm({ type: 'FILTER_RESULTS', filterId: '', title: '', maxRows: 10, groupBy: 'status', stackBy: 'priority', chart: 'bars', days: 30, bucket: 'day', wide: true })}>Add a gadget</button>
+              <button type="button" className="btn btn-default" onClick={() => setGadgetForm({ type: 'FILTER_RESULTS', filterId: '', title: '', maxRows: 10, groupBy: 'status', stackBy: 'priority', chart: 'bars', days: 30, bucket: 'day', span: 3 })}>Add a gadget</button>
             )}
           >
             {isOwner ? 'Add gadgets that show the results of your saved filters.' : 'Its owner hasn’t added any gadgets yet.'}
           </EmptyState>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
           {dashboard.gadgets.map((g, i) => (
-            <div key={g.id} className={`card ${g.wide ? 'md:col-span-2' : ''}`}>
+            <div key={g.id} className={`card ${COL_SPAN[g.span]}`}>
               <div className="card-header">
                 <h2 className="card-title truncate">{g.title}</h2>
                 {isOwner && (

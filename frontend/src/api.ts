@@ -263,9 +263,9 @@ export const api = {
     request<DashboardSummary>(`/dashboards/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteDashboard: (id: string) => request(`/dashboards/${id}`, { method: 'DELETE' }),
   duplicateDashboard: (id: string) => request<DashboardSummary>(`/dashboards/${id}/duplicate`, { method: 'POST' }),
-  addGadget: (id: string, data: { type: GadgetType; filterId: string; title?: string; config?: GadgetConfig; wide?: boolean }) =>
+  addGadget: (id: string, data: { type: GadgetType; filterId: string; title?: string; config?: GadgetConfig; span?: GadgetSpan }) =>
     request<Gadget>(`/dashboards/${id}/gadgets`, { method: 'POST', body: JSON.stringify(data) }),
-  updateGadget: (id: string, gadgetId: string, data: { title?: string; filterId?: string; config?: GadgetConfig; wide?: boolean }) =>
+  updateGadget: (id: string, gadgetId: string, data: { title?: string; filterId?: string; config?: GadgetConfig; span?: GadgetSpan }) =>
     request<Gadget>(`/dashboards/${id}/gadgets/${gadgetId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   removeGadget: (id: string, gadgetId: string) => request(`/dashboards/${id}/gadgets/${gadgetId}`, { method: 'DELETE' }),
   reorderGadgets: (id: string, ids: string[]) =>
@@ -1145,8 +1145,11 @@ export interface Gadget {
   filter: { id: string; name: string } | null;
   config: GadgetConfig;
   position: number;
-  wide: boolean;
+  /** Columns taken of three: 1/3, 2/3 or full width. */
+  span: GadgetSpan;
 }
+
+export type GadgetSpan = 1 | 2 | 3;
 
 export interface DashboardSummary {
   id: string;
