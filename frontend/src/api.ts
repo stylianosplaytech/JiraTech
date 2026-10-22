@@ -1120,7 +1120,10 @@ export interface SavedFilter {
 }
 
 export type GadgetType = 'FILTER_RESULTS' | 'FILTER_COUNT' | 'BREAKDOWN' | 'TREND' | 'CREATED_VS_RESOLVED' | 'PROGRESS' | 'STACKED' | 'RESOLUTION_TIME' | 'STALE' | 'DUE_DATES' | 'RECENTLY_UPDATED' | 'ISSUE_AGE' | 'BACKLOG_TREND';
-export type BreakdownField = 'status' | 'priority' | 'type' | 'assignee' | 'reporter' | 'project';
+export type SingleField = 'status' | 'priority' | 'type' | 'assignee' | 'reporter' | 'project';
+/** Fields an issue can have several values of; only simple breakdowns can count by these. */
+export type MultiField = 'label' | 'component' | 'fixVersion';
+export type BreakdownField = SingleField | MultiField;
 
 export interface GadgetConfig {
   maxRows?: number;

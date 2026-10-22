@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { api, type BreakdownField, type Gadget, type GadgetData, type GadgetType } from '../api';
+import { api, type BreakdownField, type SingleField, type Gadget, type GadgetData, type GadgetType } from '../api';
 import { PriorityIcon, StatusBadge, TypeBadge, STATUS_LABELS, typeLabel } from './Badges';
 import { errorMessage, Spinner } from './ui';
 import { dueStatus, formatDueDate, humanize, timeAgo } from '../utils';
@@ -8,7 +8,7 @@ import { dueStatus, formatDueDate, humanize, timeAgo } from '../utils';
 export const GADGET_TYPES: { type: GadgetType; label: string; hint: string }[] = [
   { type: 'FILTER_RESULTS', label: 'Issue list', hint: 'The issues a filter finds, newest first unless the filter sorts them.' },
   { type: 'FILTER_COUNT', label: 'Issue count', hint: 'One big number: how many issues a filter finds.' },
-  { type: 'BREAKDOWN', label: 'Breakdown', hint: 'A filter’s issues counted by status, priority, type, assignee, reporter or project, as bars, a donut or a pie.' },
+  { type: 'BREAKDOWN', label: 'Breakdown', hint: 'A filter’s issues counted by status, priority, type, assignee, reporter, project, label, component or fix version, as bars, a donut or a pie. An issue with several labels is counted under each.' },
   { type: 'TREND', label: 'Created over time', hint: 'How many of a filter’s issues were created each day or week, as bars or a line.' },
   { type: 'CREATED_VS_RESOLVED', label: 'Created vs resolved', hint: 'Issues created and issues resolved per day or week, side by side. Use a filter that includes closed issues, or nothing will show as resolved.' },
   { type: 'PROGRESS', label: 'Progress', hint: 'How much of a filter’s issues are closed, as a percentage bar. Use a filter that includes closed issues.' },
@@ -23,7 +23,11 @@ export const GADGET_TYPES: { type: GadgetType; label: string; hint: string }[] =
 
 export const BREAKDOWN_LABELS: Record<BreakdownField, string> = {
   status: 'Status', priority: 'Priority', type: 'Issue type', assignee: 'Assignee', reporter: 'Reporter', project: 'Project',
+  label: 'Label', component: 'Component', fixVersion: 'Fix version',
 };
+
+/** The fields a stacked breakdown can use: those every issue has exactly one value of. */
+export const SINGLE_FIELD_KEYS: SingleField[] = ['status', 'priority', 'type', 'assignee', 'reporter', 'project'];
 
 const PALETTE = ['#0052CC', '#36B37E', '#FFAB00', '#DE350B', '#6554C0', '#00B8D9', '#FF8B00', '#97A0AF'];
 

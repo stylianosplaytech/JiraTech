@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type BreakdownField, type CustomDashboard, type Gadget, type GadgetType } from '../api';
-import { BREAKDOWN_LABELS, GADGET_TYPES, GadgetBody } from '../components/Gadgets';
+import { api, type BreakdownField, type CustomDashboard, type Gadget, type GadgetType, type SingleField } from '../api';
+import { BREAKDOWN_LABELS, GADGET_TYPES, GadgetBody, SINGLE_FIELD_KEYS } from '../components/Gadgets';
 import { TYPE_THUMB, ThumbChoice } from '../components/GadgetThumbs';
 import { EmptyState, errorMessage, Modal, PageHeader, Spinner, useDialogs, useToast } from '../components/ui';
 import { PlusIcon, TrashIcon } from '../components/Icons';
@@ -85,7 +85,12 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
               label="Kind of gadget"
               columns={3}
               value={form.type}
-              onChange={(type) => onChange({ ...form, ...defaultsFor(type) })}
+              onChange={(type) => onChange({
+                ...form,
+                ...defaultsFor(type),
+                // A stacked breakdown can't count by label, component or fix version.
+                ...(type === 'STACKED' && !SINGLE_FIELD_KEYS.includes(form.groupBy as SingleField) ? { groupBy: 'status' as const, stackBy: 'priority' as const } : {}),
+              })}
               options={GADGET_TYPES.map((t) => ({ value: t.type, label: t.label, thumb: TYPE_THUMB[t.type], hint: t.hint }))}
             />
             {hint && <p className="text-xs text-jira-muted mt-1.5">{hint}</p>}
@@ -128,13 +133,13 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
               <label className="field-label" htmlFor="gadget-group">Count by</label>
               <select id="gadget-group" className="input" value={form.groupBy}
                 onChange={(e) => { const groupBy = e.target.value as BreakdownField; onChange({ ...form, groupBy, stackBy: form.stackBy === groupBy ? (groupBy === 'status' ? 'priority' : 'status') : form.stackBy }); }}>
-                {(Object.keys(BREAKDOWN_LABELS) as BreakdownField[]).map((f) => <option key={f} value={f}>{BREAKDOWN_LABELS[f]}</option>)}
+                {SINGLE_FIELD_KEYS.map((f) => <option key={f} value={f}>{BREAKDOWN_LABELS[f]}</option>)}
               </select>
             </div>
             <div>
               <label className="field-label" htmlFor="gadget-stack">Split each bar by</label>
               <select id="gadget-stack" className="input" value={form.stackBy} onChange={(e) => onChange({ ...form, stackBy: e.target.value as BreakdownField })}>
-                {(Object.keys(BREAKDOWN_LABELS) as BreakdownField[]).filter((f) => f !== form.groupBy).map((f) => <option key={f} value={f}>{BREAKDOWN_LABELS[f]}</option>)}
+                {SINGLE_FIELD_KEYS.filter((f) => f !== form.groupBy).map((f) => <option key={f} value={f}>{BREAKDOWN_LABELS[f]}</option>)}
               </select>
             </div>
           </div>

@@ -93,6 +93,20 @@ export async function seedFeatures(
       data: more.map((g, i) => ({ ...g, filterId: ninety.id, config: JSON.stringify(g.config), position: activity.gadgets.length + i, wide: g.wide ?? false, dashboardId: activity.id })),
     });
   }
+  // Breakdowns by the multi-valued fields.
+  const tagged = await prisma.dashboard.findFirst({ where: { ownerId: admin.id, name: 'Delivery overview' }, include: { gadgets: true } });
+  const openFilter = await prisma.savedFilter.findFirst({ where: { name: 'All open issues' } });
+  if (tagged && openFilter && !tagged.gadgets.some((g) => g.title === 'Open issues by label')) {
+    await prisma.dashboardGadget.createMany({
+      data: [
+        { title: 'Open issues by label', config: { groupBy: 'label', chart: 'donut' } },
+        { title: 'Open issues by fix version', config: { groupBy: 'fixVersion', chart: 'bars' } },
+      ].map((g, i) => ({
+        type: GadgetType.BREAKDOWN, title: g.title, filterId: openFilter.id, config: JSON.stringify(g.config),
+        position: tagged.gadgets.length + i, wide: false, dashboardId: tagged.id,
+      })),
+    });
+  }
   if (!(await prisma.dashboard.findFirst({ where: { ownerId: elena.id, name: 'PAY team' } }))) {
     const payFilter = await filterId('PAY blocked or at risk');
     await prisma.dashboard.create({

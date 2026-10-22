@@ -21,8 +21,15 @@ export const SEARCH_INCLUDE = {
   _count: { select: { comments: true, children: true } },
 } satisfies Prisma.IssueInclude;
 
-export const BREAKDOWN_FIELDS = ['status', 'priority', 'type', 'assignee', 'reporter', 'project'] as const;
+/** Fields every issue has exactly one value of. */
+export const SINGLE_FIELDS = ['status', 'priority', 'type', 'assignee', 'reporter', 'project'] as const;
+export type SingleField = (typeof SINGLE_FIELDS)[number];
+/** Fields an issue can have several values of (or none): an issue is counted under each of its values. */
+export const MULTI_FIELDS = ['label', 'component', 'fixVersion'] as const;
+export type MultiField = (typeof MULTI_FIELDS)[number];
+export const BREAKDOWN_FIELDS = [...SINGLE_FIELDS, ...MULTI_FIELDS] as const;
 export type BreakdownField = (typeof BREAKDOWN_FIELDS)[number];
+export const isMultiField = (f: string): f is MultiField => (MULTI_FIELDS as readonly string[]).includes(f);
 
 const STATUS_ORDER =['BACKLOG', 'TO_DO', 'DOING', 'CLOSED'];
 // Above this many matches, priority/status sorting (done in memory) is truncated.
@@ -102,6 +109,7 @@ export class SearchService {
   /** The issues a JQL query finds, counted by one field, largest group first. */
   async countBy(jql: string, field: BreakdownField, user: AuthUser) {
     const where = await this.visible(user, this.compile(jql, user).where);
+    if (isMultiField(field)) return this.countByMulti(where, field);
     const column = ({ assignee: 'assigneeId', reporter: 'reporterId', project: 'projectId' } as const)[field as 'assignee'] ?? field;
     const rows = await this.prisma.issue.groupBy({ by: [column], where, _count: true });
     const valueOf = (r: object) => (r as Record<string, string | null>)[column];
@@ -123,10 +131,42 @@ export class SearchService {
     return { total: groups.reduce((n, g) => n + g.count, 0), groups };
   }
 
+  /**
+   * Issues counted under each label, component or fix version they have, largest first, with the issues that have
+   * none last. `total` is the number of issues, so an issue with two labels counts once there and in both groups.
+   */
+  private async countByMulti(where: Prisma.IssueWhereInput, field: MultiField) {
+    const inIssues = { issue: where };
+    const none: Prisma.IssueWhereInput =
+      field === 'label' ? { labels: { none: {} } } : field === 'component' ? { components: { none: {} } } : { versions: { none: { isFix: true } } };
+    const [total, unset, rows] = await Promise.all([
+      this.prisma.issue.count({ where }),
+      this.prisma.issue.count({ where: { AND: [where, none] } }),
+      field === 'label'
+        ? this.prisma.issueLabel.groupBy({ by: ['labelId'], where: inIssues, _count: true })
+        : field === 'component'
+          ? this.prisma.issueComponent.groupBy({ by: ['componentId'], where: inIssues, _count: true })
+          : this.prisma.issueVersion.groupBy({ by: ['versionId'], where: { ...inIssues, isFix: true }, _count: true }),
+    ]);
+    const idOf = (r: object) => Object.values(r).find((v) => typeof v === 'string') as string;
+    const ids = (rows as object[]).map(idOf);
+    const named = field === 'label'
+      ? await this.prisma.label.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+      : field === 'component'
+        ? await this.prisma.component.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        : await this.prisma.version.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+    const names = new Map(named.map((n) => [n.id, n.name]));
+    const groups = (rows as (object & { _count: number })[])
+      .map((r) => ({ key: idOf(r), label: names.get(idOf(r)) ?? 'Unknown', count: r._count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    if (unset) groups.push({ key: '', label: field === 'label' ? 'No label' : field === 'component' ? 'No component' : 'No fix version', count: unset });
+    return { total, groups };
+  }
+
   /** The issues a JQL query finds counted by two fields at once: rows by `field`, each split by `stack`. Largest row first. */
-  async countByTwo(jql: string, field: BreakdownField, stack: BreakdownField, user: AuthUser) {
+  async countByTwo(jql: string, field: SingleField, stack: SingleField, user: AuthUser) {
     const where = await this.visible(user, this.compile(jql, user).where);
-    const columnOf = (f: BreakdownField) => ({ assignee: 'assigneeId', reporter: 'reporterId', project: 'projectId' } as const)[f as 'assignee'] ?? f;
+    const columnOf = (f: SingleField) => ({ assignee: 'assigneeId', reporter: 'reporterId', project: 'projectId' } as const)[f as 'assignee'] ?? f;
     const rowCol = columnOf(field);
     const stackCol = columnOf(stack);
     const found = await this.prisma.issue.groupBy({ by: [rowCol, stackCol] as unknown as 'status'[], where, _count: true });
@@ -142,7 +182,7 @@ export class SearchService {
     const names = new Map<string, string>();
     for (const u of await this.prisma.user.findMany({ where: { id: { in: [...ids.user] } }, select: { id: true, name: true } })) names.set(u.id, u.name);
     for (const p of await this.prisma.project.findMany({ where: { id: { in: [...ids.project] } }, select: { id: true, name: true } })) names.set(p.id, p.name);
-    const labelOf = (f: BreakdownField, value: string | null) => {
+    const labelOf = (f: SingleField, value: string | null) => {
       const named = f === 'assignee' || f === 'reporter' || f === 'project';
       return named ? (value ? names.get(value) ?? 'Unknown' : f === 'assignee' ? 'Unassigned' : 'None') : value ?? 'None';
     };

@@ -3,7 +3,7 @@ import {
   ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested,
 } from 'class-validator';
 import { GadgetType } from '@prisma/client';
-import { BREAKDOWN_FIELDS } from '../search/search.service';
+import { BREAKDOWN_FIELDS, SINGLE_FIELDS } from '../search/search.service';
 
 export class CreateDashboardDto {
   @IsString()
@@ -53,8 +53,8 @@ export class GadgetConfigDto {
 
   /** STACKED: the field each bar is split by. */
   @IsOptional()
-  @IsIn(BREAKDOWN_FIELDS)
-  stackBy?: (typeof BREAKDOWN_FIELDS)[number];
+  @IsIn(SINGLE_FIELDS)
+  stackBy?: (typeof SINGLE_FIELDS)[number];
 
   /** How to draw it: BREAKDOWN bars, donut or pie; TREND and CREATED_VS_RESOLVED bars or line. */
   @IsOptional()

@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { DashboardGadget, GadgetType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/auth-user';
-import { BREAKDOWN_FIELDS, BreakdownField, SearchService } from '../search/search.service';
+import { BREAKDOWN_FIELDS, BreakdownField, SINGLE_FIELDS, SingleField, SearchService } from '../search/search.service';
 import { CreateDashboardDto, CreateGadgetDto, GadgetConfigDto, UpdateDashboardDto, UpdateGadgetDto } from './dashboards.dto';
 
 const OWNER = { select: { id: true, name: true } };
@@ -178,7 +178,8 @@ export class DashboardsService {
       case GadgetType.STACKED: {
         const groupBy = config.groupBy ?? 'status';
         const stackBy = config.stackBy ?? defaultStack(groupBy);
-        return { type: gadget.type, ...base, groupBy, stackBy, ...(await this.search.countByTwo(filter.jql, groupBy, stackBy, user)) };
+        if (!(SINGLE_FIELDS as readonly string[]).includes(groupBy)) throw new BadRequestException('This gadget cannot be stacked by ' + groupBy + '. Edit it to count by another field.');
+        return { type: gadget.type, ...base, groupBy, stackBy, ...(await this.search.countByTwo(filter.jql, groupBy as SingleField, stackBy, user)) };
       }
       case GadgetType.RESOLUTION_TIME: {
         const days = config.days ?? 30;
@@ -322,7 +323,7 @@ const AGE_BANDS = [
 ];
 
 /** A second field to split by that differs from the first. */
-function defaultStack(groupBy: BreakdownField): BreakdownField {
+function defaultStack(groupBy: BreakdownField): SingleField {
   return groupBy === 'status' ? 'priority' : 'status';
 }
 
@@ -373,8 +374,8 @@ function cleanConfig(type: GadgetType, config?: GadgetConfigDto): GadgetConfigDt
   if (type === GadgetType.FILTER_RESULTS || type === GadgetType.STALE || type === GadgetType.RECENTLY_UPDATED) return { maxRows: config?.maxRows ?? DEFAULT_ROWS };
   if (type === GadgetType.STACKED) {
     const groupBy: BreakdownField = config?.groupBy ?? 'status';
-    const stackBy: BreakdownField = config?.stackBy ?? defaultStack(groupBy);
-    if (!BREAKDOWN_FIELDS.includes(groupBy) || !BREAKDOWN_FIELDS.includes(stackBy)) throw new BadRequestException('Unknown field to count by');
+    const stackBy: SingleField = config?.stackBy ?? defaultStack(groupBy);
+    if (!(SINGLE_FIELDS as readonly string[]).includes(groupBy) || !SINGLE_FIELDS.includes(stackBy)) throw new BadRequestException('Stacked breakdowns can count by status, priority, type, assignee, reporter or project');
     if (groupBy === stackBy) throw new BadRequestException('Split the bars by a different field than the one they count');
     return { groupBy, stackBy };
   }
