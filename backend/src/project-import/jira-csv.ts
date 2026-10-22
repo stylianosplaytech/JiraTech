@@ -1,5 +1,5 @@
 import {
-  ParsedSource, SourceIssue, buildColumns, checkIssues, collectStatuses, dominantPrefix, keyRe, mapType,
+  ParsedSource, SourceIssue, buildColumns, checkIssues, collectStatuses, dayOf, dominantPrefix, keyRe, mapType,
 } from './source';
 
 /** Parse RFC 4180 CSV (quoted fields, doubled quotes, embedded newlines) into rows of cells. */
@@ -57,6 +57,13 @@ function fromParts(y: number, mo: number, d: number, h: number, mi: number, utcO
   return Number.isNaN(ms) ? null : new Date(ms);
 }
 
+/** Jira's "Due date" column: a day with no time, written like the other dates (so read as given, not shifted by a time zone). */
+function dueDay(raw: string): string | null {
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw.trim())) return dayOf(raw);
+  const d = parseDate(raw, 0);
+  return d ? d.toISOString().slice(0, 10) : null;
+}
+
 const hours = (seconds: string) => {
   const n = Number(seconds);
   return seconds.trim() && Number.isFinite(n) ? Math.round((n / 3600) * 100) / 100 : null;
@@ -81,7 +88,7 @@ export function readCsvSource(text: string, utcOffsetMinutes = 0): ParsedSource 
   const iId = first('issue id'), iParentId = first('parent id'), iParent = first('parent');
   const iPriority = first('priority'), iCreated = first('created'), iUpdated = first('updated');
   const iDescription = first('description'), iReporter = first('reporter'), iAssignee = first('assignee');
-  const iEstimate = first('original estimate'), iRemaining = first('remaining estimate');
+  const iEstimate = first('original estimate'), iRemaining = first('remaining estimate'), iDue = first('due date');
   const iLabels = at('labels'), iComponents = at('component/s', 'components');
   const iFix = at('fix version/s', 'fix versions'), iAffects = at('affects version/s', 'affected version/s');
   const iComments = at('comment');
@@ -94,7 +101,7 @@ export function readCsvSource(text: string, utcOffsetMinutes = 0): ParsedSource 
 
   const used = new Set<number>([
     iKey, iSummary, iType, iStatus, iId, iParentId, iParent, iPriority, iCreated, iUpdated, iDescription, iReporter, iAssignee,
-    iEstimate, iRemaining, iEpic, ...iLabels, ...iComponents, ...iFix, ...iAffects, ...iComments, ...linkCols.map((c) => c.i),
+    iEstimate, iRemaining, iDue, iEpic, ...iLabels, ...iComponents, ...iFix, ...iAffects, ...iComments, ...linkCols.map((c) => c.i),
   ]);
   // Every other column becomes a custom field; columns with the same title are one field.
   const customCols = new Map<string, { label: string; idx: number[] }>();
@@ -161,6 +168,7 @@ export function readCsvSource(text: string, utcOffsetMinutes = 0): ParsedSource 
       components: many(r, iComponents),
       fixVersions: many(r, iFix).map((name) => ({ name })),
       affectsVersions: many(r, iAffects).map((name) => ({ name })),
+      dueDate: dueDay(cell(r, iDue)),
       estimateHours: hours(cell(r, iEstimate)),
       remainingHours: hours(cell(r, iRemaining)),
       links,

@@ -1,13 +1,12 @@
 import { IssueStatus } from '@prisma/client';
 import {
-  ParsedSource, Person, SourceIssue, SourceVersion, buildColumns, checkIssues, collectStatuses, customText, dominantPrefix, keyRe, mapType,
+  ParsedSource, Person, SourceIssue, SourceVersion, buildColumns, checkIssues, collectStatuses, customText, dayOf, dominantPrefix, keyRe, mapType,
 } from './source';
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** Standard fields that carry data but have no field of their own in the app: offered as custom fields. */
 const EXTRA_STANDARD: Record<string, string> = {
-  duedate: 'Due date',
   environment: 'Environment',
   creator: 'Creator',
   resolution: 'Resolution',
@@ -152,6 +151,7 @@ export function readJsonSource(text: string): ParsedSource {
       components: Array.isArray(f.components) ? f.components.filter((c: Json) => c?.name).map((c: Json) => String(c.name)) : [],
       fixVersions: versions(f.fixVersions),
       affectsVersions: versions(f.versions),
+      dueDate: dayOf(f.duedate),
       estimateHours: hours(f.timeoriginalestimate),
       remainingHours: hours(f.timeestimate),
       links,

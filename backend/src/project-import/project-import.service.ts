@@ -170,6 +170,7 @@ export class ProjectImportService {
             statusId: initial ? initial.id : statusIds.get(i.statusName)!,
             resolution: category === IssueStatus.CLOSED ? IssueResolution.COMPLETED : null,
             estimate: on.has('estimate') ? i.estimateHours : null,
+            dueDate: on.has('dueDate') && i.dueDate ? new Date(`${i.dueDate}T00:00:00Z`) : null,
             remainingEstimate: on.has('remaining') ? i.remainingHours : null,
             projectId,
             parentId: parentId(i),

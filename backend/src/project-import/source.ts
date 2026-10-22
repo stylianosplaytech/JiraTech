@@ -27,6 +27,8 @@ export type SourceIssue = {
   components: string[];
   fixVersions: SourceVersion[];
   affectsVersions: SourceVersion[];
+  /** yyyy-mm-dd */
+  dueDate: string | null;
   estimateHours: number | null;
   remainingHours: number | null;
   links: { type: string; outward: boolean; key: string }[];
@@ -127,6 +129,12 @@ export function collectStatuses(issues: SourceIssue[], categoryOf: (name: string
 
 const short = (v: string) => (v.length > 80 ? `${v.slice(0, 80)}…` : v);
 const names = (xs: { name: string }[]) => xs.map((x) => x.name).join(', ');
+/** The calendar day of a date given as yyyy-mm-dd (anything after it is ignored), or null if it isn't a real day. */
+export function dayOf(raw: unknown): string | null {
+  const m = typeof raw === 'string' ? /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim()) : null;
+  return m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCMonth() === +m[2] - 1 ? m.slice(1).join('-') : null;
+}
+
 export const personLabel = (p: Person | null) => (p ? p.name ?? p.username ?? p.email ?? '' : '');
 
 type CoreDef = {
@@ -157,6 +165,7 @@ const CORE: CoreDef[] = [
   { id: 'components', label: 'Components', group: 'Planning', target: 'Components', value: (i) => (i.components.length ? i.components.join(', ') : null) },
   { id: 'fixVersions', label: 'Fix versions', group: 'Planning', target: 'Fix versions', value: (i) => (i.fixVersions.length ? names(i.fixVersions) : null) },
   { id: 'affectsVersions', label: 'Affects versions', group: 'Planning', target: 'Affects versions', value: (i) => (i.affectsVersions.length ? names(i.affectsVersions) : null) },
+  { id: 'dueDate', label: 'Due date', group: 'Planning', target: 'Due date', value: (i) => i.dueDate },
   { id: 'estimate', label: 'Original estimate', group: 'Planning', target: 'Estimate (hours)', value: (i) => (i.estimateHours != null ? `${i.estimateHours}h` : null) },
   { id: 'remaining', label: 'Remaining estimate', group: 'Planning', target: 'Remaining estimate (hours)', value: (i) => (i.remainingHours != null ? `${i.remainingHours}h` : null) },
   { id: 'links', label: 'Issue links', group: 'Relationships', target: 'Links between imported issues', value: (i) => (i.links.length ? `${i.links.length} link(s)` : null) },
