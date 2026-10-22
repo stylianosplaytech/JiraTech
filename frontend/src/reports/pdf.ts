@@ -2,7 +2,7 @@ import { toCanvas } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
 /**
- * Turns a rendered report pack into an A4 portrait PDF.
+ * Turns a rendered report pack or dashboard into an A4 portrait PDF.
  *
  * The DOM under `root` is marked up with:
  *   [data-pdf-section]  a report; each one starts on a new page
@@ -25,7 +25,8 @@ const PIXEL_RATIO = 2;
 const capture = (el: HTMLElement) =>
   toCanvas(el, { pixelRatio: PIXEL_RATIO, backgroundColor: PAGE_BG, cacheBust: true });
 
-export async function exportReportPdf(root: HTMLElement, opts: { filename: string; footer: string }) {
+/** Lays the marked-up DOM under `root` out on A4 pages and returns the finished document. */
+export async function buildPdf(root: HTMLElement, footer: string): Promise<jsPDF> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   const mmPerPx = CONTENT_W / root.offsetWidth;
   const usable = PAGE_H - TOP - BOTTOM;
@@ -115,8 +116,8 @@ export async function exportReportPdf(root: HTMLElement, opts: { filename: strin
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor('#6B778C');
-    doc.text(opts.footer, MARGIN, PAGE_H - 5);
+    doc.text(footer, MARGIN, PAGE_H - 5);
   }
 
-  doc.save(opts.filename);
+  return doc;
 }

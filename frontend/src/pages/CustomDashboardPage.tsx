@@ -6,6 +6,7 @@ import { BREAKDOWN_LABELS, GADGET_TYPES, GadgetBody, SINGLE_FIELD_KEYS } from '.
 import { TYPE_THUMB, ThumbChoice } from '../components/GadgetThumbs';
 import { EmptyState, errorMessage, Modal, PageHeader, Spinner, useDialogs, useToast } from '../components/ui';
 import { PlusIcon, TrashIcon } from '../components/Icons';
+import { PdfBanner, PdfBlock, PdfExport } from '../reports/PdfExport';
 
 interface GadgetForm {
   /** Set when editing an existing gadget. */
@@ -226,6 +227,18 @@ function GadgetModal({ dashboardId, form, onChange, onClose }: {
   );
 }
 
+/** Groups gadgets into PDF rows: a full-width gadget has its own row, narrow ones pair up. */
+function pdfRows(gadgets: Gadget[]): Gadget[][] {
+  const rows: Gadget[][] = [];
+  let open: Gadget[] | null = null;
+  for (const g of gadgets) {
+    if (g.wide) { rows.push([g]); open = null; }
+    else if (open) { open.push(g); open = null; }
+    else { open = [g]; rows.push(open); }
+  }
+  return rows;
+}
+
 export default function CustomDashboardPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -297,7 +310,30 @@ export default function CustomDashboardPage() {
       <PageHeader
         breadcrumbs={<Link to="/dashboards" className="link">Dashboards</Link>}
         title={<>{dashboard.name}{dashboard.shared && <span className="ml-3 lozenge bg-jira-blue-light text-jira-blue align-middle">Shared</span>}</>}
-        actions={isOwner ? (
+        actions={(
+          <>
+            <PdfExport
+              title={dashboard.name}
+              disabled={dashboard.gadgets.length === 0}
+              filename={`${dashboard.name.replace(/[^w-]+/g, '-').replace(/^-+|-+$/g, '') || 'dashboard'}.pdf`}
+              footer={`Conductor · ${dashboard.name} · ${dashboard.owner.name}`}
+            >
+              <div data-pdf-section="">
+                <PdfBanner title={dashboard.name} subtitle={dashboard.description || `Dashboard by ${dashboard.owner.name}`} />
+                <div className="h-3" />
+                {pdfRows(dashboard.gadgets).map((row) => (
+                  <PdfBlock key={row[0].id} className="grid grid-cols-2 gap-4 items-start">
+                    {row.map((g) => (
+                      <div key={g.id} className={`card ${row.length === 1 ? 'col-span-2' : ''}`}>
+                        <div className="card-header"><h2 className="card-title">{g.title}</h2></div>
+                        <GadgetBody dashboardId={dashboard.id} gadget={g} />
+                      </div>
+                    ))}
+                  </PdfBlock>
+                ))}
+              </div>
+            </PdfExport>
+            {isOwner ? (
           <>
             <button type="button" className="btn btn-primary" onClick={() => setGadgetForm({ type: 'FILTER_RESULTS', filterId: '', title: '', maxRows: 10, groupBy: 'status', stackBy: 'priority', chart: 'bars', days: 30, bucket: 'day', wide: true })}>
               <PlusIcon size={14} /> Add gadget
@@ -326,7 +362,9 @@ export default function CustomDashboardPage() {
             </button>
           </>
         ) : (
-          <button type="button" className="btn btn-primary" disabled={copy.isPending} onClick={() => copy.mutate()}>Save a copy</button>
+          <button type="button" className="btn btn-default" disabled={copy.isPending} onClick={() => copy.mutate()}>Save a copy</button>
+        )}
+          </>
         )}
       >
         {dashboard.description && <p className="text-jira-subtle mt-1">{dashboard.description}</p>}

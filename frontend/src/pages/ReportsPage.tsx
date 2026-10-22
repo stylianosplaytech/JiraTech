@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -6,7 +6,8 @@ import {
 } from '../api';
 import { useProject } from '../project';
 import { typeLabel } from '../components/Badges';
-import { EmptyState, PageHeader, Spinner, errorMessage, useToast } from '../components/ui';
+import { EmptyState, PageHeader, Spinner, errorMessage } from '../components/ui';
+import { PdfExport } from '../reports/PdfExport';
 import { humanize } from '../utils';
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
@@ -710,16 +711,9 @@ const TABS = [
   { id: 'sla', label: 'SLA performance', Component: SlaPerformance, serviceDesk: true },
 ] as const;
 
-/** CSS width the PDF is laid out at; it is scaled to the 190 mm printable width of A4. */
-const PDF_WIDTH_PX = 880;
-
 export default function ReportsPage() {
   const { project } = useProject();
-  const toast = useToast();
   const [params, setParams] = useSearchParams();
-  const [exporting, setExporting] = useState(false);
-  const pdfRoot = useRef<HTMLDivElement>(null);
-  const exportRunning = useRef(false);
   const from = params.get('from') ?? '';
   const to = params.get('to') ?? '';
   const { data, isLoading, error } = useQuery({
@@ -728,32 +722,6 @@ export default function ReportsPage() {
   });
   const tabs = TABS.filter((t) => !t.serviceDesk || !!data?.sla);
   const tab = tabs.find((t) => t.id === params.get('tab'))?.id ?? 'status';
-
-  // Once the off-screen PDF layout has rendered, capture it page by page.
-  useEffect(() => {
-    // A background refetch changes `data` mid-export; don't start a second one.
-    if (!exporting || !data || !pdfRoot.current || exportRunning.current) return;
-    exportRunning.current = true;
-    const root = pdfRoot.current;
-    (async () => {
-      try {
-        await document.fonts.ready;
-        // A timer, not requestAnimationFrame: that one pauses while the tab is in the background.
-        await new Promise((r) => setTimeout(r, 50));
-        // Loaded on demand: the PDF libraries are large and only needed here.
-        const { exportReportPdf } = await import('../reports/pdf');
-        await exportReportPdf(root, {
-          filename: `${data.project.key}-report-${data.period.from}-to-${data.period.to}.pdf`,
-          footer: `Conductor · ${data.project.name} (${data.project.key}) · ${fmtDate(data.period.from)} – ${fmtDate(data.period.to)} · generated ${new Date().toLocaleString('en-GB')}`,
-        });
-      } catch (e) {
-        toast(`Could not create the PDF: ${errorMessage(e)}`, 'error');
-      } finally {
-        exportRunning.current = false;
-        setExporting(false);
-      }
-    })();
-  }, [exporting, data, toast]);
 
   const update = (changes: Record<string, string>) => {
     const next = new URLSearchParams(params);
@@ -782,9 +750,18 @@ export default function ReportsPage() {
         title="Reports"
         breadcrumbs={project ? `${project.name} · reports` : undefined}
         actions={
-          <button type="button" className="btn btn-primary" onClick={() => setExporting(true)} disabled={!data || exporting}>
-            {exporting ? 'Creating PDF…' : 'Download PDF'}
-          </button>
+          <PdfExport
+            title="Reports"
+            disabled={!data}
+            filename={data ? `${data.project.key}-report-${data.period.from}-to-${data.period.to}.pdf` : 'report.pdf'}
+            footer={data ? `Conductor · ${data.project.name} (${data.project.key}) · ${fmtDate(data.period.from)} – ${fmtDate(data.period.to)}` : ''}
+          >
+            {data && tabs.map((t) => (
+              <div key={t.id} data-pdf-section="">
+                <t.Component data={data} pdf />
+              </div>
+            ))}
+          </PdfExport>
         }
       >
         <div className="flex flex-wrap items-end gap-3 mt-4">
@@ -824,16 +801,6 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* The full report pack at a fixed A4-proportioned width, rendered off screen while exporting. */}
-      {exporting && data && (
-        <div ref={pdfRoot} aria-hidden="true" className="fixed top-0 bg-[#F3F6F1]" style={{ left: -20000, width: PDF_WIDTH_PX }}>
-          {tabs.map((t) => (
-            <div key={t.id} data-pdf-section="">
-              <t.Component data={data} pdf />
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

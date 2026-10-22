@@ -5,6 +5,8 @@ import { useProject } from '../project';
 import { RagDot, STATUS_LABELS } from '../components/Badges';
 import { EmptyState, PageHeader, Spinner } from '../components/ui';
 import { humanize, timeAgo } from '../utils';
+import { PdfBanner, PdfBlock, PdfExport } from '../reports/PdfExport';
+import type { ReactNode } from 'react';
 
 const STATUS_COLORS: Record<string, string> = { BACKLOG: '#97A0AF', TO_DO: '#5E6C84', DOING: '#0052CC', CLOSED: '#36B37E' };
 const RAG_COLORS: Record<string, string> = { GREEN: '#36B37E', AMBER: '#FFAB00', RED: '#DE350B' };
@@ -29,13 +31,12 @@ function BarList({ entries, colors, labels }: { entries: [string, number][]; col
   );
 }
 
-export default function DashboardPage() {
-  const { project } = useProject();
-  const { data, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: () => api.getDashboard() });
+type Overview = NonNullable<Awaited<ReturnType<typeof api.getDashboard>>>;
 
-  if (isLoading) return <Spinner />;
-  if (!data) return <EmptyState title="Dashboard unavailable">The dashboard could not be loaded.</EmptyState>;
-
+/** The overview's content. In the PDF it uses the wide layout and every row is a block placed whole. */
+function OverviewBody({ data, pdf }: { data: Overview; pdf?: boolean }) {
+  const Row = ({ children, className = '' }: { children: ReactNode; className?: string }) => <PdfBlock className={className}>{children}</PdfBlock>;
+  const cols2 = pdf ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2';
   const stats = [
     { label: 'Total issues', value: data.summary.total },
     { label: 'In progress', value: data.summary.inProgress },
@@ -44,22 +45,17 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div>
-      <PageHeader
-        title="Project overview"
-        breadcrumbs={<><Link to="/dashboards" className="link">Dashboards</Link>{project ? ` · ${project.name} · plan progress` : ''}</>}
-      />
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+    <div className={pdf ? 'space-y-4' : ''}>
+      <Row className={`grid ${pdf ? 'grid-cols-4' : 'grid-cols-2 sm:grid-cols-4'} gap-3 sm:gap-4 mb-6`}>
         {stats.map((s) => (
           <div key={s.label} className="card p-4">
             <p className="text-jira-subtle">{s.label}</p>
             <p className="text-3xl font-semibold mt-1">{s.value}</p>
           </div>
         ))}
-      </div>
+      </Row>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <Row className={`grid ${cols2} gap-6 mb-6`}>
         <div className="card">
           <div className="card-header"><h2 className="card-title">Issues by status</h2></div>
           <div className="p-4">
@@ -72,9 +68,9 @@ export default function DashboardPage() {
             <BarList entries={Object.entries(data.byRag)} colors={RAG_COLORS} />
           </div>
         </div>
-      </div>
+      </Row>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <Row className={`grid ${cols2} gap-6`}>
         <div className="card">
           <div className="card-header">
             <h2 className="card-title">Blocked</h2>
@@ -109,10 +105,10 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
-      </div>
+      </Row>
 
       {data.recentEscalations.length > 0 && (
-        <div className="card mt-6">
+        <Row className="card mt-6">
           <div className="card-header"><h2 className="card-title">Recent escalations</h2></div>
           <div className="divide-y divide-jira-border">
             {data.recentEscalations.map((e, i) => (
@@ -124,8 +120,35 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
-        </div>
+        </Row>
       )}
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const { project } = useProject();
+  const { data, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: () => api.getDashboard() });
+
+  if (isLoading) return <Spinner />;
+  if (!data) return <EmptyState title="Dashboard unavailable">The dashboard could not be loaded.</EmptyState>;
+
+  return (
+    <div>
+      <PageHeader
+        title="Project overview"
+        breadcrumbs={<><Link to="/dashboards" className="link">Dashboards</Link>{project ? ` · ${project.name} · plan progress` : ''}</>}
+        actions={(
+          <PdfExport title="Project overview" filename={`${project?.key ?? 'project'}-overview.pdf`} footer={`Conductor · ${project?.name ?? 'Project'} · project overview`}>
+            <div data-pdf-section="">
+              <PdfBanner title="Project overview" subtitle={project ? `${project.name} · plan progress` : 'Plan progress'} />
+              <div className="h-3" />
+              <OverviewBody data={data} pdf />
+            </div>
+          </PdfExport>
+        )}
+      />
+      <OverviewBody data={data} />
     </div>
   );
 }
