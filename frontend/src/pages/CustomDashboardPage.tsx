@@ -294,8 +294,10 @@ export default function CustomDashboardPage() {
   const reorder = useMutation({
     mutationFn: (ids: string[]) => api.reorderGadgets(id, ids),
     onSuccess: (d: CustomDashboard) => { queryClient.setQueryData(['dashboard', id], d); },
-    onError,
+    onError: (e) => { onError(e); refresh(); },
   });
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   if (isLoading) return <Spinner />;
   if (error || !dashboard) {
@@ -307,10 +309,19 @@ export default function CustomDashboardPage() {
   }
 
   const isOwner = dashboard.ownerId === me?.id;
-  const move = (index: number, by: -1 | 1) => {
-    const ids = dashboard.gadgets.map((g) => g.id);
-    [ids[index], ids[index + by]] = [ids[index + by], ids[index]];
-    reorder.mutate(ids);
+  const dropOn = (targetId: string) => {
+    const from = dragId;
+    setDragId(null);
+    setOverId(null);
+    if (!from || from === targetId) return;
+    const gadgets = [...dashboard.gadgets];
+    const fromIdx = gadgets.findIndex((g) => g.id === from);
+    const toIdx = gadgets.findIndex((g) => g.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = gadgets.splice(fromIdx, 1);
+    gadgets.splice(toIdx, 0, moved);
+    queryClient.setQueryData(['dashboard', id], { ...dashboard, gadgets });
+    reorder.mutate(gadgets.map((g) => g.id));
   };
   const editGadget = (g: Gadget) => setGadgetForm({
     id: g.id, type: g.type, filterId: g.filterId ?? '', title: g.title,
@@ -397,14 +408,30 @@ export default function CustomDashboardPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-          {dashboard.gadgets.map((g, i) => (
-            <div key={g.id} className={`card ${COL_SPAN[g.span]}`}>
-              <div className="card-header">
-                <h2 className="card-title truncate">{g.title}</h2>
+          {dashboard.gadgets.map((g) => (
+            <div
+              key={g.id}
+              className={`card ${COL_SPAN[g.span]} ${dragId === g.id ? 'opacity-40' : ''} ${overId === g.id && dragId !== g.id ? 'ring-2 ring-jira-blue' : ''}`}
+              draggable={isOwner}
+              onDragStart={(e) => {
+                if (!isOwner) return;
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', g.id);
+                setDragId(g.id);
+              }}
+              onDragOver={(e) => {
+                if (!dragId) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (overId !== g.id) setOverId(g.id);
+              }}
+              onDrop={(e) => { e.preventDefault(); dropOn(g.id); }}
+              onDragEnd={() => { setDragId(null); setOverId(null); }}
+            >
+              <div className={`card-header ${isOwner ? 'cursor-grab active:cursor-grabbing' : ''}`} title={isOwner ? 'Drag to move' : undefined}>
+                <h2 className="card-title truncate">{isOwner && <span className="text-jira-muted mr-2 select-none" aria-hidden="true">⋮⋮</span>}{g.title}</h2>
                 {isOwner && (
                   <div className="flex items-center gap-1 shrink-0">
-                    <button type="button" className="btn btn-subtle btn-sm" disabled={i === 0 || reorder.isPending} onClick={() => move(i, -1)} aria-label={`Move ${g.title} earlier`} title="Move earlier">↑</button>
-                    <button type="button" className="btn btn-subtle btn-sm" disabled={i === dashboard.gadgets.length - 1 || reorder.isPending} onClick={() => move(i, 1)} aria-label={`Move ${g.title} later`} title="Move later">↓</button>
                     <button type="button" className="btn btn-subtle btn-sm" onClick={() => editGadget(g)}>Edit</button>
                     <button
                       type="button"
